@@ -9,11 +9,13 @@
 -- documents: 원본 문서 메타. 실제 파일은 Supabase Storage에 있다.
 -- ---------------------------------------------------------------
 create table if not exists documents (
-  id             uuid primary key default gen_random_uuid(),
-  title          text not null check (length(trim(title)) > 0),
-  storage_bucket text not null check (length(trim(storage_bucket)) > 0),
-  storage_path   text not null check (length(trim(storage_path)) > 0),
-  created_at     timestamptz not null default now(),
+  id                uuid primary key default gen_random_uuid(),
+  title             text not null check (length(trim(title)) > 0),  -- LLM이 문서에서 추출
+  original_filename text not null check (length(trim(original_filename)) > 0),  -- 사용자가 올린 원래 파일명
+  size_bytes        bigint not null check (size_bytes >= 0),  -- 파일 용량(바이트)
+  storage_bucket    text not null check (length(trim(storage_bucket)) > 0),
+  storage_path      text not null check (length(trim(storage_path)) > 0),
+  created_at        timestamptz not null default now(),
   unique (storage_bucket, storage_path)
 );
 
@@ -43,7 +45,7 @@ create table if not exists knowledge_cards (
   project_date         date,  -- 지식이 나온 프로젝트 시점. 식별 불가하면 NULL
 
   -- 메타데이터 (v1.0)
-  project_id           uuid,  -- 프로젝트 특정이 어려워 NULL 허용. projects 테이블 생기면 FK 추가
+  project_name         text,  -- LLM이 문서에서 추출한 프로젝트 이름. 식별 불가하면 NULL
   status               text not null default 'draft'
                          constraint knowledge_cards_status_check
                          check (status in ('draft', 'active', 'flagged', 'archived')),
@@ -65,7 +67,6 @@ create table if not exists knowledge_cards (
 );
 
 create index if not exists knowledge_cards_status_idx on knowledge_cards (status);
-create index if not exists knowledge_cards_project_id_idx on knowledge_cards (project_id);
 create index if not exists knowledge_cards_technologies_idx on knowledge_cards using gin (technologies);
 create index if not exists knowledge_cards_keywords_idx on knowledge_cards using gin (keywords);
 
@@ -86,17 +87,19 @@ create trigger knowledge_cards_set_updated_at
   for each row execute function set_updated_at();
 
 -- ---------------------------------------------------------------
--- card_documents: 지식카드 <-> 원본 문서 (N:M, 카드의 source)
--- "카드당 문서 1개 이상"은 DB로 강제하기 어려워 앱 로직에서 보장한다.
+-- card_documents: 지식카드 <-> 원본 문서 근거 (카드의 source)
+-- 행 하나가 근거 하나다. 한 카드가 같은 문서의 여러 부분을 근거로 하면 행이 여러 개 생긴다.
+-- "카드당 근거 1개 이상"은 DB로 강제하기 어려워 앱 로직에서 보장한다.
 -- ---------------------------------------------------------------
 create table if not exists card_documents (
+  id          uuid primary key default gen_random_uuid(),
   card_id     uuid not null references knowledge_cards (id) on delete cascade,
   document_id uuid not null references documents (id) on delete cascade,
   location    text,  -- 원문 내 위치. 예: "2장 · 답변 근거와 지식 연결"
-  excerpt     text,  -- 원문에서 그대로 가져온 근거 발췌문
-  primary key (card_id, document_id)
+  excerpt     text   -- 원문에서 그대로 가져온 근거 발췌문
 );
 
+create index if not exists card_documents_card_id_idx on card_documents (card_id);
 create index if not exists card_documents_document_id_idx on card_documents (document_id);
 
 -- ---------------------------------------------------------------

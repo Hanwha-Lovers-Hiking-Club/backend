@@ -15,7 +15,9 @@
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | id | uuid | PK |
-| title | text | 문서 제목 (필수, 빈 문자열 불가) |
+| title | text | 문서 제목. LLM이 문서에서 추출 (필수, 빈 문자열 불가) |
+| original_filename | text | 사용자가 올린 원래 파일명 (필수). 확장자는 여기서 잘라 응답에 내려준다 |
+| size_bytes | bigint | 파일 용량(바이트) (필수, 0 이상) |
 | storage_bucket | text | Storage 버킷 이름 (필수) |
 | storage_path | text | 버킷 안 파일 경로 (필수). `(storage_bucket, storage_path)` 유니크 |
 | created_at | timestamptz | 생성 시각 |
@@ -40,7 +42,7 @@
 | keywords | text[] | O (빈 배열 가능) | 분야/주제어(웹 개발, QA, 네트워크 등). 기본값 `{}` |
 | department | text | X | 담당 부서. 식별 불가하면 NULL |
 | project_date | date | X | 지식이 나온 프로젝트 시점. 식별 불가하면 NULL |
-| project_id | uuid | X | 프로젝트 식별자. 프로젝트 특정이 어려워 NULL 허용, 현재 FK 없음 |
+| project_name | text | X | LLM이 문서에서 추출한 프로젝트 이름. 표기가 달라도(플랜밍고/planmingo) 같은 프로젝트로 묶지 않음. 식별 불가하면 NULL |
 | status | text | O | `draft`(기본) / `active` / `flagged` / `archived`. RAG 검색 포함 여부 판단 기준 |
 | quality_score | numeric | X | 카드 품질 내부 평가 점수 |
 | last_verified_at | timestamptz | X | 마지막 검증 시각 |
@@ -56,17 +58,22 @@
 
 ## card_documents
 
-지식카드와 원본 문서의 N:M 연결 (카드의 source).
+지식카드의 근거(카드의 source). 행 하나가 근거 하나이며, 한 카드가 같은 문서의 여러 부분을 근거로 하면 같은 `(card_id, document_id)`로 행이 여러 개 생긴다.
 
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
+| id | uuid | PK |
 | card_id | uuid | FK → knowledge_cards.id (삭제 시 cascade) |
 | document_id | uuid | FK → documents.id (삭제 시 cascade) |
 | location | text | 원문 내 위치. 예: "2장 · 답변 근거와 지식 연결". NULL 허용 |
 | excerpt | text | 원문에서 그대로 가져온 근거 발췌문. NULL 허용 |
 
-PK는 `(card_id, document_id)`. `location`/`excerpt`는 카드-문서 조합마다 달라서 이 테이블에 둔다.
+`location`/`excerpt`는 근거마다 달라서 이 테이블에 둔다. 카드당 근거 1개 이상은 DB가 아니라 앱 로직에서 보장한다.
 
 ## 아직 DB에 없는 것 (필요해지면 추가)
 
 - 카드 유형(`type`): 추출 결과를 보고 분류가 정해지면 `type text` + CHECK 제약으로 추가.
+- 임베딩: 대상 필드와 모델이 정해진 뒤 추가.
+- 문서 요약(`documents.summary`): 필요해지면 추가.
+- 중복 업로드 정책: 같은 내용의 카드가 쌓이는 것은 현재 허용. 임베딩 도입 후 카드 유사도로 판별(`status = 'flagged'` 활용) 검토.
+- `project_id`: 프로젝트 테이블이 생기면 다시 추가.
