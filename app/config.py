@@ -7,7 +7,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     SUPABASE_URL: str
-    SUPABASE_KEY: str
+    SUPABASE_SERVICE_ROLE_KEY: str
+    SUPABASE_STORAGE_BUCKET: str = "documents"
+    CORS_ORIGINS: str = "http://localhost:3000"
 
 
 settings = Settings()
