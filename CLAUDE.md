@@ -38,7 +38,10 @@
 
 # DB 스키마
 
-<!-- docs/schema.md 참고하라고 링크. 스키마 바뀌면 그 문서도 같이 업데이트하는 룰 명시 -->
+- 테이블 구조는 `docs/schema.md`를 먼저 읽고, 컬럼명/제약을 추측하지 말고 그대로 따른다.
+- 테이블 생성 SQL은 `sql/tables.sql`, 함수는 `sql/functions.sql`. Supabase SQL Editor에서 직접 실행한다.
+- 테이블을 바꾸면 `sql/tables.sql`과 `docs/schema.md`를 같은 PR에서 같이 수정한다.
+- 모든 테이블은 RLS 켜짐 + 정책 없음. 백엔드는 service role 키로만 접근하며, 이 키는 프론트에 노출하지 않는다.
 
 # 로컬 실행 방법
 

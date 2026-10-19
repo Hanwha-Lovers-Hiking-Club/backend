@@ -6,11 +6,67 @@
 
 # DB 스키마
 
-<!--
-  테이블별로 아래 형식 반복해서 채우기:
+생성 SQL은 `sql/tables.sql`. 모든 테이블은 RLS 켜짐 + 정책 없음 (백엔드 service role 키로만 접근).
 
-  ## 테이블명
-  | 컬럼 | 타입 | 설명 |
-  |---|---|---|
-  | id | uuid | PK |
--->
+## documents
+
+원본 문서 메타. 실제 파일은 Supabase Storage에 있고, 여기에는 위치만 저장.
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| id | uuid | PK |
+| title | text | 문서 제목 (필수, 빈 문자열 불가) |
+| storage_bucket | text | Storage 버킷 이름 (필수) |
+| storage_path | text | 버킷 안 파일 경로 (필수). `(storage_bucket, storage_path)` 유니크 |
+| created_at | timestamptz | 생성 시각 |
+
+## knowledge_cards
+
+지식카드 본문 + 메타데이터.
+
+| 컬럼 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| id | uuid | O | PK |
+| title | text | O | 제목 |
+| summary | text | O | 핵심 내용 요약 |
+| context | text | O | 경험/의사결정의 배경과 상황 |
+| problem | text | 조건부 | 발생한 문제 또는 과제 |
+| cause | text | 조건부 | 문제의 원인 |
+| approach | text | 조건부 | 해결 방법, 기술적 선택, 접근 방식 |
+| rationale | text | 조건부 | 접근 방식을 선택한 이유 |
+| outcome | text | 조건부 | 적용 후 확인된 결과 |
+| lesson | text | O | 재사용 가능한 교훈 |
+| technologies | text[] | O (빈 배열 가능) | 기술 스택(WebSocket, Supabase 등). 기본값 `{}` |
+| keywords | text[] | O (빈 배열 가능) | 분야/주제어(웹 개발, QA, 네트워크 등). 기본값 `{}` |
+| department | text | X | 담당 부서. 식별 불가하면 NULL |
+| project_date | date | X | 지식이 나온 프로젝트 시점. 식별 불가하면 NULL |
+| project_id | uuid | X | 프로젝트 식별자. 프로젝트 특정이 어려워 NULL 허용, 현재 FK 없음 |
+| status | text | O | `draft`(기본) / `active` / `flagged` / `archived`. RAG 검색 포함 여부 판단 기준 |
+| quality_score | numeric | X | 카드 품질 내부 평가 점수 |
+| last_verified_at | timestamptz | X | 마지막 검증 시각 |
+| verification_version | text | X | 마지막 검증에 쓴 평가 기준/로직 버전 |
+| created_at | timestamptz | O | 생성 시각 |
+| updated_at | timestamptz | O | 수정 시각 (트리거로 자동 갱신) |
+
+제약:
+- `title`, `summary`, `context`, `lesson`은 빈 문자열 불가.
+- 조건부 5개(`problem`, `cause`, `approach`, `rationale`, `outcome`) 중 최소 1개는 공백 아닌 값이 있어야 함 (CHECK).
+- `status`는 text + CHECK. 값이 늘면 제약만 교체하고, pydantic의 Literal/Enum도 같이 수정.
+- 카드의 `source`(근거 문서)는 컬럼이 아니라 `card_documents`로 연결. 카드당 문서 1개 이상은 DB가 아니라 앱 로직(service.py)에서 보장.
+
+## card_documents
+
+지식카드와 원본 문서의 N:M 연결 (카드의 source).
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| card_id | uuid | FK → knowledge_cards.id (삭제 시 cascade) |
+| document_id | uuid | FK → documents.id (삭제 시 cascade) |
+| location | text | 원문 내 위치. 예: "2장 · 답변 근거와 지식 연결". NULL 허용 |
+| excerpt | text | 원문에서 그대로 가져온 근거 발췌문. NULL 허용 |
+
+PK는 `(card_id, document_id)`. `location`/`excerpt`는 카드-문서 조합마다 달라서 이 테이블에 둔다.
+
+## 아직 DB에 없는 것 (필요해지면 추가)
+
+- 카드 유형(`type`): 추출 결과를 보고 분류가 정해지면 `type text` + CHECK 제약으로 추가.
