@@ -5,8 +5,9 @@ description: 새 도메인(기능)을 app/domains/ 아래에 추가할 때 쓴�
 
 # 새 도메인 추가하기
 
-도메인마다 `router.py` / `schemas.py` / `service.py` 3개 파일만 만든다.
-(규칙 배경은 `backend-conventions` 스킬 참고 — 여기는 실행 체크리스트만.)
+도메인마다 기본으로 `router.py` / `schemas.py` / `service.py` 3개 파일을 만든다. 이 3개는
+최소 구성이고, 그 이상으로 뭘 더 두는지는 자유다 (규칙 배경은 `backend-conventions` 스킬 참고 —
+여기는 실행 체크리스트만).
 
 ## 순서
 
