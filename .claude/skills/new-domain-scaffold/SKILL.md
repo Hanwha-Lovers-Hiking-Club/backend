@@ -5,7 +5,7 @@ description: 새 도메인(기능)을 app/domains/ 아래에 추가할 때 쓴�
 
 # 새 도메인 추가하기
 
-`app/domains/users/`가 기준 템플릿이다. 새 도메인도 똑같은 3개 파일만 만든다.
+도메인마다 `router.py` / `schemas.py` / `service.py` 3개 파일만 만든다.
 (규칙 배경은 `backend-conventions` 스킬 참고 — 여기는 실행 체크리스트만.)
 
 ## 순서
@@ -30,8 +30,8 @@ router = APIRouter(prefix="/<domain>", tags=["<domain>"])
 ```
 
 `schemas.py`, `service.py`는 빈 파일에서 시작해서 그 기능에 필요한 모델/함수를 채운다.
-`app/domains/users/`는 "가장 단순한 CRUD 예시"일 뿐, 거기 있는 `GET /{id}` 같은 구체적인
-엔드포인트 모양까지 따라야 하는 템플릿은 아니다.
+`app/domains/documents/`, `app/domains/knowledge_cards/`는 지금 이 뼈대(빈 `schemas.py`/`service.py`
++ 위 `router.py`)만 있는 상태다. 각자 자기 기능에 맞게 채우면 된다.
 
 끝나면: `response_model`이 모든 엔드포인트에 있는지, `router.py`에 DB/비즈니스 로직이 새어들어가지 않았는지 확인한다.
 

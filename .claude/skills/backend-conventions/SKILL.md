@@ -15,7 +15,8 @@ description: 이 레포(FastAPI + Supabase 백엔드)에서 코드를 쓰거나 
 - `schemas.py` — 요청/응답 모양(pydantic 모델)만 정의.
 - `service.py` — 진짜 로직(DB 호출, LLM 호출, 비즈니스 규칙)이 사는 곳.
 
-새 도메인을 추가할 때는 `app/domains/users/`를 템플릿으로 복붙하고, `app/main.py`에 `import` 한 줄 + `include_router` 한 줄만 추가한다. 자세한 절차/체크리스트가 필요하면 해당 도메인 폴더의 `.claude/skills/`를 둔다.
+새 도메인을 추가하는 절차/체크리스트는 `new-domain-scaffold` 스킬을 따른다. 도메인별로 더
+구체적인 규칙이 생기면 해당 도메인 폴더 안 `.claude/skills/`에 별도로 둔다.
 
 ## 네이밍
 

@@ -17,7 +17,7 @@ MVP 범위 (지금 구현 대상):
 `.claude/skills/backend-conventions/SKILL.md` 하나에 정리되어 있다. 이 파일을 먼저 본다.
 규칙이 바뀌어야 하면 그 스킬 파일을 팀 리뷰를 거쳐 수정한다 (여기 중복 작성하지 않음).
 
-도메인(agent, users 등)별로 더 구체적인 규칙이 생기면 해당 도메인 폴더 안
+도메인(agent, documents, knowledge_cards 등)별로 더 구체적인 규칙이 생기면 해당 도메인 폴더 안
 `.claude/skills/`에 별도로 둔다.
 
 # 로컬 실행 방법

@@ -3,12 +3,14 @@
 from fastapi import FastAPI
 
 from app.domains.agent.router import router as agent_router
-from app.domains.users.router import router as users_router
+from app.domains.documents.router import router as documents_router
+from app.domains.knowledge_cards.router import router as knowledge_cards_router
 
 app = FastAPI(title="backend")
 
 app.include_router(agent_router)
-app.include_router(users_router)
+app.include_router(documents_router)
+app.include_router(knowledge_cards_router)
 
 
 @app.get("/health")

@@ -11,10 +11,10 @@ description: service.py에서 Supabase(supabase-py)를 호출하는 코드를 �
 ## `.single()`은 결과가 정확히 1건 보장될 때만
 
 ```python
-result = supabase.table("users").select("*").eq("id", user_id).single().execute()
+result = supabase.table("documents").select("*").eq("id", document_id).single().execute()
 ```
 
-행이 0건이거나 2건 이상이면 예외가 발생한다. PK로 1건 조회하는 경우(`app/domains/users/service.py` 패턴)에만 쓴다.
+행이 0건이거나 2건 이상이면 예외가 발생한다. PK로 1건 조회하는 경우에만 쓴다.
 없을 수도 있는 조회(검색, 필터)는 `.single()`을 쓰지 않고 리스트로 받아서
 `result.data`의 길이를 직접 확인한다.
 
