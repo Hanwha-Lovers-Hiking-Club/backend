@@ -19,6 +19,8 @@ package = false
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
     "ruff>=0.17.0",
 ]
 
@@ -27,3 +29,7 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]  # I = import 순서 자동 정렬
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
