@@ -105,6 +105,7 @@ def test_list_cards_default_query(client, fake_db):
 
     assert response.json() == {"items": [], "total": 0}
     assert query.called("eq") == [(("status", "active"), {})]
+    assert query.called("or_") == []
     assert query.called("order") == [(("updated_at",), {"desc": True}), (("id",), {})]
     assert query.called("range") == [((0, 11), {})]
 
@@ -131,6 +132,37 @@ def test_list_cards_pagination(client, fake_db):
     client.get("/api/knowledge/cards", params={"page": 3, "pageSize": 5})
 
     assert query.called("range") == [((10, 14), {})]
+
+
+def test_list_cards_search_filter(client, fake_db):
+    query = fake_db()
+
+    client.get("/api/knowledge/cards", params={"q": "  RAG  "})
+
+    assert query.called("or_") == [
+        (
+            (
+                'title.ilike."*RAG*",summary.ilike."*RAG*",context.ilike."*RAG*",'
+                'keywords.cs.{"RAG"}',
+            ),
+            {},
+        )
+    ]
+
+
+def test_list_cards_blank_search_is_ignored(client, fake_db):
+    query = fake_db()
+
+    client.get("/api/knowledge/cards", params={"q": "   "})
+
+    assert query.called("or_") == []
+
+
+def test_search_filter_escapes_reserved_characters():
+    assert service._build_search_filter('a,"b"') == (
+        r'title.ilike."*a,\"b\"*",summary.ilike."*a,\"b\"*",context.ilike."*a,\"b\"*",'
+        r'keywords.cs.{"a,\"b\""}'
+    )
 
 
 @pytest.mark.parametrize(
