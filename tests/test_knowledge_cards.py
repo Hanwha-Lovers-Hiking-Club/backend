@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
+from postgrest.exceptions import APIError
 
 from app.domains.knowledge_cards import service
 
@@ -43,11 +44,12 @@ CARD_ROW = {
 
 
 class FakeQuery:
-    """supabase 쿼리 빌더 대역. 호출된 체인 메서드를 기록하고 정해둔 결과를 돌려준다."""
+    """supabase 쿼리 빌더 대역. 호출된 체인 메서드를 기록하고 정해둔 결과를 차례로 돌려준다.
+    결과가 예외면 execute()에서 그 예외를 던진다."""
 
-    def __init__(self, result):
+    def __init__(self, results):
         self.calls = []
-        self._result = result
+        self._results = results
 
     def __getattr__(self, name):
         def method(*args, **kwargs):
@@ -57,7 +59,10 @@ class FakeQuery:
         return method
 
     def execute(self):
-        return self._result
+        result = self._results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
 
     def called(self, name):
         return [(args, kwargs) for n, args, kwargs in self.calls if n == name]
@@ -65,8 +70,12 @@ class FakeQuery:
 
 @pytest.fixture
 def fake_db(monkeypatch):
-    def install(data=None, count=0):
-        query = FakeQuery(SimpleNamespace(data=data or [], count=count))
+    def install(data=None, count=0, fail_with=None):
+        # fail_with를 주면 첫 execute()는 그 예외를 던지고, 다음 execute()가 data/count를 돌려준다
+        results = [SimpleNamespace(data=data or [], count=count)]
+        if fail_with:
+            results.insert(0, fail_with)
+        query = FakeQuery(results)
         monkeypatch.setattr(service, "supabase", SimpleNamespace(table=lambda name: query))
         return query
 
@@ -176,3 +185,27 @@ def test_list_cards_invalid_params(client, fake_db, params):
 
     assert response.status_code == 422
     assert "detail" in response.json()
+
+
+def test_list_cards_page_out_of_range_returns_total(client, fake_db):
+    query = fake_db(
+        count=7,
+        fail_with=APIError({"code": "PGRST103", "message": "Requested range not satisfiable"}),
+    )
+
+    response = client.get("/api/knowledge/cards", params={"page": 999, "q": "RAG"})
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "total": 7}
+    # count 재조회도 본 조회와 같은 조건(active + 검색어)을 쓴다
+    assert query.called("eq") == [(("status", "active"), {})] * 2
+    assert len(query.called("or_")) == 2
+
+
+def test_list_cards_db_error(client, fake_db):
+    fake_db(fail_with=APIError({"code": "42703", "message": "column does not exist"}))
+
+    response = client.get("/api/knowledge/cards")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "지식카드 목록을 조회하지 못했습니다."}

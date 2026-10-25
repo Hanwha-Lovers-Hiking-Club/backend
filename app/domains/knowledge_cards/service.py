@@ -1,4 +1,7 @@
 # 지식카드 로직: Supabase 조회와 DB 행 -> 응답 모양 변환.
+from fastapi import HTTPException
+from postgrest.exceptions import APIError
+
 from app.db import supabase
 from app.domains.knowledge_cards.schemas import CardSort
 
@@ -13,6 +16,11 @@ SORT_COLUMNS: dict[str, tuple[str, bool]] = {
     "created": ("created_at", True),
     "name": ("title", False),
 }
+
+# PostgREST: 요청한 범위가 전체 결과 수를 넘어선 경우의 에러 코드
+RANGE_NOT_SATISFIABLE = "PGRST103"
+
+LIST_FAILED_DETAIL = "지식카드 목록을 조회하지 못했습니다."
 
 
 def _quote(value: str) -> str:
@@ -31,6 +39,15 @@ def _build_search_filter(q: str) -> str:
             f"keywords.cs.{{{_quote(q)}}}",
         ]
     )
+
+
+def _apply_filters(query, q: str):
+    # 본 조회와 count 재조회가 같은 조건을 쓰도록 한 곳에 둔다
+    # RAG 검색 대상과 같은 기준으로 active 카드만 목록에 노출한다
+    query = query.eq("status", "active")
+    if q:
+        query = query.or_(_build_search_filter(q))
+    return query
 
 
 def _to_card(row: dict) -> dict:
@@ -56,21 +73,26 @@ async def list_cards(q: str, sort: CardSort, page: int, page_size: int) -> dict:
     start = (page - 1) * page_size
 
     query = (
-        supabase.table("knowledge_cards")
-        .select(CARD_SELECT, count="exact")
-        # RAG 검색 대상과 같은 기준으로 active 카드만 목록에 노출한다
-        .eq("status", "active")
-    )
-    if q:
-        query = query.or_(_build_search_filter(q))
-
-    result = (
-        query.order(column, desc=desc)
+        _apply_filters(supabase.table("knowledge_cards").select(CARD_SELECT, count="exact"), q)
+        .order(column, desc=desc)
         # 정렬 값이 같은 카드끼리 페이지 경계에서 순서가 바뀌지 않도록 id로 한 번 더 정렬
         .order("id")
         .range(start, start + page_size - 1)
-        .execute()
     )
+
+    try:
+        result = query.execute()
+    except APIError as e:
+        if e.code != RANGE_NOT_SATISFIABLE:
+            raise HTTPException(status_code=500, detail=LIST_FAILED_DETAIL)
+        # 마지막 페이지를 넘긴 요청: 빈 목록 + 전체 개수를 돌려준다
+        try:
+            count_result = _apply_filters(
+                supabase.table("knowledge_cards").select("id", count="exact", head=True), q
+            ).execute()
+        except APIError:
+            raise HTTPException(status_code=500, detail=LIST_FAILED_DETAIL)
+        return {"items": [], "total": count_result.count or 0}
 
     return {
         "items": [_to_card(row) for row in result.data],
