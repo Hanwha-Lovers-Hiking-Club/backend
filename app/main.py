@@ -1,5 +1,6 @@
 # FastAPI 앱 생성 + 모든 도메인의 router를 여기에 모아서 등록하는 곳.
 # 새 도메인을 추가하면 이 파일에 import 한 줄, include_router 한 줄만 추가하면 된다.
+# 도메인 API는 전부 /api 아래에 둔다 (include_router의 prefix="/api"). /health만 예외.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -18,9 +19,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(agent_router)
-app.include_router(documents_router)
-app.include_router(knowledge_cards_router)
+app.include_router(agent_router, prefix="/api")
+app.include_router(documents_router, prefix="/api")
+app.include_router(knowledge_cards_router, prefix="/api")
 
 
 @app.get("/health")
