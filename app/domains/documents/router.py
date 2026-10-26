@@ -17,7 +17,7 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 )
 async def upload_documents(
     files: list[UploadFile] = File(
-        ..., description="업로드할 문서 (pdf, docx, md / 파일당 20MB 이하)"
+        ..., description="업로드할 문서 (pdf, docx, md / 파일당 50MB 이하)"
     ),
 ):
     return await service.upload_documents(files)
