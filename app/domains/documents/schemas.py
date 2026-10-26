@@ -11,3 +11,20 @@ class UploadResponse(CamelModel):
     document_count: int
     # 접수 직후 상태. 진행 상태는 작업 이벤트(SSE)로 따로 받는다
     status: Literal["queued"]
+
+
+# 작업 진행 상태 SSE(API-003)의 이벤트별 data 모양
+class JobProgressEvent(CamelModel):
+    active_step: int
+    progress: int
+
+
+class JobCompletedEvent(CamelModel):
+    job_id: UUID
+    status: Literal["completed"]
+    created_card_count: int
+
+
+class JobFailedEvent(CamelModel):
+    job_id: UUID
+    message: str
