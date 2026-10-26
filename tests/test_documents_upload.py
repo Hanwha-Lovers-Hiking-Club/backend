@@ -3,6 +3,7 @@ import re
 from uuid import UUID
 
 import pytest
+from postgrest.exceptions import APIError
 from storage3.exceptions import StorageApiError
 
 from app.domains.documents import repository, service
@@ -10,12 +11,14 @@ from app.domains.documents import repository, service
 URL = "/api/documents/upload"
 
 
-class FakeStorage:
-    def __init__(self, fail_on: int | None = None):
+class FakeRepository:
+    def __init__(self, fail_on: int | None = None, fail_insert: bool = False):
         self.uploads: list[tuple[str, bytes, str]] = []
         self.removed: list[list[str]] = []
+        self.inserted: list[dict] = []
         # 몇 번째(0부터) 업로드에서 실패할지
         self.fail_on = fail_on
+        self.fail_insert = fail_insert
 
     def upload_file(self, path: str, content: bytes, content_type: str) -> None:
         if len(self.uploads) == self.fail_on:
@@ -25,6 +28,12 @@ class FakeStorage:
     def remove_files(self, paths: list[str]) -> None:
         self.removed.append(paths)
 
+    def insert_documents(self, rows: list[dict]) -> list[str]:
+        if self.fail_insert:
+            raise APIError({"code": "23514", "message": "check constraint violated"})
+        self.inserted.extend(rows)
+        return [f"doc-{i}" for i in range(len(rows))]
+
 
 @pytest.fixture(autouse=True)
 def clear_jobs():
@@ -33,10 +42,11 @@ def clear_jobs():
 
 @pytest.fixture
 def storage(monkeypatch):
-    def install(fail_on: int | None = None) -> FakeStorage:
-        fake = FakeStorage(fail_on)
+    def install(fail_on: int | None = None, fail_insert: bool = False) -> FakeRepository:
+        fake = FakeRepository(fail_on, fail_insert)
         monkeypatch.setattr(repository, "upload_file", fake.upload_file)
         monkeypatch.setattr(repository, "remove_files", fake.remove_files)
+        monkeypatch.setattr(repository, "insert_documents", fake.insert_documents)
         return fake
 
     return install
@@ -55,7 +65,38 @@ def test_upload_returns_job(client, storage):
     body = response.json()
     assert body["documentCount"] == 3
     assert body["status"] == "queued"
-    assert service._jobs[UUID(body["jobId"])] == {"status": "queued", "document_count": 3}
+    assert service._jobs[UUID(body["jobId"])] == {
+        "status": "queued",
+        "document_count": 3,
+        "document_ids": ["doc-0", "doc-1", "doc-2"],
+    }
+
+
+def test_upload_inserts_document_rows(client, storage):
+    fake = storage()
+
+    client.post(URL, files=[_file("검색 설계서.v2.pdf", b"12345"), _file("README.md", b"# a")])
+
+    pdf_row, md_row = fake.inserted
+    assert pdf_row == {
+        "title": "검색 설계서.v2",
+        "original_filename": "검색 설계서.v2.pdf",
+        "size_bytes": 5,
+        "storage_bucket": "documents",
+        "storage_path": fake.uploads[0][0],
+    }
+    assert (md_row["title"], md_row["storage_path"]) == ("README", fake.uploads[1][0])
+
+
+def test_upload_insert_failure_removes_stored_files(client, storage):
+    fake = storage(fail_insert=True)
+
+    response = client.post(URL, files=[_file("a.pdf"), _file("b.md")])
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "문서를 저장하지 못했습니다."}
+    assert fake.removed == [[path for path, _, _ in fake.uploads]]
+    assert service._jobs == {}
 
 
 def test_upload_stores_files_under_job(client, storage):

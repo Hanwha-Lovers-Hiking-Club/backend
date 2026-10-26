@@ -13,3 +13,9 @@ def upload_file(path: str, content: bytes, content_type: str) -> None:
 
 def remove_files(paths: list[str]) -> None:
     supabase.storage.from_(settings.SUPABASE_STORAGE_BUCKET).remove(paths)
+
+
+def insert_documents(rows: list[dict]) -> list[str]:
+    # 넣은 순서대로 생성된 documents.id를 돌려준다
+    result = supabase.table("documents").insert(rows).execute()
+    return [row["id"] for row in result.data]
