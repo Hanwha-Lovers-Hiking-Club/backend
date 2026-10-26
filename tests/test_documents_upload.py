@@ -69,6 +69,8 @@ def test_upload_returns_job(client, storage):
         "status": "queued",
         "document_count": 3,
         "document_ids": ["doc-0", "doc-1", "doc-2"],
+        "active_step": 0,
+        "progress": 16,
     }
 
 
