@@ -23,7 +23,7 @@
 
 ## 앞으로 할 일
 
-- [ ] 5. API-001 챗봇 SSE Mock `POST /api/chat/stream` (새 `chat` 도메인, 브랜치 `chat/add-stream-mock`)
+- [x] 5. API-001 챗봇 SSE Mock `POST /api/chat/stream` (새 `chat` 도메인, 브랜치 `chat/add-stream-mock`)
   - `app/domains/chat/` router/schemas/service 3분할로 만들고 main.py에 등록 (prefix `/chat` → 설계서 경로와 같음)
   - 요청 {message, history[]}, 이벤트 token → references → completed, 실패하면 error
   - Mock 답변은 함수 하나로 분리하고 응답에 Mock 표시 (나중에 RAG로 교체)
