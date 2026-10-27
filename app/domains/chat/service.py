@@ -4,6 +4,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi.sse import ServerSentEvent
@@ -15,8 +16,10 @@ from app.domains.chat.schemas import (
     ChatMessage,
     ChatReference,
     ChatReferencesEvent,
+    ChatSourceDocument,
     ChatTokenEvent,
 )
+from app.domains.knowledge_cards.schemas import CardEvidence, KnowledgeCard
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +31,7 @@ TOKEN_INTERVAL = 0.05
 MOCK_LABEL = "[Mock]"
 # DB에 없는 nil UUID라 실제 카드/문서와 겹치지 않는다
 MOCK_ID = UUID(int=0)
+MOCK_TIMESTAMP = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 
 async def _wait() -> None:
@@ -35,14 +39,53 @@ async def _wait() -> None:
 
 
 async def _retrieve_references(message: str, history: list[ChatMessage]) -> list[ChatReference]:
-    # mock: 실제로는 질문을 임베딩해 active 지식카드를 검색하고 근거(card_documents)를 붙인다
+    # mock: 실제로는 질문을 임베딩해 active 지식카드를 검색하고 근거(card_documents)를 붙인다.
+    # 카드 조회/변환은 knowledge_cards/service.py의 CARD_SELECT, _to_card와 같은 모양으로 맞춘다
+    evidence = CardEvidence(
+        id=MOCK_ID,
+        document_id=MOCK_ID,
+        document_title="Mock 문서",
+        original_filename="mock.md",
+        location="Mock 위치",
+        excerpt="Mock 근거 발췌문입니다.",
+    )
+    card = KnowledgeCard(
+        id=MOCK_ID,
+        title=f"{MOCK_LABEL} 테스트 지식카드",
+        summary="실제 검색 결과가 아닌 테스트 카드입니다.",
+        context="챗봇 API를 RAG 연결 전에 프론트와 연동하기 위한 Mock 데이터입니다.",
+        problem=None,
+        cause=None,
+        approach="검색과 답변 생성을 Mock 함수로 분리해 두고 나중에 교체합니다.",
+        rationale=None,
+        outcome=None,
+        lesson="Mock 응답은 실제 결과와 구분되도록 표시합니다.",
+        technologies=[],
+        keywords=[],
+        status="active",
+        quality_score=None,
+        last_verified_at=None,
+        verification_version=None,
+        project_name=None,
+        department=None,
+        project_date=None,
+        created_at=MOCK_TIMESTAMP,
+        updated_at=MOCK_TIMESTAMP,
+        evidences=[evidence],
+    )
     return [
         ChatReference(
-            card_id=MOCK_ID,
+            id=evidence.id,
+            type="knowledge-card",
+            label=card.title,
+            card=card,
             reason=f"{MOCK_LABEL} 실제 검색 결과가 아닌 테스트 근거입니다.",
-            document_id=MOCK_ID,
-            location="Mock 위치",
-            excerpt="Mock 근거 발췌문입니다.",
+            document=ChatSourceDocument(
+                id=evidence.document_id,
+                document_title=evidence.document_title,
+                location=evidence.location,
+                excerpt=evidence.excerpt,
+            ),
         )
     ]
 

@@ -47,20 +47,28 @@ def test_answer_is_marked_as_mock(client):
     assert "질문" in answer
 
 
-def test_references_use_camel_case(client):
+def test_references_match_frontend_chat_reference(client):
+    # 프론트 src/features/chat/types.ts의 ChatReference 모양
     response = client.post(URL, json={"message": "질문"})
 
-    references = dict(_events(response.text))["references"]
-    assert references == {
-        "items": [
-            {
-                "cardId": "00000000-0000-0000-0000-000000000000",
-                "reason": "[Mock] 실제 검색 결과가 아닌 테스트 근거입니다.",
-                "documentId": "00000000-0000-0000-0000-000000000000",
-                "location": "Mock 위치",
-                "excerpt": "Mock 근거 발췌문입니다.",
-            }
-        ]
+    [reference] = dict(_events(response.text))["references"]["items"]
+    assert set(reference) == {"id", "type", "label", "card", "reason", "document"}
+    assert reference["type"] == "knowledge-card"
+    assert reference["reason"].startswith("[Mock]")
+
+    card = reference["card"]
+    assert reference["label"] == card["title"]
+    assert card["title"].startswith("[Mock]")
+    assert {"projectName", "qualityScore", "createdAt", "evidences"} <= set(card)
+
+    [evidence] = card["evidences"]
+    assert {"documentId", "documentTitle", "originalFilename"} <= set(evidence)
+    assert reference["id"] == evidence["id"]
+    assert reference["document"] == {
+        "id": evidence["documentId"],
+        "documentTitle": evidence["documentTitle"],
+        "location": evidence["location"],
+        "excerpt": evidence["excerpt"],
     }
 
 

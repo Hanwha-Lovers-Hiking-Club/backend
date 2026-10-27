@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import Field
 
 from app.core.schemas import CamelModel
+from app.domains.knowledge_cards.schemas import KnowledgeCard
 
 
 class ChatMessage(CamelModel):
@@ -24,12 +25,26 @@ class ChatTokenEvent(CamelModel):
     content: str
 
 
-class ChatReference(CamelModel):
-    card_id: UUID
-    reason: str
-    document_id: UUID
+# 참조 하나 = 카드 하나 + 그 카드의 근거 하나. 모양은 프론트 ChatReference 타입을 따른다
+# 설계서 예시의 cardId/documentId 대신, 프론트가 다시 조회하지 않도록 카드 전체를 싣는다
+class ChatSourceDocument(CamelModel):
+    # documents.id
+    id: UUID
+    document_title: str
     location: str | None
     excerpt: str | None
+
+
+class ChatReference(CamelModel):
+    # card_documents.id (카드의 근거 행). 한 답변의 참조 목록 안에서 겹치지 않는다
+    id: UUID
+    type: Literal["knowledge-card"]
+    # 카드 제목. 답변 아래 참조 버튼에 표시된다
+    label: str
+    card: KnowledgeCard
+    # 이 카드를 고른 이유. 답변 생성 시 만들어지는 값이라 DB에 저장하지 않는다
+    reason: str
+    document: ChatSourceDocument
 
 
 class ChatReferencesEvent(CamelModel):
