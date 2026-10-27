@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local document pipeline instructions (keep the shared root CLAUDE.md tracked)
+/app/domains/documents/pipeline/CLAUDE.md
