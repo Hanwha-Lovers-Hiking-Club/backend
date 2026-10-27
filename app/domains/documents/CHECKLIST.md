@@ -5,16 +5,16 @@ LangGraph 기반 지식카드 추출 파이프라인. 하나씩 순서대로 구
 
 ## 0. 공통 계약 (노드보다 먼저 확정)
 
-- [ ] `state.py`: `IngestionState` 필드 정의 (노드 간 유일한 데이터 계약)
+- [x] `state.py`: `IngestionState` 필드 정의 (노드 간 유일한 데이터 계약)
   - 완료 기준: 7개 노드가 입출력으로 쓸 필드가 전부 들어있고, 필드 하나로 어떤 타입인지 설명 없이 알 수 있다.
-- [ ] `models.py`: LLM 구조화 출력 모델 정의 (`ExtractedElements`, `CardDraft`, `VerificationResult` 등)
+- [x] `models.py`: LLM 구조화 출력 모델 정의 (`ExtractedElements`, `CardDraft`, `VerificationResult` 등)
   - 완료 기준: extract/draft_card/verify 노드가 이 모델을 그대로 import해서 쓸 수 있다.
-- [ ] `llm.py`: LLM/임베딩 클라이언트 생성 함수
+- [x] `llm.py`: LLM/임베딩 클라이언트 생성 함수
   - 완료 기준: 노드에서 `get_llm()` 같은 함수 하나만 호출하면 되고, 모델/temperature는 여기서만 바꾸면 된다.
 
 ## 1. parse — 파일에서 텍스트 추출
 
-- [ ] pdf/docx/md/txt/xlsx 포맷별 텍스트 추출
+- [x] pdf/docx/md/txt/xlsx 포맷별 텍스트 추출
   - 완료 기준: 포맷별 샘플 파일 하나씩 넣었을 때 빈 문자열 없이 텍스트가 나온다.
 
 ## 2. chunk — 청크 분리 (근거 위치 포함)

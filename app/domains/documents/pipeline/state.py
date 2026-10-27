@@ -29,7 +29,11 @@ class Chunk(TypedDict):
     id: str  # f"{document_id}:{index}" 형태. extract 결과가 어떤 청크에서 왔는지 역추적용
     document_id: UUID
     text: str
-    location: str  # 근거 표시용 원문 내 위치. 예: "2장 · 답변 근거와 지식 연결"
+    # 근거 표시용 원문 내 위치. 예: "2장 · 답변 근거와 지식 연결"
+    # ponytail: parse 노드가 DoclingDocument(페이지/좌표 정보 있음)를 마크다운 문자열로 평평하게
+    # 만들어버려서, 섹션(헤딩) 단위까지만 가능하고 페이지 번호는 못 뽑는다. 페이지 번호가 필요해지면
+    # parse 노드가 DoclingDocument를 버리지 않고 state로 들고 다니게 바꿔야 한다.
+    location: str
 
 
 # 그래프 전체가 주고받는 state. graph.py가 job 1개당 1번 이 타입으로 invoke한다
