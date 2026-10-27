@@ -11,6 +11,10 @@ def upload_file(path: str, content: bytes, content_type: str) -> None:
     )
 
 
+def download_file(path: str) -> bytes:
+    return supabase.storage.from_(settings.SUPABASE_STORAGE_BUCKET).download(path)
+
+
 def remove_files(paths: list[str]) -> None:
     supabase.storage.from_(settings.SUPABASE_STORAGE_BUCKET).remove(paths)
 

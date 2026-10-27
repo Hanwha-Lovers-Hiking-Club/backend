@@ -22,6 +22,8 @@ ALLOWED_EXTENSIONS = {
     ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".md": "text/markdown",
+    ".txt": "text/plain",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
 MAX_FILE_SIZE_MB = 50
 MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
