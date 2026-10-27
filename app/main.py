@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.domains.agent.router import router as agent_router
+from app.domains.chat.router import router as chat_router
 from app.domains.documents.router import router as documents_router
 from app.domains.knowledge_cards.router import router as knowledge_cards_router
 
@@ -20,6 +21,7 @@ app.add_middleware(
 )
 
 app.include_router(agent_router, prefix="/api")
+app.include_router(chat_router, prefix="/api")
 app.include_router(documents_router, prefix="/api")
 app.include_router(knowledge_cards_router, prefix="/api")
 
