@@ -9,6 +9,7 @@ from app.domains.documents.pipeline.models import (
     KnowledgeCardDraft,
 )
 from app.domains.documents.pipeline.state import IngestionState
+from app.domains.documents.pipeline.verification.reset import reset_verification
 
 
 def _skip_reason(source):
@@ -39,7 +40,15 @@ async def draft_state(
                 instructions=prompt_text("draft_card"),
                 output_type=DraftProposal,
                 max_input_chars=max_input_chars,
-                payload={"experience_id": key, "extraction": source.model_dump(mode="json")},
+                payload={
+                    "experience_id": key,
+                    "extraction": source.model_dump(mode="json"),
+                    "retry_feedback": [
+                        item.model_dump(mode="json")
+                        for item in state.get("retry_feedback", [])
+                        if item.target_node == "draft_card" and item.experience_id == key
+                    ],
+                },
             )
             if proposal.draft is None:
                 reason = ("MODEL_DECLINED", proposal.skip_reason)
@@ -64,11 +73,21 @@ async def draft_state(
             for name in FACT_FIELDS[:-1]
         }
         all_refs = sorted(source.evidence_index)
-        lesson_refs = (
-            source.lesson.evidence_refs
-            if source.lesson.status in {"confirmed", "inferred"}
-            else sorted(set(source.approach.evidence_refs + source.outcome.evidence_refs))
-        )
+        if source.lesson.status == "confirmed" and text.lesson == source.lesson.value:
+            lesson_refs = source.lesson.evidence_refs
+        else:
+            # A generalized lesson may rely on the confirmed experience, not just a
+            # single lesson sentence. Keep those source links for the semantic gate.
+            lesson_refs = sorted(
+                {
+                    ref
+                    for name in FACT_FIELDS
+                    for fact in [getattr(source, name)]
+                    if fact.status == "confirmed"
+                    or (name == "lesson" and fact.status == "inferred")
+                    for ref in fact.evidence_refs
+                }
+            )
         field_refs.update(title=all_refs, summary=all_refs, lesson=list(lesson_refs))
         drafts.append(
             KnowledgeCardDraft(
@@ -89,4 +108,4 @@ async def draft_state(
             )
         )
     # Leave extraction_result intact; the verification gate needs the original assertions.
-    return {"drafts": drafts, "draft_skips": skipped}
+    return {**reset_verification(), "drafts": drafts, "draft_skips": skipped}

@@ -17,6 +17,7 @@ from app.domains.documents.pipeline.models import (
     ExtractionResult,
 )
 from app.domains.documents.pipeline.state import IngestionState
+from app.domains.documents.pipeline.verification.reset import reset_verification
 
 
 def experience_id(experience: ExtractedElements) -> str:
@@ -65,6 +66,11 @@ async def extract_state(
                 "section_path": chunk.section_path,
                 "source_warnings": document.warnings,
                 "blocks": [block.model_dump(mode="json") for block in chunk.blocks],
+                "retry_feedback": [
+                    item.model_dump(mode="json")
+                    for item in state.get("retry_feedback", [])
+                    if item.target_node == "extract"
+                ],
             },
         )
         for candidate in proposal.experiences:
@@ -80,6 +86,7 @@ async def extract_state(
                 seen.add(key)
                 experiences.append(bound)
     return {
+        **reset_verification(),
         "extraction_result": ExtractionResult(experiences=experiences),
         "drafts": [],
         "draft_skips": [],

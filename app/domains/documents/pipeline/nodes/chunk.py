@@ -3,10 +3,12 @@
 from app.domains.documents.pipeline.chunking import chunk_document
 from app.domains.documents.pipeline.models import ExtractionResult
 from app.domains.documents.pipeline.state import IngestionState
+from app.domains.documents.pipeline.verification.reset import reset_verification
 
 
 def chunk(state: IngestionState) -> dict:
     return {
+        **reset_verification(),
         "chunks": [
             item
             for document in state["documents"]

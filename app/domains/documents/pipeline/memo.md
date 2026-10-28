@@ -11,7 +11,7 @@
   `ExtractionResult`로 0~N개 독립 경험을 표현한다.
 - 4번의 형식별 파서, DocumentIR, 구조 기반 청킹, Parse/Normalize/Chunk 노드와 최소 State를 구현했다.
 - 5번 Extract/Draft 노드와 작성 모델, 근거 연결, 생략 사유, Ollama/Anthropic 비동기 어댑터를 구현했다.
-  전체 graph 연결과 Verification Gate/Embed/Save는 아직 구현하지 않았다.
+  6번 Verification Gate와 제한된 재처리 요청을 구현했다. 전체 graph 연결과 Embed/Save는 아직 구현하지 않았다.
 - `fake_function.py`에 개발용 `fake_save_cards`가 있다. DB에 저장하지 않는 독립적인 가짜 함수다.
   그래프·save 노드에는 아직 연결하지 않았다. 실제 서비스의 확정 계약이 아니다.
 - `knowledge_cards/service.py`에는 조회용 `list_cards`가 있으나 카드 생성/저장 함수는 없다.
@@ -22,7 +22,8 @@
 - `pyproject.toml`에 pdfplumber, python-docx, openpyxl, markdown-it-py를 추가했다.
   reportlab은 최소 PDF 테스트 문서를 만들기 위한 개발 의존성이다. 데이터셋 생성 기능은 없다.
   Anthropic SDK와 Ollama용 HTTP 클라이언트를 사용하며 LangChain·LangGraph는 아직 직접 의존성으로 등록하지 않았다.
-  `app/config.py`와 `.env.example`에 LLM 설정을 추가했다. 모델명은 기본값 없이 명시적으로 받는다.
+  `app/config.py`와 `.env.example`에 LLM 설정을 추가했다. 사용자 요청대로 Ollama/qwen3:14b·8b를 기본값으로 두며
+  공급자 변경 시 단계별 모델명도 변경한다. 검증 LLM 모델은 임의 기본값 없이 VERIFY_MODEL로 받는다.
 
 ## 3번 구현 — 내부 추출 스키마
 
@@ -67,7 +68,7 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
 - 여러 문서의 근거를 한 필드에 보존할 수 있다. 특정 파일 형식이나 GitHub 컬럼명을 가정하지 않는다.
 - 정규화가 전체 블록의 문자 구간과 evidence_id를 계산한다. ID는 문서·블록 내용에 기반해 재현 가능하다.
 
-모델의 검증 통과는 주장의 사실성을 입증하지 않는다. LLM 추출/작성은 연결했으며 의미 검증은 6번에서 구현한다.
+모델의 검증 통과는 주장의 사실성을 입증하지 않는다. 의미 검증의 실제 범위는 아래 6번을 따른다.
 필드별 근거의 영속 저장은 8번에서 결정하며, 현재 card_documents 구조를 임의 변경하지 않았다.
 
 ## 4번 구현 — Parse / Normalize / Chunk
@@ -118,7 +119,8 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
   표·코드·로그·문단 블록은 중간에서 자르지 않으며 첫 제목은 다음 블록과 함께 보관한다.
   기준을 넘는 블록은 oversized로 표시한다. 5번은 실제 요청 JSON과 지침의 문자 수로 별도 제한하며 잘라 보내지 않는다.
 - Parse/Normalize/Chunk를 재실행하면 그 이후의 오래된 결과를 초기화한다.
-  extraction_result/drafts/draft_skips를 초기화한다. 반면 Draft는 현재 extraction_result를 유지한다.
+  extraction_result/drafts/draft_skips와 이전 검증 판정/통과 목록을 초기화한다. 반면 Draft는 현재 extraction_result를 유지한다.
+  같은 작업의 verification_history/retry_feedback은 재처리 상한과 피드백을 위해 유지한다.
 - 현재 Parse 노드는 배치 중 하나가 실패하면 예외로 종료한다. 최종 작업의 부분 성공/SSE 정책은 8번에서 결정한다.
 - 기존 API 경로·응답, DB·SQL은 변경하지 않았다. 업로드/Storage/백그라운드/SSE 및 전체 그래프는 후속 범위다.
 
@@ -155,7 +157,7 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
 - confirmed/inferred 교훈 후보가 있거나, confirmed 접근과 결과가 모두 있어야 한다.
 - 부족하면 모델 호출 없이 DraftSkip에 경험 ID·생략 코드·사유·원래 추출 결과를 보존한다.
   모델도 draft=null 및 skip_reason을 반환해 작성을 생략할 수 있다.
-- 이 조건은 근거 없는 초안 작성을 줄이기 위한 기본 조건이며 6번 Verification Gate를 대신하지 않는다.
+- 이 조건은 근거 없는 초안 작성을 줄이기 위한 기본 조건이며 Verification Gate를 대신하지 않는다.
 
 ### 작성과 불확실성 보존
 
@@ -164,7 +166,13 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
   확정 본문에 넣지 않지만 source_extraction 스냅샷에는 상태·값·근거를 그대로 남긴다.
 - KnowledgeCardDraft에 source_extraction과 필드별 field_evidence_refs를 보존한다.
   도출하거나 다시 쓴 교훈은 lesson_status=inferred로 표시하며 기존 확정 교훈을 그대로 쓴 경우에만 confirmed다.
-- 이 표시는 구조적인 안전장치다. 제목/요약/교훈의 주장과 원문의 의미가 일치하는지는 6번에서 검사해야 한다.
+- 이 표시는 구조적인 안전장치다. 제목/요약/교훈의 주장과 원문의 의미 대조는 아래 6번을 따른다.
+- 5번 재검증에서 context~outcome의 근거 배열을 해당 원래 필드의 근거 배열과 일치하도록 보완했다.
+  존재하는 다른 근거 ID라는 이유만으로 잘못 연결된 근거를 허용하지 않는다.
+- 다시 쓴 교훈은 기존 교훈 문장뿐 아니라 confirmed 경험 필드의 근거도 보존한다.
+  원래 confirmed 교훈을 그대로 쓴 경우에는 그 교훈의 근거를 유지한다. 근거 추가가 의미 검증을 대체하지는 않는다.
+- 공급자 JSON Schema는 null/unknown/빈 배열까지 명시하도록 모든 속성을 required로 보낸다.
+  Python 내부 스키마의 기본값은 유지한다. 생략 때문에 실수로 빈 추출로 해석되는 가능성을 줄인다.
 - 초안은 status=draft다. 점수·등급·활성화 여부·가짜 저장 ID·검증 시각을 생성하지 않는다.
 - to_card_fields()는 기존 API/DB 본문 필드명만 반환하며 내부 근거/후보 메타데이터를 제외한다.
   DB ID·시각·근거 행 연결 및 선택 메타데이터는 실제 저장 계약에서 처리한다.
@@ -181,9 +189,9 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
 - Anthropic으로 바꿀 때는 LLM_PROVIDER=anthropic과 두 모델명을 claude-sonnet-5-5로 변경하고
   ANTHROPIC_API_KEY를 설정한다. LLM_BASE_URL은 Ollama 전용이며 Anthropic 키를 해당 주소로 보내지 않는다.
   API 키는 SecretStr로 관리하며 저장소에 올리지 않는다. 빈 입력/생략 결과는 클라이언트를 만들지 않는다.
-- VERIFY_RULES_ENABLED=true, VERIFY_LLM_ENABLED=false는 6번 Gate를 위한 설정이다.
-  규칙 검증 비활성화(false)는 설정 오류로 처리한다. 현재 Gate는 미구현이므로 플래그만으로 검증이 실행되지는 않는다.
-  LLM 검증을 켜는 기능·검증 모델 선택·품질 점수/사후 개선은 이번에 추가하지 않았다.
+- VERIFY_RULES_ENABLED=true는 필수이며 false는 설정 오류다. VERIFY_LLM_ENABLED=false가 기본이다.
+  true로 켜면 VERIFY_MODEL을 명시해야 한다. 검증도 같은 공급자를 사용하며 유료 모델로 자동 전환하지 않는다.
+  검증 모델 누락/호출 실패는 needs_review이고 pass로 대신 처리하지 않는다.
 - DOCUMENT_LLM_TIMEOUT_SECONDS=60, MAX_OUTPUT_TOKENS=4096, MAX_INPUT_CHARS=48000을 기본값으로 쓴다.
   뒤의 두 설정의 전체 이름은 DOCUMENT_LLM_MAX_OUTPUT_TOKENS와 DOCUMENT_LLM_MAX_INPUT_CHARS다.
   입력 문자 수는 토큰 한도가 아니며, 실제 요청 크기가 기준을 넘으면 INPUT_TOO_LARGE로 실패한다.
@@ -193,7 +201,7 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
   Ollama의 출력 제한은 num_predict, Anthropic은 max_tokens에 연결한다.
   앱에서 원문을 임의로 자르지 않는다. 로컬 모델의 컨텍스트 길이/메모리는 별도 실측해야 하며
   문자 수 상한이 Ollama의 토큰 한도나 서버 측 입력 처리까지 보장하지는 않는다.
-  SDK 자동 재시도·유료 API 자동 fallback은 없다. 재처리 제어는 6번에서 구현한다.
+  SDK 자동 재시도·유료 API 자동 fallback은 없다. 재처리 요청 제어는 아래 6번을 따른다.
 - 거절·미완료·빈 출력·잘못된 구조·API 오류를 성공으로 처리하지 않는다.
 - make_extract_node/make_draft_node로 클라이언트를 주입할 수 있다. 테스트는 가짜 클라이언트와 모의 HTTP를 사용한다.
   전체 StateGraph와 백그라운드/API/SSE 연결은 후속 작업이다.
@@ -202,6 +210,86 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
 공식 근거: [Ollama Structured Outputs](https://docs.ollama.com/capabilities/structured-outputs),
 [Anthropic Structured Outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs),
 [Claude Sonnet 5.5](https://platform.claude.com/docs/en/models/sonnet-5-5/overview).
+
+## 초기 목표 재점검 — 2026-10-28
+
+사용자 제공 「Lessons Learned 지식카드 파이프라인 개선 설계서」와 최신 확정 요구를 기준으로 대조했다.
+
+| 설계 목표 | 현재 판단 / 이번 보완 |
+|---|---|
+| 개발 경험 0~N개, 형식·고정 컬럼에 독립 | 유지. 청크 간 경험 자동 병합은 미구현이며 문맥 손실 가능성은 남음 |
+| Extract/Draft/최종 카드 분리 | 유지. Draft는 저장·활성화하지 않으며, Gate 통과 목록도 여전히 draft 객체임 |
+| 필드별 근거와 불확실성 보존 | 유지. 잘못 연결된 필드 근거를 거부하고 Gate에서 원본 대조 추가 |
+| 주요 주장/가설/충돌 확인 | 이전 5번만으로는 충족되지 않았음. 6번에 규칙 검사와 선택적 LLM 의미 검사 추가 |
+| Ollama/Anthropic 교체 | 최신 사용자 요청으로 바뀐 공급자 선택이며 허용된 변경. 임베딩 모델 교체를 뜻하지 않음 |
+| LLM 검증 없는 실행 | 초기 설계의 의미 검증 전체를 규칙으로 대체할 수 없음. 확신하지 못한 결과는 needs_review |
+| 문서 제목은 원래 파일명 | 파이프라인에서 유지. 공유 docs/schema.md의 'LLM 추출' 설명과의 차이는 여전히 담당자 확인 사항 |
+| 기술명 정규화 | 현재 원래 문자열/목록을 보존함. 별칭·오타 자동 통합을 구현했다고 주장하지 않음 |
+| API/DB 호환, 4중 임베딩, Save | 외부 계약은 변경하지 않음. 임베딩/저장/업로드·SSE 연결은 후속 7~8번 |
+| 3순위 품질 평가·자동 개선 | 점수/가중치/사후 개선/스케줄러 미구현 유지 |
+
+위의 최소 초안 조건, 규칙 모드의 보수적 보류, 작업 단위 재처리 상한은 현재 구현 정책이다.
+기존 명세가 세부 알고리즘까지 확정한 것으로 표현하지 않는다.
+
+## 6번 구현 — MVP Verification Gate
+
+| 파일 | 책임 |
+|---|---|
+| `verification/models.py` | VerificationResult/Issue, 옵션, 근거별 주장 판정, RetryRequest 내부 계약 |
+| `verification/structure_checker.py` | mutable/model_construct 입력 재검사, 필수 구조·최소 조건 |
+| `verification/evidence_checker.py` | 현재 Extract 스냅샷 및 실제 DocumentIR 문서/블록/위치/인용 구간 대조 |
+| `verification/consistency_checker.py` | 가설 강화·충돌·리터럴 일치, 선택적 LLM 의미 대조 |
+| `verification/retry.py` | 판정 우선순위, 입력 fingerprint와 작업 단위 재처리 상한 |
+| `verification/gate.py`, `nodes/verify.py` | 검사 호출과 경험별 결과 분리. 노드 본문은 검사 모듈을 호출 |
+| `verification/reset.py` | 상위 노드 재실행 시 오래된 검증 통과 목록 제거 |
+| `prompts/verify.md` | 원문과 주장·사실 상태 비교 지시. 점수·카드 활성화 지시 없음 |
+
+### 판정과 검사 범위
+
+- `pass`: 구조·최소 조건·원문 근거 검사와 선택한 일치 검사 방식에서 문제를 발견하지 않은 초안.
+  `verified_drafts`에만 넣는다. 자동으로 active로 변경하거나 저장하지 않는다.
+- `retry`: 수정 가능한 실패. issue에 code/check/field/reason/action/retry_node를 보존한다.
+- `reject`: 최소 문제 해결 정보 부족 등 생성 부적절. 통과/검토 목록에 넣지 않는다.
+- `needs_review`: 근거 충돌, 읽지 못한 원본, 의미 불확실, 검증 모델 오류/미설정, 재처리 상한/동일 입력.
+  `review_drafts`로 분리한다. 현재 DB CardStatus에 새 상태를 추가하지 않는다.
+- 여러 문제가 있으면 reject → needs_review → retry 순으로 보수적으로 판정한다.
+  재처리가 여러 단계에 걸치면 parse → normalize → chunk → extract → draft_card 중 앞 단계를 선택한다.
+- 근거는 실제 DocumentIR에서 ID/문서/블록/location/excerpt를 대조한다. 문자 구간은 선택값을 유지하며
+  있으면 Python 인덱스로 원문 구간을 검사한다. quote 자체는 공백·줄바꿈을 정규화하지 않는다.
+- 현재 Extract에 없는 스냅샷, 변조된 후보 ID, 유효하지 않은 필드별 근거 연결을 통과시키지 않는다.
+- 혼합 PDF 등의 읽기 경고는 검토 대상으로 보류한다. 자동 OCR/비전으로 재처리하지 않는다.
+
+### 규칙 모드와 LLM 모드의 차이
+
+- 기본 규칙 모드는 원문 전체/문장/줄 단위와 일치하는 주장만 리터럴 일치로 확인한다.
+  일치 검사에서 공백만 맞추며, 주변 가설/반박을 잘라 확정 문장으로 쓰는 경우를 보수적으로 보류한다.
+  기술명은 원문에 있는지를 확인한다. 실제 기술명 별칭 표준화나 임의 키워드 사실 검증은 수행하지 않는다.
+- 원문과 다르게 일반화한 제목·요약·교훈은 대개 needs_review다. 규칙 검사는 모든 자연어 의미,
+  원문에 명시되지 않은 모순, 모든 기술적 오류를 증명하는 알고리즘이 아니다. 이 제한을 숨기지 않는다.
+- LLM 모드는 코드 검사를 먼저 통과한 후 원본 블록과 필드별 주장·Extract 사실 상태를 대조한다.
+  supported/unsupported/uncertain/conflicted를 주장마다 받는다. 누락/중복/잘못된 근거 참조는 needs_review다.
+  가설을 제목/요약에서 사실로 반복하거나 확정 원인에 가설 표시가 남아 있는 경우는 규칙에서도 차단한다.
+- 명백한 주장 불일치는 담당 Extract/Draft 재처리 요청, 문맥 누락은 Chunk, 읽기 오류는 Parse 요청으로 보낸다.
+  충돌을 재시도로 임의 해소하지 않는다. LLM 판단 자체의 오류 가능성도 실제 문서로 별도 평가해야 한다.
+- 실제 모델 추론/비용·지연·정확도 평가는 이번 자동 테스트에 포함하지 않았다.
+
+### 재처리 및 다음 단계 연결
+
+- VERIFY_MAX_RETRIES 기본값 2, 허용 범위 0~5. 현재는 같은 작업 State 전체의 재처리 **요청 수** 상한이다.
+  독립 카드마다 무제한으로 예산이 새로 생기지 않는다. 배치 순서에 따라 예산 배분이 달라질 수 있다.
+- verification_history는 이미 발행한 요청이고 retry_requests는 이번 요청이다. 현재 초안/원본/Extract의
+  fingerprint가 같은 재처리는 재발행하지 않으며 같은 입력으로 LLM 검증도 반복 호출하지 않는다.
+- Extract/Draft는 대상과 경험이 맞는 retry_feedback을 입력으로 받는다. 피드백을 새 원문 사실로 취급하지 않는다.
+  실제 출력이 달라져야 의미 있는 재검사가 된다. 무작위 nonce나 시각만 바꿔 재처리로 간주하지 않는다.
+- Parse/Normalize/Chunk/Extract/Draft 재실행은 이전 verified_drafts/검증 판정을 지운다.
+  같은 작업의 이력/피드백은 유지한다. 새 작업은 새 State로 시작해야 한다.
+- **현재는 노드와 제한된 재처리 요청·피드백 계약까지 구현했다.** 전체 LangGraph 조건부 엣지,
+  작업 스케줄러, 요청을 실제 노드 실행으로 연결하는 부분은 아직 연결하지 않았다.
+  Chunk 요청만으로 문맥 확장 전략이 자동 생성되지는 않는다. 동일 결과이면 다음 판정에서 보류한다.
+- 후속 Embed/Save는 원래 drafts가 아닌 verified_drafts만 받아야 한다.
+  부분 저장 실패/영속 이력/카드 상태 매핑은 8번 담당 범위이며 이번에 DB를 변경하지 않는다.
+- Gate의 내부 판정/이력은 quality_score/last_verified_at/verification_version에 자동으로 쓰지 않는다.
+  3순위 Quality Evaluator/Card Improvement는 구현하지 않았다. 향후 검사 모듈과 결과 계약을 재사용할 수 있다.
 
 ## 어떤 입출력과 호출 계약이 미정인가
 
@@ -213,8 +301,8 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
 | documents service → graph/parse | 상위 service가 업로드 후 파이프라인 실행 | 문서 ID·원래 파일명 외에 Storage 위치, bytes, 로컬 경로 중 무엇을 전달할지; 호출 함수명과 async 여부 |
 | parse → normalize → chunk | DocumentIR와 원문 블록/근거 ID를 보존 | 기본 구조는 위와 같이 구현. OCR/비전, 복잡한 PDF 구조 및 청킹 고도화는 후속 |
 | chunk → extract | 청크와 원문 ID로 0~N개 경험 추출 | 실제 모델명/계정 설정과 토큰 한도, 청크 간 문맥 확장/경험 병합 정책 |
-| extract → draft_card | 경험별 KnowledgeCardDraft와 근거/상태 보존 | 기본 변환 구현. 후속 Gate의 주장 검증과 정보 부족 시 재처리/검토 정책 |
-| verify → graph/save | pass/retry/reject/needs_review 판정, pass만 다음 단계 | `VerificationResult` 상세, 원인별 재처리·한도, 판정과 카드 상태 매핑, 검토 대기 보관 |
+| extract → draft_card | 경험별 KnowledgeCardDraft와 근거/상태 보존, Gate 주장 대조 | 실제 모델의 의미 품질 실측, 문맥 보완·재처리 실행 연결 |
+| verify → graph/save | pass/retry/reject/needs_review, 원인별 요청·한도·피드백 구현 | 실제 LangGraph 재처리 연결, 판정과 DB 카드 상태 매핑, 검토 대기 영속 보관 |
 | save → knowledge_cards service | 다른 도메인의 service를 통해 카드와 근거 저장 | 진짜 함수명, 카드/근거를 한 번에 받을지, 단건/배치, 성공 시 ID·건수·실패 정보, 예외/async 여부, 원자성·재시도 중복 방지 책임 |
 | graph → documents service | 진행과 결과를 상위 진입점에 전달 | 최종 결과 필드, 일부 문서 실패·카드 0개 처리, 진행 이벤트 콜백/저장 방식, 작업 실행·구독 계약 |
 
@@ -229,7 +317,7 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
 - `problem`, `cause`, `approach`, `rationale`, `outcome` 중 하나 이상은 공백 아닌 값이어야 한다.
 - 카드당 근거 문서 하나 이상을 service가 보장한다. 한 문서의 여러 근거도 가능하다.
 - 카드 상태의 허용 값은 `draft`, `active`, `flagged`, `archived`다.
-- MVP Verification Gate의 판정과 카드 상태 매핑, 검증 실패 시 저장 여부는 6번에서 결정한다.
+- MVP Verification Gate 판정은 구현했다. DB 카드 상태 매핑과 검토 대기 영속 저장 여부는 8번에서 결정한다.
   판정과 DB의 카드 상태는 다른 개념이다. 품질 점수 계산·가중치·사후 자동 개선·정기 재평가는 3순위다.
 - quality_score/last_verified_at/verification_version은 기존 nullable 필드로 유지한다.
   실행하지 않은 3순위 평가 결과를 채우지 않는다. Gate 정보와의 관계는 후속 저장 계약에서 결정한다.

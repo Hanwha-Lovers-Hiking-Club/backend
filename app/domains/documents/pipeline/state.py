@@ -12,6 +12,7 @@ from app.domains.documents.pipeline.document import (
     ParseOptions,
 )
 from app.domains.documents.pipeline.models import DraftSkip, ExtractionResult, KnowledgeCardDraft
+from app.domains.documents.pipeline.verification.models import RetryRequest, VerificationResult
 
 
 class IngestionState(TypedDict, total=False):
@@ -26,3 +27,9 @@ class IngestionState(TypedDict, total=False):
     extraction_result: ExtractionResult
     drafts: list[KnowledgeCardDraft]
     draft_skips: list[DraftSkip]
+    verification_results: list[VerificationResult]
+    verified_drafts: list[KnowledgeCardDraft]
+    review_drafts: list[KnowledgeCardDraft]
+    retry_requests: list[RetryRequest]
+    retry_feedback: list[RetryRequest]
+    verification_history: list[RetryRequest]

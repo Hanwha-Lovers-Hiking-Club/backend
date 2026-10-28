@@ -199,6 +199,9 @@ class KnowledgeCardDraft(BaseModel):
             expected = fact.value if fact.status == "confirmed" else None
             if getattr(self, name) != expected:
                 raise ValueError(f"{name}: draft must preserve confirmed source values only")
+            expected_refs = fact.evidence_refs if expected is not None else []
+            if self.field_evidence_refs[name] != expected_refs:
+                raise ValueError(f"{name}: draft must preserve that field's source evidence")
         for name, refs in self.field_evidence_refs.items():
             if getattr(self, name) is not None and not refs:
                 raise ValueError(f"{name}: draft text requires source evidence")

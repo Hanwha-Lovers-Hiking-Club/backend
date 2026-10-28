@@ -13,6 +13,7 @@ from app.domains.documents.pipeline.llm import (
     configured_generator,
 )
 from app.domains.documents.pipeline.models import DraftProposal, ExtractionProposal
+from app.domains.documents.pipeline.verification.models import SemanticReport
 
 
 def response_body(content=None, *, stop_reason="end_turn"):
@@ -54,6 +55,7 @@ def invoke(handler, output_type=ExtractionProposal):
     [
         (ExtractionProposal, {"experiences": []}),
         (DraftProposal, {"draft": None, "skip_reason": "Not enough evidence"}),
+        (SemanticReport, {"assessments": []}),
     ],
 )
 def test_real_sdk_sends_strict_schema_and_parses_output_without_network(output_type, value):
@@ -78,6 +80,7 @@ def test_real_sdk_sends_strict_schema_and_parses_output_without_network(output_t
             assert "default" not in node
             if node.get("type") == "object":
                 assert node["additionalProperties"] is False
+                assert set(node["required"]) == node.get("properties", {}).keys()
             for child in node.values():
                 check_objects(child)
         elif isinstance(node, list):
@@ -193,7 +196,9 @@ def test_ollama_sends_schema_and_validates_same_models(output_type, value):
         body = json.loads(request.content)
         assert body["model"] == "qwen3:14b"
         assert body["stream"] is False
-        assert body["format"] == output_type.model_json_schema()
+        schema = body["format"]
+        assert set(schema["required"]) == schema["properties"].keys()
+        assert "default" not in json.dumps(schema)
         assert body["messages"][0]["role"] == "system"
         assert body["options"]["num_predict"] == 1000
         return httpx.Response(200, json=ollama_body(value))
@@ -246,10 +251,15 @@ def test_provider_factory_uses_separate_stage_models(monkeypatch, provider):
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("test-key"))
     monkeypatch.setattr(settings, "EXTRACT_MODEL", "test-extract-model")
     monkeypatch.setattr(settings, "DRAFT_MODEL", "test-draft-model")
+    monkeypatch.setattr(settings, "VERIFY_MODEL", "test-verify-model")
     monkeypatch.setattr(settings, "LLM_BASE_URL", "http://ollama.test:11434")
 
     async def run():
-        for stage, model in [("extract", "test-extract-model"), ("draft", "test-draft-model")]:
+        for stage, model in [
+            ("extract", "test-extract-model"),
+            ("draft", "test-draft-model"),
+            ("verify", "test-verify-model"),
+        ]:
             async with configured_generator(stage) as generator:
                 assert generator.model == model
                 if provider == "ollama":

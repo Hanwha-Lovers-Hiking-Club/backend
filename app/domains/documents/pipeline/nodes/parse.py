@@ -5,6 +5,7 @@ import asyncio
 from app.domains.documents.pipeline.models import ExtractionResult
 from app.domains.documents.pipeline.parsers import parse_document
 from app.domains.documents.pipeline.state import IngestionState
+from app.domains.documents.pipeline.verification.reset import reset_verification
 
 
 async def parse(state: IngestionState) -> dict:
@@ -13,6 +14,7 @@ async def parse(state: IngestionState) -> dict:
         return [parse_document(source, state.get("parse_options")) for source in state["sources"]]
 
     return {
+        **reset_verification(),
         "parsed_documents": await asyncio.to_thread(read_sources),
         "documents": [],
         "chunks": [],

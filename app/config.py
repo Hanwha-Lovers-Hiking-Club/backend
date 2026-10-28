@@ -18,9 +18,10 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: SecretStr | None = None
     EXTRACT_MODEL: str = "qwen3:14b"
     DRAFT_MODEL: str = "qwen3:8b"
-    # Reserved for step 6: configuration does not implement a Verification Gate.
+    VERIFY_MODEL: str | None = None
     VERIFY_RULES_ENABLED: bool = True
     VERIFY_LLM_ENABLED: bool = False
+    VERIFY_MAX_RETRIES: int = Field(default=2, ge=0, le=5)
     DOCUMENT_LLM_TIMEOUT_SECONDS: float = Field(default=60, gt=0)
     DOCUMENT_LLM_MAX_OUTPUT_TOKENS: int = Field(default=4096, gt=0)
     DOCUMENT_LLM_MAX_INPUT_CHARS: int = Field(default=48000, gt=0)

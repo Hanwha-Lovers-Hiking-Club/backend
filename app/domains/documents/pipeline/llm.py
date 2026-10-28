@@ -9,7 +9,7 @@ from anthropic import APIError, AsyncAnthropic, transform_schema
 from pydantic import BaseModel, ValidationError
 
 OutputT = TypeVar("OutputT", bound=BaseModel)
-GenerationStage = Literal["extract", "draft"]
+GenerationStage = Literal["extract", "draft", "verify"]
 
 
 class GenerationError(RuntimeError):
@@ -42,6 +42,25 @@ async def generate_structured(
     return output_type.model_validate(value.model_dump() if isinstance(value, BaseModel) else value)
 
 
+def output_schema(output_type: type[BaseModel]) -> dict:
+    """Ask providers for explicit values, including null/unknown and empty arrays."""
+    schema = output_type.model_json_schema()
+
+    def require_properties(node):
+        if isinstance(node, dict):
+            node.pop("default", None)
+            if node.get("type") == "object":
+                node["required"] = list(node.get("properties", {}))
+            for child in node.values():
+                require_properties(child)
+        elif isinstance(node, list):
+            for child in node:
+                require_properties(child)
+
+    require_properties(schema)
+    return schema
+
+
 class AnthropicStructuredGenerator:
     def __init__(self, client: AsyncAnthropic, model: str, max_output_tokens: int):
         self.client = client
@@ -58,7 +77,10 @@ class AnthropicStructuredGenerator:
                 system=instructions,
                 messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
                 output_config={
-                    "format": {"type": "json_schema", "schema": transform_schema(output_type)}
+                    "format": {
+                        "type": "json_schema",
+                        "schema": transform_schema(output_schema(output_type)),
+                    }
                 },
                 max_tokens=self.max_output_tokens,
             )
@@ -105,7 +127,7 @@ class OllamaStructuredGenerator:
                         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
                     ],
                     "stream": False,
-                    "format": output_type.model_json_schema(),
+                    "format": output_schema(output_type),
                     "options": {"num_predict": self.max_output_tokens, "temperature": 0},
                 },
             )
@@ -137,10 +159,14 @@ class OllamaStructuredGenerator:
 async def configured_generator(stage: GenerationStage):
     from app.config import settings
 
-    if stage not in ("extract", "draft"):
+    if stage not in ("extract", "draft", "verify"):
         raise GenerationError("LLM_NOT_CONFIGURED", "Unknown generation stage")
-    model = settings.EXTRACT_MODEL if stage == "extract" else settings.DRAFT_MODEL
-    if not model.strip():
+    model = {
+        "extract": settings.EXTRACT_MODEL,
+        "draft": settings.DRAFT_MODEL,
+        "verify": settings.VERIFY_MODEL,
+    }[stage]
+    if not model or not model.strip():
         raise GenerationError("LLM_NOT_CONFIGURED", "Set the model for this generation stage")
     if settings.LLM_PROVIDER == "ollama":
         async with httpx.AsyncClient(
