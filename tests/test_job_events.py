@@ -1,15 +1,15 @@
 # GET /api/documents/jobs/{job_id}/events (SSE) 테스트.
-# 작업 상태를 service._jobs에 직접 넣고, 대기(_wait)를 가짜로 바꿔 대기할 때마다 상태를 바꾼다.
+# 작업 상태를 jobs._jobs에 직접 넣고, 대기(_wait)를 가짜로 바꿔 대기할 때마다 상태를 바꾼다.
 from uuid import uuid4
 
 import pytest
 
-from app.domains.documents import service
+from app.domains.documents import jobs, service
 
 
 @pytest.fixture(autouse=True)
 def clear_jobs():
-    service._jobs.clear()
+    jobs._jobs.clear()
 
 
 def _url(job_id) -> str:
@@ -25,14 +25,14 @@ def _install_changes(monkeypatch, job_id, changes: list[dict]):
     remaining = list(changes)
 
     async def fake_wait():
-        service._jobs[job_id].update(remaining.pop(0))
+        jobs._jobs[job_id].update(remaining.pop(0))
 
     monkeypatch.setattr(service, "_wait", fake_wait)
 
 
 def test_streams_progress_until_completed(client, monkeypatch):
     job_id = uuid4()
-    service._jobs[job_id] = _job()
+    jobs._jobs[job_id] = _job()
     _install_changes(
         monkeypatch,
         job_id,
@@ -60,7 +60,7 @@ def test_streams_progress_until_completed(client, monkeypatch):
 
 def test_completed_job_sends_only_completed(client):
     job_id = uuid4()
-    service._jobs[job_id] = _job(status="completed", created_card_count=3)
+    jobs._jobs[job_id] = _job(status="completed", created_card_count=3)
 
     response = client.get(_url(job_id))
 
@@ -72,7 +72,7 @@ def test_completed_job_sends_only_completed(client):
 
 def test_failed_job_sends_failed(client):
     job_id = uuid4()
-    service._jobs[job_id] = _job(status="failed", message="문서를 읽지 못했습니다.")
+    jobs._jobs[job_id] = _job(status="failed", message="문서를 읽지 못했습니다.")
 
     response = client.get(_url(job_id))
 
