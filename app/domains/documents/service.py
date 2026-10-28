@@ -11,7 +11,7 @@ from postgrest.exceptions import APIError
 from storage3.exceptions import StorageException
 
 from app.config import settings
-from app.core.schemas import CamelModel
+from app.core.sse import to_sse
 from app.domains.documents import repository
 from app.domains.documents.schemas import JobCompletedEvent, JobFailedEvent, JobProgressEvent
 
@@ -123,18 +123,13 @@ async def _wait() -> None:
     await asyncio.sleep(POLL_INTERVAL)
 
 
-def _sse(event: str, payload: CamelModel) -> ServerSentEvent:
-    # FastAPI SSE는 모델을 alias 없이(snake_case) 직렬화해서, camelCase JSON 문자열로 직접 넘긴다
-    return ServerSentEvent(event=event, raw_data=payload.model_dump_json(by_alias=True))
-
-
 async def job_events(job_id: UUID) -> AsyncIterator[ServerSentEvent]:
     # 접속하자마자 현재 상태를 보내고(재연결해도 최신 상태부터), 이후엔 바뀔 때만 보낸다.
     # 지금은 메모리 dict를 주기적으로 확인한다. 저장소가 바뀌면 상태를 읽는 부분만 교체한다.
     last_sent = None
     while (job := _jobs.get(job_id)) is not None:
         if job["status"] == "completed":
-            yield _sse(
+            yield to_sse(
                 "completed",
                 JobCompletedEvent(
                     job_id=job_id,
@@ -144,11 +139,11 @@ async def job_events(job_id: UUID) -> AsyncIterator[ServerSentEvent]:
             )
             return
         if job["status"] == "failed":
-            yield _sse("failed", JobFailedEvent(job_id=job_id, message=job["message"]))
+            yield to_sse("failed", JobFailedEvent(job_id=job_id, message=job["message"]))
             return
 
         current = (job["active_step"], job["progress"])
         if current != last_sent:
-            yield _sse("progress", JobProgressEvent(active_step=current[0], progress=current[1]))
+            yield to_sse("progress", JobProgressEvent(active_step=current[0], progress=current[1]))
             last_sent = current
         await _wait()
