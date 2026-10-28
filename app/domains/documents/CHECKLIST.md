@@ -118,8 +118,16 @@ LangGraph 기반 지식카드 추출 파이프라인. 하나씩 순서대로 구
 
 ## 7. save — 저장
 
-- [ ] 검증 통과 + 임베딩까지 끝난 카드를 `knowledge_cards` 도메인 service 경유로 저장 (테이블 직접 접근 금지)
-  - 완료 기준: 저장 후 지식카드 페이지에서 바로 조회된다.
+- [x] 검증 통과 + 임베딩까지 끝난 카드를 `knowledge_cards` 도메인 service 경유로 저장 (테이블 직접 접근 금지)
+  - 완료 기준: 저장 후 지식카드 페이지에서 바로 조회된다. 실제 Supabase insert로 확인(테스트 후 정리).
+  - 가정(확정): `knowledge_cards/service.py`에 `create_card(card: dict, evidences: list[dict])` 신설.
+    documents 도메인은 pydantic 모델을 그대로 안 넘기고 plain dict로 변환해서 넘김(도메인 간 결합 최소화).
+  - 가정(확정): 저장 시 `status="active"`를 명시적으로 넣음. `list_cards`가 active만 필터링해서
+    보여주기 때문에, 명시 안 하면 DB 기본값(draft)으로 들어가 목록에 안 보임.
+  - 가정(확정): 카드 저장은 fail-fast — 하나 실패하면 즉시 `state["error"]`. 단, 이미 저장된
+    카드는 롤백 안 됨(카드마다 별도 insert라 묶어서 되돌릴 수 없음, 받아들이는 리스크로 기록).
+  - 참고: pgvector 컬럼은 PostgREST로 **읽을 때** `"[0,0,...]"` 문자열로 온다(리스트 아님) — insert는
+    리스트 그대로 넣으면 되지만, 나중에 임베딩을 다시 읽어야 할 일이 생기면 파싱이 필요함.
 
 ## 8. graph — 전체 연결
 

@@ -1,4 +1,4 @@
-# 지식카드 로직: Supabase 조회와 DB 행 -> 응답 모양 변환.
+# 지식카드 로직: Supabase 조회/저장과 DB 행 -> 응답 모양 변환.
 from fastapi import HTTPException
 from postgrest.exceptions import APIError
 
@@ -65,6 +65,18 @@ def _to_card(row: dict) -> dict:
         for evidence in card_documents
     ]
     return {**row, "evidences": evidences}
+
+
+def create_card(card: dict, evidences: list[dict]) -> str:
+    # documents 도메인(save 노드)이 이 함수를 거쳐서만 knowledge_cards/card_documents에 쓴다.
+    # card/evidences는 다른 도메인의 pydantic 모델이 아니라 plain dict로 받는다 — 두 도메인이
+    # 서로의 내부 타입을 몰라도 되게 하기 위함
+    result = supabase.table("knowledge_cards").insert(card).execute()
+    card_id = result.data[0]["id"]
+    if evidences:
+        rows = [{**evidence, "card_id": card_id} for evidence in evidences]
+        supabase.table("card_documents").insert(rows).execute()
+    return card_id
 
 
 async def list_cards(q: str, sort: CardSort, page: int, page_size: int) -> dict:
