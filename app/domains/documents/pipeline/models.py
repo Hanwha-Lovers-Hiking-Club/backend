@@ -19,6 +19,11 @@ class ExtractedElements(BaseModel):
     source_chunk_ids: list[str]
 
 
+# extract 노드의 LLM structured output 루트 타입. 리스트를 바로 루트로 못 받아서 감싸는 래퍼
+class ExtractedElementsBatch(BaseModel):
+    elements: list[ExtractedElements]
+
+
 # CardDraft.evidences의 원소 타입. draft_card 노드가 채운다
 class CardEvidenceDraft(BaseModel):
     document_id: UUID
