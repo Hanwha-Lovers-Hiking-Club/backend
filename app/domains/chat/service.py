@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi.sse import ServerSentEvent
 
-from app.core.schemas import CamelModel
+from app.core.sse import to_sse
 from app.domains.chat.schemas import (
     ChatCompletedEvent,
     ChatErrorEvent,
@@ -104,21 +104,16 @@ async def _generate_answer(
         await _wait()
 
 
-def _sse(event: str, payload: CamelModel) -> ServerSentEvent:
-    # FastAPI SSE는 모델을 alias 없이(snake_case) 직렬화해서, camelCase JSON 문자열로 직접 넘긴다
-    return ServerSentEvent(event=event, raw_data=payload.model_dump_json(by_alias=True))
-
-
 async def chat_stream(message: str, history: list[ChatMessage]) -> AsyncIterator[ServerSentEvent]:
     # token(여러 번) -> references -> completed 순서로 보낸다.
     # 스트림이 시작된 뒤엔 HTTP 상태코드를 바꿀 수 없어서, 실패는 error 이벤트로 알리고 끝낸다
     try:
         references = await _retrieve_references(message, history)
         async for token in _generate_answer(message, history, references):
-            yield _sse("token", ChatTokenEvent(content=token))
-        yield _sse("references", ChatReferencesEvent(items=references))
+            yield to_sse("token", ChatTokenEvent(content=token))
+        yield to_sse("references", ChatReferencesEvent(items=references))
     except Exception:
         logger.exception("챗봇 답변 생성 실패")
-        yield _sse("error", ChatErrorEvent(message=CHAT_FAILED_MESSAGE))
+        yield to_sse("error", ChatErrorEvent(message=CHAT_FAILED_MESSAGE))
         return
-    yield _sse("completed", ChatCompletedEvent())
+    yield to_sse("completed", ChatCompletedEvent())
