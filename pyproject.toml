@@ -7,11 +7,17 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "docling>=2.143.0",
     "fastapi>=0.143.1",
+    "langchain-core>=1.7.0",
+    "langchain-openai>=1.7.3",
+    "langgraph>=1.2.18",
     "pydantic-settings>=2.16.0",
     "python-dotenv>=1.2.4",
     "python-multipart>=0.0.32",
+    "semchunk>=3.2.5",
     "supabase>=2.32.0",
+    "tiktoken>=0.14.0",
     "uvicorn[standard]>=0.54.0",
 ]
 
