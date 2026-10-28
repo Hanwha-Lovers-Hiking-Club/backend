@@ -80,7 +80,24 @@ class VerificationResult(BaseModel):
     reason: str
 
 
-# verify 노드의 출력 타입. state.IngestionState.verified_cards에 쌓인다 (save 노드가 pass만 저장)
+# verify 노드의 출력 타입. state.IngestionState.verified_cards에 쌓인다
+# (embed 노드가 pass만 꺼내 씀)
 class VerifiedCard(BaseModel):
     draft: CardDraft
     verification: VerificationResult
+
+
+# embed 노드가 kure-v3로 만드는 4종 벡터. EmbeddedCard 안에 담겨서 쓰인다
+class CardEmbeddings(BaseModel):
+    content_embedding: list[float]
+    situation_embedding: list[float]
+    solution_embedding: list[float]
+    lesson_embedding: list[float]
+
+
+# embed 노드의 출력 타입. state.IngestionState.embedded_cards에 쌓인다 (save 노드가 그대로 저장)
+# "이 리스트에 들어있다 = verify를 통과하고 임베딩까지 끝난 카드"라는 뜻이라, verdict나 embeddings의
+# 존재 여부를 다시 확인할 필요가 없다
+class EmbeddedCard(BaseModel):
+    draft: CardDraft
+    embeddings: CardEmbeddings

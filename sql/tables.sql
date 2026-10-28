@@ -5,6 +5,8 @@
 -- anon/authenticated 키로는 접근 불가, 백엔드의 service role 키만 접근 가능(RLS 우회).
 -- 회원 시스템이 생기면 user_id 컬럼과 정책을 추가한다.
 
+create extension if not exists vector;
+
 -- ---------------------------------------------------------------
 -- documents: 원본 문서 메타. 실제 파일은 Supabase Storage에 있다.
 -- ---------------------------------------------------------------
@@ -54,6 +56,13 @@ create table if not exists knowledge_cards (
   verification_version text,
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now(),
+
+  -- 검색용 임베딩 4종 (임베딩 설계 가이드 참고). 차원 1024는 kure-v3 정확도 손실이 적은 선에서
+  -- pgvector 인덱스 상한선(2,000차원)보다 여유 있게 잡은 값. 인덱스는 아직 안 걺(필요해지면 추가)
+  content_embedding    vector(1024),
+  situation_embedding  vector(1024),
+  solution_embedding   vector(1024),
+  lesson_embedding     vector(1024),
 
   constraint knowledge_cards_conditional_fields_check check (
     coalesce(

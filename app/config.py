@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:3000"
 
     OPENAI_API_KEY: str
+    KURE_API_KEY: str
 
 
 settings = Settings()

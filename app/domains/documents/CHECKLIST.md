@@ -9,8 +9,10 @@ LangGraph 기반 지식카드 추출 파이프라인. 하나씩 순서대로 구
   - 완료 기준: 7개 노드가 입출력으로 쓸 필드가 전부 들어있고, 필드 하나로 어떤 타입인지 설명 없이 알 수 있다.
 - [x] `models.py`: LLM 구조화 출력 모델 정의 (`ExtractedElements`, `CardDraft`, `VerificationResult` 등)
   - 완료 기준: extract/draft_card/verify 노드가 이 모델을 그대로 import해서 쓸 수 있다.
-- [x] `llm.py`: LLM/임베딩 클라이언트 생성 함수
+- [x] `llm.py`: LLM 클라이언트 생성 함수
   - 완료 기준: 노드에서 `get_llm()` 같은 함수 하나만 호출하면 되고, 모델/temperature는 여기서만 바꾸면 된다.
+  - 참고: 임베딩(kure-v3) 클라이언트는 실제로는 `llm.py`가 아니라 6단계에서 만든 별도 파일
+    `pipeline/embedding.py`로 분리됐다.
 
 ## 1. parse — 파일에서 텍스트 추출
 
@@ -93,8 +95,8 @@ LangGraph 기반 지식카드 추출 파이프라인. 하나씩 순서대로 구
   (`content_embedding`, `situation_embedding`, `solution_embedding`, `lesson_embedding`)
   - 완료 기준: `sql/tables.sql` + 새 날짜 마이그레이션 파일 + `docs/schema.md` 같은 PR에서 같이 수정.
     (Supabase SQL Editor에 사용자가 직접 붙여넣어 실행 — 우리 코드가 자동 실행하지 않음)
-  - **TODO(사용자)**: `sql/2026-10-28_add_knowledge_card_embeddings.sql`을 Supabase SQL Editor에서
-    직접 실행해야 실제 DB에 반영됨. 코드는 아직 실행 안 한 상태.
+  - 완료: `sql/2026-10-28_add_knowledge_card_embeddings.sql`을 Supabase SQL Editor에서 직접
+    실행해서 실제 DB에도 반영됨.
 - [x] `state.py` 재정비: 지금 있는 `embeddings: list[list[float]]`(청크 단위, stale)를 제거하고
   카드 단위 4종 벡터를 담을 새 필드/타입으로 교체
   - 완료 기준: embed 노드의 입력(verified_cards 중 pass만)과 출력(4종 벡터 붙은 카드) 모양이
@@ -102,12 +104,17 @@ LangGraph 기반 지식카드 추출 파이프라인. 하나씩 순서대로 구
   - 가정(확정): `card_drafts`/`verified_cards`처럼 새 상자(`CardEmbeddings`, `EmbeddedCard`,
     `state.embedded_cards`)로 분리했다 — `VerifiedCard`에 embeddings를 선택 필드로 끼워넣지 않음.
     "embedded_cards에 있다 = verify 통과 + 임베딩 완료"라는 보증을 타입으로 표현하기 위함.
-- [ ] kure-v3 클라이언트 함수 (`llm.py`처럼 한 곳에 모음)
-  - 완료 기준: `KURE_API_KEY`를 `.env`/`config.py`에 추가. 아직 키 발급 전이라 실제 호출 테스트는
-    키 받은 뒤로 미룸.
-- [ ] `embed.py`: pass 판정 카드마다 카드 필드를 4가지 역할별로 조합해 kure-v3로 임베딩 생성
+- [x] kure-v3 클라이언트 함수 (`pipeline/embedding.py`, `llm.py`와 같은 패턴)
+  - 완료 기준: `KURE_API_KEY`를 `.env`/`config.py`에 추가. `embed_document(text)`로 실제 호출까지
+    확인(1024차원 벡터 정상 반환).
+  - 가정(확정): `input_type`은 항상 `"document"`로 고정(저장용). 사용자 질문 임베딩(`"query"`)은
+    챗봇 도메인의 일이라 여기서 안 다룸. 모델명은 `kure-v3`(https://kure.kullm.ai/ 확인).
+- [x] `embed.py`: pass 판정 카드마다 카드 필드를 4가지 역할별로 조합해 kure-v3로 임베딩 생성
   - 완료 기준: 조합 텍스트는 "임베딩 설계 가이드" 문서의 역할 명시 포맷을 따른다
     (예: `[상황 및 문제]\n\n환경:\n...\n\n발생한 문제:\n...`). 카드 1개 입력 시 4개 벡터가 전부 나온다.
+    실제 kure-v3 호출로 1024차원 벡터 4개 정상 반환 확인(테스트로 검증).
+  - 가정(확정): kure 호출은 카드 1개당 1번(4개 텍스트를 `embed_documents`로 배치). 빈 필드(None)는
+    조합 텍스트에서 섹션을 통째로 생략. `verified_cards`에서 `verdict == "pass"`만 걸러서 처리.
 
 ## 7. save — 저장
 

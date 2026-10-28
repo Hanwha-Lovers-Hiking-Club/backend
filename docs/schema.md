@@ -49,6 +49,14 @@
 | verification_version | text | X | 마지막 검증에 쓴 평가 기준/로직 버전 |
 | created_at | timestamptz | O | 생성 시각 |
 | updated_at | timestamptz | O | 수정 시각 (트리거로 자동 갱신) |
+| content_embedding | vector(1024) | X | 전체 경험 검색용 임베딩 (title~lesson 전체 조합) |
+| situation_embedding | vector(1024) | X | 상황·문제 검색용 임베딩 (context, problem 조합) |
+| solution_embedding | vector(1024) | X | 해결 경험 검색용 임베딩 (problem~outcome 조합) |
+| lesson_embedding | vector(1024) | X | 교훈 검색용 임베딩 (context, problem, lesson 조합) |
+
+차원 1024는 kure-v3(256~2048 지원, 차원을 낮춰도 정확도 손실이 적음)와 pgvector 인덱스 상한선
+(2,000차원 초과 시 HNSW/IVFFlat 인덱스 불가)을 함께 고려해 정함. 조합 텍스트 구성은 임베딩 설계
+가이드 참고. 인덱스는 아직 안 걺(카드 수/조회 패턴이 쌓이면 추가).
 
 제약:
 - `title`, `summary`, `context`, `lesson`은 빈 문자열 불가.
@@ -73,7 +81,6 @@
 ## 아직 DB에 없는 것 (필요해지면 추가)
 
 - 카드 유형(`type`): 추출 결과를 보고 분류가 정해지면 `type text` + CHECK 제약으로 추가.
-- 임베딩: 대상 필드와 모델이 정해진 뒤 추가.
 - 문서 요약(`documents.summary`): 필요해지면 추가.
 - 중복 업로드 정책: 같은 내용의 카드가 쌓이는 것은 현재 허용. 임베딩 도입 후 카드 유사도로 판별(`status = 'flagged'` 활용) 검토.
 - `project_id`: 프로젝트 테이블이 생기면 다시 추가.

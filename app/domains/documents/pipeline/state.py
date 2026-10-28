@@ -7,7 +7,12 @@
 from typing import TypedDict
 from uuid import UUID
 
-from app.domains.documents.pipeline.models import CardDraft, ExtractedElements, VerifiedCard
+from app.domains.documents.pipeline.models import (
+    CardDraft,
+    EmbeddedCard,
+    ExtractedElements,
+    VerifiedCard,
+)
 
 
 # state.IngestionState.documents의 원소 타입. service.py가 job 생성 시 채워서 넘긴다
@@ -24,7 +29,7 @@ class ParsedDocument(TypedDict):
     text: str
 
 
-# chunk 노드의 출력 타입. state.IngestionState.chunks/embeddings가 이 순서를 그대로 따른다
+# chunk 노드의 출력 타입. state.IngestionState.chunks에 쌓인다
 class Chunk(TypedDict):
     id: str  # f"{document_id}:{index}" 형태. extract 결과가 어떤 청크에서 왔는지 역추적용
     document_id: UUID
@@ -42,11 +47,11 @@ class IngestionState(TypedDict):
     documents: list[DocumentInput]
     parsed_documents: list[ParsedDocument]
     chunks: list[Chunk]
-    # chunks와 같은 순서로 1:1 대응하는 임베딩 벡터
-    embeddings: list[list[float]]
     extracted_elements: list[ExtractedElements]
     card_drafts: list[CardDraft]
     verified_cards: list[VerifiedCard]
+    # verified_cards 중 verdict == "pass"만 꺼내 임베딩까지 붙인 카드. save 노드가 이것만 저장한다
+    embedded_cards: list[EmbeddedCard]
     # documents/service.py의 STEP_PROGRESS 인덱스에 대응하는 그래프 진행 단계
     active_step: int
     error: str | None
