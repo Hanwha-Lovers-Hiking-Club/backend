@@ -6,6 +6,7 @@ from pathlib import Path
 
 import tiktoken
 
+from app.domains.documents.pipeline.chunk_formatting import format_chunks
 from app.domains.documents.pipeline.llm import get_llm
 from app.domains.documents.pipeline.models import ExtractedElementsBatch
 from app.domains.documents.pipeline.state import IngestionState
@@ -18,15 +19,8 @@ _tokenizer = tiktoken.get_encoding("cl100k_base")
 MAX_INPUT_TOKENS = 200_000
 
 
-def _format_chunks(state: IngestionState) -> str:
-    return "\n".join(
-        f'<chunk id="{c["id"]}" location="{c["location"]}">\n{c["text"]}\n</chunk>'
-        for c in state["chunks"]
-    )
-
-
 def extract(state: IngestionState) -> dict:
-    formatted = _format_chunks(state)
+    formatted = format_chunks(state["chunks"])
     if len(_tokenizer.encode(formatted)) > MAX_INPUT_TOKENS:
         return {"error": f"추출 입력이 너무 큽니다 (토큰 {MAX_INPUT_TOKENS}개 초과)"}
 

@@ -47,14 +47,29 @@ LangGraph 기반 지식카드 추출 파이프라인. 하나씩 순서대로 구
 
 ## 4. draft_card — 카드 초안 생성
 
-- [ ] 추출 요소로 카드 초안 생성 + 근거(location/excerpt) 연결 + "교훈" 필드 생성
-  - 완료 기준: 초안의 각 필드가 어떤 청크/위치에서 왔는지 역추적된다.
-  - 역할 범위: extract가 뽑은 `ExtractedElements`(그룹핑 + problem/cause/approach/rationale/outcome)를
-    받아서 title/summary/context/lesson/technologies/keywords/project_name/department/project_date를
-    채우고 근거를 붙여 `CardDraft`로 완성하는 게 이 노드의 일. 구조적 유효성 검사는 하지 않음(verify로 위임).
+- [x] 공용 포맷터 분리 (`chunk_formatting.py`): extract의 XML 태그 포맷팅을 재사용
+  - 완료 기준: extract.py와 draft_card.py가 같은 함수로 청크를 `<chunk id="..." location="...">`로 포맷한다.
+- [x] `models.py`: draft_card LLM 출력용 모델 추가 (`CardExcerptPick`, `CardDraftContent`)
+  - 완료 기준: problem/cause/approach/rationale/outcome은 extract 결과를 그대로 복사하므로 LLM에게
+    다시 안 시킨다. LLM은 title/summary/context/lesson/technologies/keywords/project_name/
+    department/project_date + 청크별 excerpt 후보(`excerpts: list[CardExcerptPick]`)만 생성.
+- [x] `draft_card.py`: 경험(ExtractedElements)마다 개별 LLM 호출 (배치 아님)
+  - 완료 기준: 카드 1개 = LLM 호출 1번. 각 호출의 입력은 그 경험의 source_chunk_ids로 조회한
+    원본 청크들(XML 포맷) + problem/cause/approach/rationale/outcome.
+  - 가정(확정): 지금은 순차 호출(for 루프, 병렬 아님). 카드 많아져서 느려지면 그때 asyncio.gather로
+    병렬화 재검토.
+- [x] `draft_card.py`: excerpt 검증 — LLM이 고른 발췌문이 원본 청크에 그대로 있는지 코드로 확인
+  - 완료 기준: LLM이 고른 excerpt가 해당 청크 텍스트의 부분 문자열이면 그대로 쓰고, 아니면(의역/변형)
+    그 청크의 원문 텍스트로 폴백한다. "원문에서 그대로 가져온 근거"라는 스키마 요구를 코드로 보장.
+- [x] `draft_card.py`: 조립 — LLM 결과 + extract 결과 + 청크 조회로 `CardDraft` 완성
+  - 완료 기준: 초안의 각 필드가 어떤 청크/위치에서 왔는지 역추적된다. document_id/location은
+    source_chunk_ids로 청크를 조회해 코드로 채움(LLM이 UUID를 만들어내지 않음).
+  - 역할 범위: 구조적 유효성 검사(필수 필드/근거 1개 이상)는 하지 않음 — verify로 위임.
 
 ## 5. verify — 검증
 
+- 역할 범위(확정): verify 노드는 판정(pass/rewrite/discard)만 내린다. `rewrite`일 때 draft_card로
+  돌아가는 재시도 루프는 verify의 일이 아니라 8단계 `graph.py`의 조건부 엣지가 처리한다.
 - [ ] (코드) 구조적 필수 조건 검사 — LLM 호출 전에 먼저
   - 완료 기준: `docs/schema.md`의 "구조적 필수 조건" 그대로: 1) title/summary/context/lesson 전부
     공백 아닌 값 있어야 함, 근거 1개 이상 있어야 함 2) problem/cause/approach/rationale/outcome 중

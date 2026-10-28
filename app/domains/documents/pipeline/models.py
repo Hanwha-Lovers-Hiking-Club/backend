@@ -24,6 +24,29 @@ class ExtractedElementsBatch(BaseModel):
     elements: list[ExtractedElements]
 
 
+# draft_card 노드가 LLM에게 "이 청크에서 어떤 문장을 근거 발췌문으로 쓸지" 고르게 할 때 쓰는 타입.
+# chunk_id가 실제로 존재하는지, excerpt가 그 청크 원문의 부분 문자열인지는 draft_card가 코드로
+# 검증한다
+class CardExcerptPick(BaseModel):
+    chunk_id: str
+    excerpt: str
+
+
+# draft_card 노드의 LLM structured output 타입. problem/cause/approach/rationale/outcome은
+# extract 결과를 그대로 복사해 쓰므로 여기서 다시 생성하지 않는다
+class CardDraftContent(BaseModel):
+    title: str
+    summary: str
+    context: str
+    lesson: str
+    technologies: list[str]
+    keywords: list[str]
+    project_name: str | None
+    department: str | None
+    project_date: date | None
+    excerpts: list[CardExcerptPick]
+
+
 # CardDraft.evidences의 원소 타입. draft_card 노드가 채운다
 class CardEvidenceDraft(BaseModel):
     document_id: UUID
