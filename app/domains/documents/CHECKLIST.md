@@ -70,24 +70,44 @@ LangGraph 기반 지식카드 추출 파이프라인. 하나씩 순서대로 구
 
 - 역할 범위(확정): verify 노드는 판정(pass/rewrite/discard)만 내린다. `rewrite`일 때 draft_card로
   돌아가는 재시도 루프는 verify의 일이 아니라 8단계 `graph.py`의 조건부 엣지가 처리한다.
-- [ ] (코드) 구조적 필수 조건 검사 — LLM 호출 전에 먼저
+- [x] (코드) 구조적 필수 조건 검사 — LLM 호출 전에 먼저
   - 완료 기준: `docs/schema.md`의 "구조적 필수 조건" 그대로: 1) title/summary/context/lesson 전부
     공백 아닌 값 있어야 함, 근거 1개 이상 있어야 함 2) problem/cause/approach/rationale/outcome 중
     최소 1개는 공백 아닌 값 있어야 함. 결정론적 코드 검사라 LLM 관여 없음 — 실패하면 LLM 호출 없이
     바로 `VerificationResult(verdict="discard", reason="구조적 필수 조건 미충족: ...")`로 끝남.
-- [ ] (LLM) 구조 통과한 초안만 맥락상 검증 — 통과 / 재작성 요청 / 폐기로 판정 (`models.VerificationResult` 사용)
+- [x] (LLM) 구조 통과한 초안만 맥락상 검증 — 통과 / 재작성 요청 / 폐기로 판정 (`models.VerificationResult` 사용)
   - 완료 기준: 의도적으로 부실한 초안을 넣으면 재작성 요청 또는 폐기로 판정된다.
   - 가정(확정): 구조 검사(코드)와 맥락 검사(LLM)를 같은 verify 노드 안에서 순서대로 실행한다
     (구조 검사가 싸고 확실해서 비싼 LLM 호출 전에 먼저 거른다 — extract의 토큰 안전장치와 같은 패턴).
+  - 가정(확정): LLM에게 CardDraft 필드 전체 + evidences(location/excerpt)를 보여줘서, 근거가
+    주장을 실제로 뒷받침하는지까지 판단하게 한다. 원본 청크 전체를 다시 조회하지는 않음(evidence의
+    excerpt로 충분하다고 판단, verify가 state["chunks"]에 의존하지 않도록).
 
 ## 6. embed — 지식카드 임베딩 생성 (통과한 카드만)
 
-- [ ] kure-v3 API로 카드 필드를 조합해 4종 임베딩 생성: `content_embedding`(전체),
-  `situation_embedding`(상황·문제), `solution_embedding`(해결), `lesson_embedding`(교훈)
-  - 완료 기준: 카드 1개 입력 시 4개 벡터가 전부 나온다. (조합 텍스트는 "임베딩 설계 가이드" 문서의
-    역할 명시 포맷을 따른다, 예: `[상황 및 문제]\n\n환경:\n...\n\n발생한 문제:\n...`)
-- [ ] DB 스키마: `knowledge_cards`에 임베딩 컬럼 4개 추가 (`docs/schema.md` + `sql/tables.sql` 같이 수정)
-  - 완료 기준: pgvector 컬럼 4개 생성, 차원은 kure-v3 호출 시 쓴 `dimensions`와 일치.
+- 가정(확정): 임베딩 차원은 **1024**. pgvector 인덱스(HNSW/IVFFlat)는 2,000차원까지만 걸 수 있어서
+  kure-v3 기본값(2048)은 못 쓰고, kure-v3는 차원을 낮춰도 정확도 손실이 크지 않다는 조사 결과를
+  바탕으로 2,000 상한선 대비 여유 있게 1024로 정함 (저장/연산 비용은 2048 대비 1/4, 2개 분야
+  요소가 섞인 복합 텍스트(`content_embedding` 등)의 표현력도 과하게 희생하지 않는 값).
+- [x] DB 마이그레이션: pgvector 익스텐션 + `knowledge_cards`에 `vector(1024)` 컬럼 4개 추가
+  (`content_embedding`, `situation_embedding`, `solution_embedding`, `lesson_embedding`)
+  - 완료 기준: `sql/tables.sql` + 새 날짜 마이그레이션 파일 + `docs/schema.md` 같은 PR에서 같이 수정.
+    (Supabase SQL Editor에 사용자가 직접 붙여넣어 실행 — 우리 코드가 자동 실행하지 않음)
+  - **TODO(사용자)**: `sql/2026-10-28_add_knowledge_card_embeddings.sql`을 Supabase SQL Editor에서
+    직접 실행해야 실제 DB에 반영됨. 코드는 아직 실행 안 한 상태.
+- [x] `state.py` 재정비: 지금 있는 `embeddings: list[list[float]]`(청크 단위, stale)를 제거하고
+  카드 단위 4종 벡터를 담을 새 필드/타입으로 교체
+  - 완료 기준: embed 노드의 입력(verified_cards 중 pass만)과 출력(4종 벡터 붙은 카드) 모양이
+    타입으로 명확히 드러난다.
+  - 가정(확정): `card_drafts`/`verified_cards`처럼 새 상자(`CardEmbeddings`, `EmbeddedCard`,
+    `state.embedded_cards`)로 분리했다 — `VerifiedCard`에 embeddings를 선택 필드로 끼워넣지 않음.
+    "embedded_cards에 있다 = verify 통과 + 임베딩 완료"라는 보증을 타입으로 표현하기 위함.
+- [ ] kure-v3 클라이언트 함수 (`llm.py`처럼 한 곳에 모음)
+  - 완료 기준: `KURE_API_KEY`를 `.env`/`config.py`에 추가. 아직 키 발급 전이라 실제 호출 테스트는
+    키 받은 뒤로 미룸.
+- [ ] `embed.py`: pass 판정 카드마다 카드 필드를 4가지 역할별로 조합해 kure-v3로 임베딩 생성
+  - 완료 기준: 조합 텍스트는 "임베딩 설계 가이드" 문서의 역할 명시 포맷을 따른다
+    (예: `[상황 및 문제]\n\n환경:\n...\n\n발생한 문제:\n...`). 카드 1개 입력 시 4개 벡터가 전부 나온다.
 
 ## 7. save — 저장
 
