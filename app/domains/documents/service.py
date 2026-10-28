@@ -12,7 +12,7 @@ from storage3.exceptions import StorageException
 
 from app.config import settings
 from app.core.sse import to_sse
-from app.domains.documents import repository
+from app.domains.documents import jobs, repository
 from app.domains.documents.schemas import JobCompletedEvent, JobFailedEvent, JobProgressEvent
 
 # 확장자 -> Storage에 저장할 Content-Type.
@@ -33,10 +33,6 @@ JOB_NOT_FOUND_DETAIL = "작업을 찾을 수 없습니다."
 STEP_PROGRESS = [16, 32, 48, 66, 84, 100]
 # 진행 상태 SSE가 작업 상태를 확인하는 간격(초)
 POLL_INTERVAL = 0.5
-
-# mock: 작업 상태를 서버 메모리에 둔다. 서버를 재시작하면 사라지고, 여러 대면 공유되지 않는다.
-# 작업 상태 저장소(테이블 등)가 정해지면 이 dict를 읽고 쓰는 부분만 교체한다.
-_jobs: dict[UUID, dict] = {}
 
 
 def _validate(file: UploadFile) -> None:
@@ -100,20 +96,23 @@ async def upload_documents(files: list[UploadFile]) -> dict:
         _remove_quietly([row["storage_path"] for row in rows])
         raise HTTPException(status_code=500, detail=STORE_FAILED_DETAIL)
 
-    _jobs[job_id] = {
-        "status": "queued",
-        "document_count": len(files),
-        # 파이프라인이 처리할 문서. 파이프라인 연결 시 여기서 꺼내 쓴다
-        "document_ids": document_ids,
-        "active_step": 0,
-        "progress": STEP_PROGRESS[0],
-    }
+    jobs.create_job(
+        job_id,
+        {
+            "status": "queued",
+            "document_count": len(files),
+            # 파이프라인이 처리할 문서. 파이프라인 연결 시 여기서 꺼내 쓴다
+            "document_ids": document_ids,
+            "active_step": 0,
+            "progress": STEP_PROGRESS[0],
+        },
+    )
     return {"job_id": job_id, "document_count": len(files), "status": "queued"}
 
 
 def get_job(job_id: UUID) -> dict:
     # router의 Depends로 써서 스트림이 시작되기 전에 404를 응답한다
-    job = _jobs.get(job_id)
+    job = jobs.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=JOB_NOT_FOUND_DETAIL)
     return job
@@ -127,7 +126,7 @@ async def job_events(job_id: UUID) -> AsyncIterator[ServerSentEvent]:
     # 접속하자마자 현재 상태를 보내고(재연결해도 최신 상태부터), 이후엔 바뀔 때만 보낸다.
     # 지금은 메모리 dict를 주기적으로 확인한다. 저장소가 바뀌면 상태를 읽는 부분만 교체한다.
     last_sent = None
-    while (job := _jobs.get(job_id)) is not None:
+    while (job := jobs.get_job(job_id)) is not None:
         if job["status"] == "completed":
             yield to_sse(
                 "completed",

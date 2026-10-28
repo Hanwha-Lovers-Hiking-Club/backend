@@ -6,7 +6,7 @@ import pytest
 from postgrest.exceptions import APIError
 from storage3.exceptions import StorageApiError
 
-from app.domains.documents import repository, service
+from app.domains.documents import jobs, repository, service
 
 URL = "/api/documents/upload"
 
@@ -37,7 +37,7 @@ class FakeRepository:
 
 @pytest.fixture(autouse=True)
 def clear_jobs():
-    service._jobs.clear()
+    jobs._jobs.clear()
 
 
 @pytest.fixture
@@ -65,7 +65,7 @@ def test_upload_returns_job(client, storage):
     body = response.json()
     assert body["documentCount"] == 3
     assert body["status"] == "queued"
-    assert service._jobs[UUID(body["jobId"])] == {
+    assert jobs._jobs[UUID(body["jobId"])] == {
         "status": "queued",
         "document_count": 3,
         "document_ids": ["doc-0", "doc-1", "doc-2"],
@@ -98,7 +98,7 @@ def test_upload_insert_failure_removes_stored_files(client, storage):
     assert response.status_code == 500
     assert response.json() == {"detail": "문서를 저장하지 못했습니다."}
     assert fake.removed == [[path for path, _, _ in fake.uploads]]
-    assert service._jobs == {}
+    assert jobs._jobs == {}
 
 
 def test_upload_stores_files_under_job(client, storage):
@@ -132,7 +132,7 @@ def test_upload_rejects_unsupported_type(client, storage):
     assert response.status_code == 400
     assert response.json() == {"detail": "지원하지 않는 파일 형식입니다: sheet.xlsx"}
     assert fake.uploads == []
-    assert service._jobs == {}
+    assert jobs._jobs == {}
 
 
 def test_upload_rejects_too_large_file(client, storage, monkeypatch):
@@ -144,7 +144,7 @@ def test_upload_rejects_too_large_file(client, storage, monkeypatch):
     assert response.status_code == 413
     assert response.json() == {"detail": "파일 크기가 50MB를 넘습니다: big.pdf"}
     assert fake.uploads == []
-    assert service._jobs == {}
+    assert jobs._jobs == {}
 
 
 def test_upload_failure_removes_stored_files(client, storage):
@@ -155,7 +155,7 @@ def test_upload_failure_removes_stored_files(client, storage):
     assert response.status_code == 500
     assert response.json() == {"detail": "문서를 저장하지 못했습니다."}
     assert fake.removed == [[fake.uploads[0][0]]]
-    assert service._jobs == {}
+    assert jobs._jobs == {}
 
 
 def test_upload_failure_on_first_file_removes_nothing(client, storage):
