@@ -82,6 +82,16 @@ def parse_docx(data: bytes):
 
 
 def parse_xlsx(data: bytes, options: ParseOptions):
+    # Reject oversized/sparse ranges before materializing every Cell object.
+    preview = load_workbook(BytesIO(data), read_only=True, data_only=False, keep_links=False)
+    try:
+        for sheet in preview.worksheets:
+            if sheet.max_row is None or sheet.max_column is None:
+                sheet.calculate_dimension(force=True)
+            if sheet.max_row * sheet.max_column > options.max_sheet_cells:
+                raise ParseError("SHEET_TOO_LARGE", f"Sheet exceeds cell limit: {sheet.title}")
+    finally:
+        preview.close()
     workbook = load_workbook(BytesIO(data), data_only=False, keep_links=False)
     blocks = []
     try:

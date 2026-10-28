@@ -11,7 +11,7 @@ from app.domains.documents.pipeline.document import (
     ParsedDocument,
     ParseOptions,
 )
-from app.domains.documents.pipeline.models import ExtractionResult
+from app.domains.documents.pipeline.models import DraftSkip, ExtractionResult, KnowledgeCardDraft
 
 
 class IngestionState(TypedDict, total=False):
@@ -24,3 +24,5 @@ class IngestionState(TypedDict, total=False):
     documents: list[DocumentIR]
     chunks: list[Chunk]
     extraction_result: ExtractionResult
+    drafts: list[KnowledgeCardDraft]
+    draft_skips: list[DraftSkip]

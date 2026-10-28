@@ -1,1 +1,181 @@
 # LLM/임베딩 클라이언트 생성을 한 곳에 모은다 (모델 교체, temperature 등 설정 관리).
+
+import json
+from contextlib import asynccontextmanager
+from typing import Literal, Protocol, TypeVar
+
+import httpx2 as httpx
+from anthropic import APIError, AsyncAnthropic, transform_schema
+from pydantic import BaseModel, ValidationError
+
+OutputT = TypeVar("OutputT", bound=BaseModel)
+GenerationStage = Literal["extract", "draft"]
+
+
+class GenerationError(RuntimeError):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+class StructuredGenerator(Protocol):
+    async def generate(
+        self, *, instructions: str, payload: dict, output_type: type[OutputT]
+    ) -> OutputT: ...
+
+
+async def generate_structured(
+    generator: StructuredGenerator,
+    *,
+    instructions: str,
+    payload: dict,
+    output_type: type[OutputT],
+    max_input_chars: int,
+) -> OutputT:
+    # Bound the serialized request, including metadata, without silently truncating sources.
+    if len(instructions) + len(json.dumps(payload, ensure_ascii=False)) > max_input_chars:
+        raise GenerationError("INPUT_TOO_LARGE", "Input exceeds the configured character limit")
+    value = await generator.generate(
+        instructions=instructions, payload=payload, output_type=output_type
+    )
+    # Revalidate even model instances supplied by another implementation/test double.
+    return output_type.model_validate(value.model_dump() if isinstance(value, BaseModel) else value)
+
+
+class AnthropicStructuredGenerator:
+    def __init__(self, client: AsyncAnthropic, model: str, max_output_tokens: int):
+        self.client = client
+        self.model = model
+        self.max_output_tokens = max_output_tokens
+
+    async def generate(
+        self, *, instructions: str, payload: dict, output_type: type[OutputT]
+    ) -> OutputT:
+        try:
+            # Inspect stop_reason before parsing: refusals/truncated output may not be JSON.
+            response = await self.client.messages.create(
+                model=self.model,
+                system=instructions,
+                messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
+                output_config={
+                    "format": {"type": "json_schema", "schema": transform_schema(output_type)}
+                },
+                max_tokens=self.max_output_tokens,
+            )
+        except APIError as exc:
+            raise GenerationError("LLM_API_ERROR", "Structured model request failed") from exc
+        if response.stop_reason == "refusal":
+            raise GenerationError("LLM_REFUSED", "The model refused this request")
+        if response.stop_reason != "end_turn":
+            raise GenerationError("LLM_INCOMPLETE", "The model response did not complete")
+        texts = [part.text for part in response.content if part.type == "text"]
+        if not texts or not any(text.strip() for text in texts):
+            raise GenerationError("LLM_EMPTY", "No structured model output was returned")
+        if len(texts) != 1:
+            raise GenerationError("LLM_INVALID_OUTPUT", "Expected one structured text block")
+        return validate_output(output_type, texts[0])
+
+
+def validate_output(output_type: type[OutputT], text: str) -> OutputT:
+    # Provider-side schema constraints never replace the original Pydantic validation.
+    try:
+        return output_type.model_validate_json(text)
+    except ValidationError as exc:
+        raise GenerationError(
+            "LLM_INVALID_OUTPUT", "Model returned invalid structured output"
+        ) from exc
+
+
+class OllamaStructuredGenerator:
+    def __init__(self, client: httpx.AsyncClient, model: str, max_output_tokens: int):
+        self.client = client
+        self.model = model
+        self.max_output_tokens = max_output_tokens
+
+    async def generate(
+        self, *, instructions: str, payload: dict, output_type: type[OutputT]
+    ) -> OutputT:
+        try:
+            response = await self.client.post(
+                "api/chat",
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {"role": "system", "content": instructions},
+                        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+                    ],
+                    "stream": False,
+                    "format": output_type.model_json_schema(),
+                    "options": {"num_predict": self.max_output_tokens, "temperature": 0},
+                },
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise GenerationError("LLM_API_ERROR", "Local model request failed") from exc
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise GenerationError("LLM_INVALID_OUTPUT", "Invalid local model response") from exc
+        if not isinstance(body, dict):
+            raise GenerationError("LLM_INVALID_OUTPUT", "Expected a model response object")
+        if body.get("error"):
+            raise GenerationError("LLM_API_ERROR", "Local model reported an error")
+        if body.get("done") is not True or body.get("done_reason") != "stop":
+            raise GenerationError("LLM_INCOMPLETE", "Local model response did not complete")
+        message = body.get("message")
+        if not isinstance(message, dict) or message.get("tool_calls"):
+            raise GenerationError("LLM_INVALID_OUTPUT", "Expected structured assistant text")
+        text = message.get("content")
+        if not isinstance(text, str):
+            raise GenerationError("LLM_INVALID_OUTPUT", "Expected structured assistant text")
+        if not text.strip():
+            raise GenerationError("LLM_EMPTY", "No structured model output was returned")
+        return validate_output(output_type, text)
+
+
+@asynccontextmanager
+async def configured_generator(stage: GenerationStage):
+    from app.config import settings
+
+    if stage not in ("extract", "draft"):
+        raise GenerationError("LLM_NOT_CONFIGURED", "Unknown generation stage")
+    model = settings.EXTRACT_MODEL if stage == "extract" else settings.DRAFT_MODEL
+    if not model.strip():
+        raise GenerationError("LLM_NOT_CONFIGURED", "Set the model for this generation stage")
+    if settings.LLM_PROVIDER == "ollama":
+        async with httpx.AsyncClient(
+            base_url=str(settings.LLM_BASE_URL).rstrip("/") + "/",
+            timeout=settings.DOCUMENT_LLM_TIMEOUT_SECONDS,
+        ) as client:
+            yield OllamaStructuredGenerator(
+                client, model.strip(), settings.DOCUMENT_LLM_MAX_OUTPUT_TOKENS
+            )
+        return
+    if settings.LLM_PROVIDER != "anthropic":
+        raise GenerationError("LLM_NOT_CONFIGURED", "Unsupported LLM provider")
+    key = settings.ANTHROPIC_API_KEY
+    if key is None or not key.get_secret_value().strip():
+        raise GenerationError("LLM_NOT_CONFIGURED", "Set ANTHROPIC_API_KEY")
+    async with AsyncAnthropic(
+        api_key=key.get_secret_value().strip(),
+        timeout=settings.DOCUMENT_LLM_TIMEOUT_SECONDS,
+        max_retries=0,
+    ) as client:
+        yield AnthropicStructuredGenerator(
+            client, model.strip(), settings.DOCUMENT_LLM_MAX_OUTPUT_TOKENS
+        )
+
+
+class ConfiguredGenerator:
+    """Lazy default. Empty/insufficient input does not require keys or create a client."""
+
+    def __init__(self, stage: GenerationStage):
+        self.stage = stage
+
+    async def generate(
+        self, *, instructions: str, payload: dict, output_type: type[OutputT]
+    ) -> OutputT:
+        async with configured_generator(self.stage) as generator:
+            return await generator.generate(
+                instructions=instructions, payload=payload, output_type=output_type
+            )

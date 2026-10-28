@@ -305,12 +305,15 @@ def test_upstream_node_retries_clear_stale_extractions_without_mutating_original
     state = {
         "sources": [source(tmp_path, "name.txt", b"Some observation")],
         "extraction_result": extraction,
+        "drafts": ["stale"],
+        "draft_skips": ["stale"],
     }
     state.update(asyncio.run(parse(state)))
     state.update(normalize(state))
     state.update(chunk(state))
     assert state["chunks"][0].blocks[0].evidence_id in state["documents"][0].evidence_index
     assert state["extraction_result"].experiences == []
+    assert state["drafts"] == state["draft_skips"] == []
     assert extraction.experiences[0].cause.status == "hypothesis"
 
 
@@ -330,3 +333,37 @@ def test_parse_node_uses_a_worker_thread(tmp_path, monkeypatch):
     result = asyncio.run(module.parse({"sources": [source(tmp_path, "a.txt", b"Some text")]}))
     assert result["parsed_documents"]
     assert threads and threads[0] != threading.get_ident()
+
+
+def test_xlsx_limit_is_checked_before_full_workbook_load(tmp_path, monkeypatch):
+    from app.domains.documents.pipeline.parsers import office
+
+    original = office.load_workbook
+    modes = []
+
+    def observed(*args, **kwargs):
+        modes.append(kwargs.get("read_only", False))
+        return original(*args, **kwargs)
+
+    workbook = Workbook()
+    workbook.active["Z100"] = "Sparse far-away cell"
+    output = BytesIO()
+    workbook.save(output)
+    monkeypatch.setattr(office, "load_workbook", observed)
+    with pytest.raises(ParseError, match="cell limit"):
+        parse_document(
+            source(tmp_path, "a.xlsx", output.getvalue()), ParseOptions(max_sheet_cells=100)
+        )
+    assert modes == [True]
+
+
+def test_mixed_pdf_marks_whitespace_only_pages_as_unreadable(tmp_path):
+    output = BytesIO()
+    pdf = canvas.Canvas(output)
+    pdf.drawString(40, 700, "Readable evidence")
+    pdf.showPage()
+    pdf.drawString(40, 700, "   ")
+    pdf.showPage()
+    pdf.save()
+    parsed = parse_document(source(tmp_path, "mixed.pdf", output.getvalue()))
+    assert "TEXT_UNAVAILABLE:p.2" in parsed.warnings

@@ -21,6 +21,11 @@ NonBlankText = Annotated[str, Field(strict=True, min_length=1), AfterValidator(_
 EvidenceId = NonBlankText
 
 
+def _explicit_status_schema(schema: dict) -> None:
+    # Python can default to unknown; the LLM wire schema asks for an explicit status.
+    schema.pop("default", None)
+
+
 class EvidenceRef(BaseModel):
     """원문 블록의 연속된 인용 구간. 문자열을 읽거나 바꾸는 파서가 아니다.
 
@@ -63,7 +68,7 @@ class ExtractedField(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     value: NonBlankText | None = None
-    status: FactStatus = "unknown"
+    status: FactStatus = Field(default="unknown", json_schema_extra=_explicit_status_schema)
     evidence_refs: list[EvidenceId] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -79,12 +84,8 @@ class ExtractedField(BaseModel):
         return self
 
 
-class ExtractedElements(BaseModel):
-    """One independent experience; field metadata survives drafting in pipeline state.
-
-    Evidence IDs are local keys in evidence_index, not card_documents row IDs.
-    Reference existence is checked here; source truth is checked by the MVP gate.
-    """
+class ExtractedExperienceFields(BaseModel):
+    """LLM output fields only. The model never generates source records or coordinates."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -97,6 +98,11 @@ class ExtractedElements(BaseModel):
     lesson: ExtractedField = Field(default_factory=ExtractedField)
     technologies: list[NonBlankText] = Field(default_factory=list)
     keywords: list[NonBlankText] = Field(default_factory=list)
+
+
+class ExtractedElements(ExtractedExperienceFields):
+    """One independent experience with its code-owned evidence registry."""
+
     evidence_index: dict[EvidenceId, EvidenceRef] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -117,3 +123,100 @@ class ExtractionResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     experiences: list[ExtractedElements] = Field(default_factory=list)
+
+
+class ExtractionProposal(BaseModel):
+    """Structured LLM response. Evidence registry is attached and validated by code."""
+
+    model_config = ConfigDict(extra="forbid")
+    experiences: list[ExtractedExperienceFields] = Field(default_factory=list)
+
+
+class DraftText(BaseModel):
+    """Only fields which require writing. Factual body fields are copied by code."""
+
+    model_config = ConfigDict(extra="forbid")
+    title: NonBlankText
+    summary: NonBlankText
+    lesson: NonBlankText
+    keywords: list[NonBlankText] = Field(default_factory=list)
+
+
+class DraftProposal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    draft: DraftText | None = None
+    skip_reason: NonBlankText | None = None
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> Self:
+        if (self.draft is None) == (self.skip_reason is None):
+            raise ValueError("provide either draft or skip_reason")
+        return self
+
+
+class KnowledgeCardDraft(BaseModel):
+    """Unverified card plus the immutable-by-convention extraction snapshot for the gate.
+
+    experience_id is an internal reproducible candidate key, not a saved card row ID.
+    No quality evaluation or activation is performed at this stage.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    experience_id: NonBlankText
+    source_extraction: ExtractedElements
+    field_evidence_refs: dict[NonBlankText, list[EvidenceId]]
+    lesson_status: Literal["confirmed", "inferred"]
+    title: NonBlankText
+    summary: NonBlankText
+    context: NonBlankText
+    problem: NonBlankText | None = None
+    cause: NonBlankText | None = None
+    approach: NonBlankText | None = None
+    rationale: NonBlankText | None = None
+    outcome: NonBlankText | None = None
+    lesson: NonBlankText
+    technologies: list[NonBlankText] = Field(default_factory=list)
+    keywords: list[NonBlankText] = Field(default_factory=list)
+    status: Literal["draft"] = "draft"
+
+    @model_validator(mode="after")
+    def validate_source_contract(self) -> Self:
+        expected_fields = {"title", "summary", *FACT_FIELDS}
+        if self.field_evidence_refs.keys() != expected_fields:
+            raise ValueError("draft must retain evidence links for every narrative field")
+        if self.technologies != self.source_extraction.technologies:
+            raise ValueError("draft must preserve extracted technologies")
+        expected_lesson_status = (
+            "confirmed"
+            if self.source_extraction.lesson.status == "confirmed"
+            and self.lesson == self.source_extraction.lesson.value
+            else "inferred"
+        )
+        if self.lesson_status != expected_lesson_status:
+            raise ValueError("a derived or rewritten lesson must remain inferred")
+        for name in FACT_FIELDS[:-1]:
+            fact = getattr(self.source_extraction, name)
+            expected = fact.value if fact.status == "confirmed" else None
+            if getattr(self, name) != expected:
+                raise ValueError(f"{name}: draft must preserve confirmed source values only")
+        for name, refs in self.field_evidence_refs.items():
+            if getattr(self, name) is not None and not refs:
+                raise ValueError(f"{name}: draft text requires source evidence")
+            if set(refs) - self.source_extraction.evidence_index.keys():
+                raise ValueError("draft references unknown evidence")
+        return self
+
+    def to_card_fields(self) -> dict:
+        """Body fields with existing API/DB names; no synthetic IDs, dates or scores."""
+        return self.model_dump(
+            mode="json",
+            exclude={"experience_id", "source_extraction", "field_evidence_refs", "lesson_status"},
+        )
+
+
+class DraftSkip(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    experience_id: NonBlankText
+    code: NonBlankText
+    reason: NonBlankText
+    source_extraction: ExtractedElements

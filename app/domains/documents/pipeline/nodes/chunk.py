@@ -13,4 +13,6 @@ def chunk(state: IngestionState) -> dict:
             for item in chunk_document(document, state.get("chunk_options"))
         ],
         "extraction_result": ExtractionResult(),
+        "drafts": [],
+        "draft_skips": [],
     }

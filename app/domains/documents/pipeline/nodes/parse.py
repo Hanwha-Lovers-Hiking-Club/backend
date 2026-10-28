@@ -17,4 +17,6 @@ async def parse(state: IngestionState) -> dict:
         "documents": [],
         "chunks": [],
         "extraction_result": ExtractionResult(),
+        "drafts": [],
+        "draft_skips": [],
     }

@@ -10,7 +10,8 @@
 - `models.py`에 3번 작업의 `EvidenceRef`, `ExtractedField`, `ExtractedElements`를 구현했다.
   `ExtractionResult`로 0~N개 독립 경험을 표현한다.
 - 4번의 형식별 파서, DocumentIR, 구조 기반 청킹, Parse/Normalize/Chunk 노드와 최소 State를 구현했다.
-  전체 graph 연결과 실제 Extract/Draft/Verify/Embed/Save 실행은 아직 구현하지 않았다.
+- 5번 Extract/Draft 노드와 작성 모델, 근거 연결, 생략 사유, Ollama/Anthropic 비동기 어댑터를 구현했다.
+  전체 graph 연결과 Verification Gate/Embed/Save는 아직 구현하지 않았다.
 - `fake_function.py`에 개발용 `fake_save_cards`가 있다. DB에 저장하지 않는 독립적인 가짜 함수다.
   그래프·save 노드에는 아직 연결하지 않았다. 실제 서비스의 확정 계약이 아니다.
 - `knowledge_cards/service.py`에는 조회용 `list_cards`가 있으나 카드 생성/저장 함수는 없다.
@@ -20,8 +21,8 @@
 - DB 필드가 정해져 있는 것과 함수가 받을 입력·반환값이 정해져 있는 것은 다르다.
 - `pyproject.toml`에 pdfplumber, python-docx, openpyxl, markdown-it-py를 추가했다.
   reportlab은 최소 PDF 테스트 문서를 만들기 위한 개발 의존성이다. 데이터셋 생성 기능은 없다.
-  LangChain·LangGraph·OpenAI SDK는 아직 직접 의존성으로 등록하지 않았다.
-  `app/config.py`에도 LLM/파싱 설정은 아직 없다. 기획 기술과 준비된 실행 환경을 구분한다.
+  Anthropic SDK와 Ollama용 HTTP 클라이언트를 사용하며 LangChain·LangGraph는 아직 직접 의존성으로 등록하지 않았다.
+  `app/config.py`와 `.env.example`에 LLM 설정을 추가했다. 모델명은 기본값 없이 명시적으로 받는다.
 
 ## 3번 구현 — 내부 추출 스키마
 
@@ -39,9 +40,9 @@
 `evidence_index: dict[str, EvidenceRef]`가 근거를 소유하고 필드는 해당 맵의 ID를 참조한다.
 공유 근거를 여러 필드가 참조할 수 있다. 존재하지 않거나 공백인 근거 ID는 스키마 단계에서 거부한다.
 근거 인덱스와 좌표는 파서/정규화 코드가 제공하고, 후속 LLM은 제공받은 근거 ID를 선택하도록 연결한다.
-이전 태그 객체형 내부 모델은 미커밋 단계이며 영속 데이터가 없다. 새 모델에 조용히 변환/폐기하지 않고 거부한다.
+초기 태그 객체형 내부 모델은 영속화하지 않았다. 현재 문자열 배열 이외의 형태를 조용히 변환/폐기하지 않고 거부한다.
 기존 공개 API/DB의 문자열 배열은 그대로 유지한다.
-최종 카드의 title/summary 생성과 값 변환은 5번 draft_card 범위이며 아직 구현하지 않았다.
+title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 아래 5번에서 구현했다.
 
 ### 사실 상태와 기본 검증
 
@@ -66,7 +67,7 @@
 - 여러 문서의 근거를 한 필드에 보존할 수 있다. 특정 파일 형식이나 GitHub 컬럼명을 가정하지 않는다.
 - 정규화가 전체 블록의 문자 구간과 evidence_id를 계산한다. ID는 문서·블록 내용에 기반해 재현 가능하다.
 
-이번 모델의 검증 통과는 주장의 사실성을 입증하지 않는다. LLM 호출과 의미 검증은 아직 연결하지 않았다.
+모델의 검증 통과는 주장의 사실성을 입증하지 않는다. LLM 추출/작성은 연결했으며 의미 검증은 6번에서 구현한다.
 필드별 근거의 영속 저장은 8번에서 결정하며, 현재 card_documents 구조를 임의 변경하지 않았다.
 
 ## 4번 구현 — Parse / Normalize / Chunk
@@ -99,6 +100,8 @@
 - DOCX: 문단/표를 본문 순서로 읽는다. 제목·코드 스타일, 병합 셀 원점과 중첩 표를 보존한다. 페이지 번호는 만들지 않는다.
 - XLSX: 시트명·셀 범위·행 번호·열 좌표·병합 범위·수식·링크를 보존한다.
   빈 행으로 표 구간을 나누며 고정 컬럼명이나 첫 행의 의미를 가정하지 않는다. 수식은 실행하지 않는다.
+  4번 재검증에서 크기 제한 검사 전 전체 Cell 객체를 적재하던 부분을 수정했다.
+  읽기 전용 미리보기로 시트 범위를 먼저 검사하고 제한 안에서만 전체 구조를 읽는다.
 - TXT: UTF-8(BOM 포함) 후 CP949를 시도하며 문단·표시된 섹션·로그와 줄 순서를 보존한다.
 - 표의 text는 셀을 탭/줄바꿈으로 표현한 추출 뷰다. 원래 셀 값과 좌표도 metadata에 보존한다.
   인용 검증은 이 표현 방식과 원본 위치를 고려해야 한다.
@@ -107,14 +110,15 @@
 
 - 전체가 텍스트 없는 PDF는 TEXT_UNAVAILABLE로 실패한다. OCR/비전·이미지 설명은 아직 구현하지 않는다.
   혼합 PDF는 읽지 못한 페이지와 미전사 이미지 경고를 보존한다. 후속 Gate가 이를 무시해서는 안 된다.
+  공백 글자만 있는 페이지도 읽을 내용이 없는 것으로 표시한다.
 - 빈 파일/콘텐츠, 잘못된 형식/인코딩, 손상 파일, 읽을 수 없는 경로는 사유를 구분한다.
 - ParseOptions의 기본 로컬 제한은 파일 50MiB, Office 확장 데이터 200MiB, 시트 범위 200,000셀이다.
   호출자가 변경할 수 있으며, 외부 업로드 API의 합의된 제한이라는 뜻은 아니다.
 - ChunkOptions.target_chars의 기본값은 6000자다. 토큰 한도가 아니라 조정 가능한 소프트 기준이다.
   표·코드·로그·문단 블록은 중간에서 자르지 않으며 첫 제목은 다음 블록과 함께 보관한다.
-  기준을 넘는 블록은 oversized로 표시한다. 후속 Extract가 처리 기준을 정하기 전 자동 LLM 호출하지 않는다.
+  기준을 넘는 블록은 oversized로 표시한다. 5번은 실제 요청 JSON과 지침의 문자 수로 별도 제한하며 잘라 보내지 않는다.
 - Parse/Normalize/Chunk를 재실행하면 그 이후의 오래된 결과를 초기화한다.
-  반면 Draft는 현재 extraction_result의 사실 상태와 근거를 유지해야 하며 5번에서 연결/검증한다.
+  extraction_result/drafts/draft_skips를 초기화한다. 반면 Draft는 현재 extraction_result를 유지한다.
 - 현재 Parse 노드는 배치 중 하나가 실패하면 예외로 종료한다. 최종 작업의 부분 성공/SSE 정책은 8번에서 결정한다.
 - 기존 API 경로·응답, DB·SQL은 변경하지 않았다. 업로드/Storage/백그라운드/SSE 및 전체 그래프는 후속 범위다.
 
@@ -122,6 +126,82 @@
 [python-docx](https://python-docx.readthedocs.io/en/latest/api/document.html),
 [openpyxl](https://openpyxl.readthedocs.io/en/stable/api/openpyxl.reader.excel.html),
 [markdown-it-py](https://markdown-it-py.readthedocs.io/en/latest/using.html).
+
+## 5번 구현 — Extract / Draft Card 분리
+
+| 모듈 | 책임 |
+|---|---|
+| `extraction.py`, `nodes/extract.py` | 청크마다 0~N개 독립 경험을 추출하고 코드 소유의 근거를 연결 |
+| `drafting.py`, `nodes/draft_card.py` | 경험별 초안 또는 생략 결과 작성. 실제 저장·활성화는 하지 않음 |
+| `llm.py` | 교체 가능한 StructuredGenerator와 Ollama/Anthropic 구조화 출력 어댑터, 단계별 모델·오류·클라이언트 수명 관리 |
+| `prompts/extract.md`, `prompts/draft_card.md` | 추출과 작성 지시문. 원문 안의 지시문은 데이터로 취급 |
+| `models.py` | LLM 응답용 Proposal, 근거가 연결된 ExtractedElements, KnowledgeCardDraft, DraftSkip |
+
+### 추출과 근거 연결
+
+- LLM 출력은 ExtractedExperienceFields 목록이다. evidence_index나 위치를 모델에게 생성시키지 않는다.
+  JSON Schema의 동적 근거 맵을 전송하지 않고 코드가 원본 DocumentIR의 근거를 붙인다.
+- 청크가 원본 블록과 같은지, 인용 ID가 해당 청크에 있는지 검사한다. 모르는 근거로 원본을 새로 만들지 않는다.
+- 같은 청크/완전히 같은 추출 결과의 반복만 제거한다. 유사 경험의 의미적 병합·기존 카드 중복 관리는 구현하지 않는다.
+- experience_id는 추출 내용과 근거로 만든 재현 가능한 후보 키다.
+  같은 payload에서 재현되며 LLM 출력이 달라지는 재실행까지 DB 중복을 방지한다는 뜻은 아니다.
+  실제 저장 멱등성은 8번에서 job/경험 단위 저장 계약과 함께 구현한다.
+- 한 청크에서 여러 경험을 반환할 수 있고 문서의 결과는 경험 목록으로 수집한다.
+  서로 다른 청크의 불완전한 경험을 자동 병합하지 않는다. 문맥 부족은 후속 재처리 정책에서 다룬다.
+
+### 초안 작성 전 최소 조건 — 현재 구현 선택
+
+- 추출에서 confirmed로 표시된 context와 조건부 본문 5개 중 하나 이상의 confirmed 값이 필요하다.
+- confirmed/inferred 교훈 후보가 있거나, confirmed 접근과 결과가 모두 있어야 한다.
+- 부족하면 모델 호출 없이 DraftSkip에 경험 ID·생략 코드·사유·원래 추출 결과를 보존한다.
+  모델도 draft=null 및 skip_reason을 반환해 작성을 생략할 수 있다.
+- 이 조건은 근거 없는 초안 작성을 줄이기 위한 기본 조건이며 6번 Verification Gate를 대신하지 않는다.
+
+### 작성과 불확실성 보존
+
+- LLM은 title/summary/lesson/keywords만 작성한다. 기술 목록과 context~outcome은 코드가 연결한다.
+- context~outcome은 confirmed 추출값만 그대로 복사한다. unknown/hypothesis/inferred/conflicted 값은
+  확정 본문에 넣지 않지만 source_extraction 스냅샷에는 상태·값·근거를 그대로 남긴다.
+- KnowledgeCardDraft에 source_extraction과 필드별 field_evidence_refs를 보존한다.
+  도출하거나 다시 쓴 교훈은 lesson_status=inferred로 표시하며 기존 확정 교훈을 그대로 쓴 경우에만 confirmed다.
+- 이 표시는 구조적인 안전장치다. 제목/요약/교훈의 주장과 원문의 의미가 일치하는지는 6번에서 검사해야 한다.
+- 초안은 status=draft다. 점수·등급·활성화 여부·가짜 저장 ID·검증 시각을 생성하지 않는다.
+- to_card_fields()는 기존 API/DB 본문 필드명만 반환하며 내부 근거/후보 메타데이터를 제외한다.
+  DB ID·시각·근거 행 연결 및 선택 메타데이터는 실제 저장 계약에서 처리한다.
+- Draft는 원래 State.extraction_result를 변경하지 않는다. 초안은 별도 복사본을 소유한다.
+  노드를 재실행하면 현재 결과를 교체하며 이전 초안 목록에 무조건 추가하지 않는다.
+
+### 모델 연결과 검증 범위
+
+- LLM_PROVIDER=ollama 또는 anthropic으로 공급자를 선택한다. Extract는 EXTRACT_MODEL,
+  Draft는 DRAFT_MODEL을 읽으며 파이프라인/State/근거 계약은 동일하다. 모델·클라이언트는 State에 넣지 않는다.
+- 사용자 요청대로 실제 로컬 .env에는 LLM_PROVIDER=ollama, LLM_BASE_URL=http://localhost:11434,
+  EXTRACT_MODEL=qwen3:14b, DRAFT_MODEL=qwen3:8b를 반영했다. 다른 환경에는 .env가 공유되지 않는다.
+  Ollama 서버 실행과 두 모델의 pull은 별도이며 이번 작업에서 자동 설치·다운로드·추론하지 않았다.
+- Anthropic으로 바꿀 때는 LLM_PROVIDER=anthropic과 두 모델명을 claude-sonnet-5-5로 변경하고
+  ANTHROPIC_API_KEY를 설정한다. LLM_BASE_URL은 Ollama 전용이며 Anthropic 키를 해당 주소로 보내지 않는다.
+  API 키는 SecretStr로 관리하며 저장소에 올리지 않는다. 빈 입력/생략 결과는 클라이언트를 만들지 않는다.
+- VERIFY_RULES_ENABLED=true, VERIFY_LLM_ENABLED=false는 6번 Gate를 위한 설정이다.
+  규칙 검증 비활성화(false)는 설정 오류로 처리한다. 현재 Gate는 미구현이므로 플래그만으로 검증이 실행되지는 않는다.
+  LLM 검증을 켜는 기능·검증 모델 선택·품질 점수/사후 개선은 이번에 추가하지 않았다.
+- DOCUMENT_LLM_TIMEOUT_SECONDS=60, MAX_OUTPUT_TOKENS=4096, MAX_INPUT_CHARS=48000을 기본값으로 쓴다.
+  뒤의 두 설정의 전체 이름은 DOCUMENT_LLM_MAX_OUTPUT_TOKENS와 DOCUMENT_LLM_MAX_INPUT_CHARS다.
+  입력 문자 수는 토큰 한도가 아니며, 실제 요청 크기가 기준을 넘으면 INPUT_TOO_LARGE로 실패한다.
+- Ollama는 /api/chat의 format에 JSON Schema를 보내고 stream=false로 받는다.
+  Anthropic은 Messages API의 output_config.format에 SDK가 변환한 스키마를 보낸다.
+  두 공급자의 출력 모두 원래 Pydantic 모델로 다시 검증한다. 원문은 user 입력 JSON으로 지침과 분리한다.
+  Ollama의 출력 제한은 num_predict, Anthropic은 max_tokens에 연결한다.
+  앱에서 원문을 임의로 자르지 않는다. 로컬 모델의 컨텍스트 길이/메모리는 별도 실측해야 하며
+  문자 수 상한이 Ollama의 토큰 한도나 서버 측 입력 처리까지 보장하지는 않는다.
+  SDK 자동 재시도·유료 API 자동 fallback은 없다. 재처리 제어는 6번에서 구현한다.
+- 거절·미완료·빈 출력·잘못된 구조·API 오류를 성공으로 처리하지 않는다.
+- make_extract_node/make_draft_node로 클라이언트를 주입할 수 있다. 테스트는 가짜 클라이언트와 모의 HTTP를 사용한다.
+  전체 StateGraph와 백그라운드/API/SSE 연결은 후속 작업이다.
+- 실제 유료 API 실행 및 실제 문서에 대한 의미 품질 평가는 이번 검증에 포함하지 않았다.
+
+공식 근거: [Ollama Structured Outputs](https://docs.ollama.com/capabilities/structured-outputs),
+[Anthropic Structured Outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs),
+[Claude Sonnet 5.5](https://platform.claude.com/docs/en/models/sonnet-5-5/overview).
 
 ## 어떤 입출력과 호출 계약이 미정인가
 
@@ -132,8 +212,8 @@
 |---|---|---|
 | documents service → graph/parse | 상위 service가 업로드 후 파이프라인 실행 | 문서 ID·원래 파일명 외에 Storage 위치, bytes, 로컬 경로 중 무엇을 전달할지; 호출 함수명과 async 여부 |
 | parse → normalize → chunk | DocumentIR와 원문 블록/근거 ID를 보존 | 기본 구조는 위와 같이 구현. OCR/비전, 복잡한 PDF 구조 및 청킹 고도화는 후속 |
-| chunk → extract | 청크와 원문 ID로 구성 요소 추출 | 실제 LLM 호출·프롬프트·경험 구분, oversized 처리와 모델 토큰 한도 |
-| extract → draft_card | 추출 요소를 카드 초안으로 구성 | 내부 추출 스키마는 위와 같이 구현. `CardDraft`와 최종 카드 변환 정책, 여러 경험을 구분/묶는 단위는 5번에서 결정 |
+| chunk → extract | 청크와 원문 ID로 0~N개 경험 추출 | 실제 모델명/계정 설정과 토큰 한도, 청크 간 문맥 확장/경험 병합 정책 |
+| extract → draft_card | 경험별 KnowledgeCardDraft와 근거/상태 보존 | 기본 변환 구현. 후속 Gate의 주장 검증과 정보 부족 시 재처리/검토 정책 |
 | verify → graph/save | pass/retry/reject/needs_review 판정, pass만 다음 단계 | `VerificationResult` 상세, 원인별 재처리·한도, 판정과 카드 상태 매핑, 검토 대기 보관 |
 | save → knowledge_cards service | 다른 도메인의 service를 통해 카드와 근거 저장 | 진짜 함수명, 카드/근거를 한 번에 받을지, 단건/배치, 성공 시 ID·건수·실패 정보, 예외/async 여부, 원자성·재시도 중복 방지 책임 |
 | graph → documents service | 진행과 결과를 상위 진입점에 전달 | 최종 결과 필드, 일부 문서 실패·카드 0개 처리, 진행 이벤트 콜백/저장 방식, 작업 실행·구독 계약 |

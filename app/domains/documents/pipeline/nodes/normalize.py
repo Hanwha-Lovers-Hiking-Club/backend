@@ -10,4 +10,6 @@ def normalize(state: IngestionState) -> dict:
         "documents": [normalize_document(parsed) for parsed in state["parsed_documents"]],
         "chunks": [],
         "extraction_result": ExtractionResult(),
+        "drafts": [],
+        "draft_skips": [],
     }

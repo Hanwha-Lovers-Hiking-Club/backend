@@ -23,7 +23,7 @@ def parse_pdf(data: bytes):
         page_count = len(document.pages)
         for page in document.pages:
             page_number = page.page_number
-            if not page.chars:
+            if not any(char["text"].strip() for char in page.chars):
                 warnings.append(f"TEXT_UNAVAILABLE:p.{page_number}")
                 page.close()
                 continue
