@@ -7,6 +7,7 @@ from app.domains.documents.pipeline.execution import next_step, retry_target
 from app.domains.documents.pipeline.nodes.build_embedding_texts import build_embedding_texts
 from app.domains.documents.pipeline.nodes.chunk import chunk
 from app.domains.documents.pipeline.nodes.draft_card import draft_card
+from app.domains.documents.pipeline.nodes.embed import embed
 from app.domains.documents.pipeline.nodes.extract import extract
 from app.domains.documents.pipeline.nodes.finish import finish
 from app.domains.documents.pipeline.nodes.initialize import initialize
@@ -25,6 +26,7 @@ def build_graph(
     draft_node=draft_card,
     verify_node=verify,
     initialize_node=initialize,
+    embed_node=embed,
     checkpointer=None,
     interrupt_before=None,
 ):
@@ -42,6 +44,7 @@ def build_graph(
         "prepare_retry": prepare_retry,
         "finish": finish,
         "build_embedding_texts": build_embedding_texts,
+        "embed": embed_node,
     }.items():
         builder.add_node(name, node)
     for source, target in [
@@ -55,7 +58,8 @@ def build_graph(
         ("draft_card", "verify"),
         ("verify", "settle"),
         ("finish", "build_embedding_texts"),
-        ("build_embedding_texts", END),
+        ("build_embedding_texts", "embed"),
+        ("embed", END),
     ]:
         builder.add_edge(source, target)
     builder.add_conditional_edges(

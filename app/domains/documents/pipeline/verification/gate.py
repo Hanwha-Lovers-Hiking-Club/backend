@@ -108,6 +108,8 @@ async def verify_state(
             review.append(draft.model_copy(deep=True))
     return {
         "embedding_texts": [],
+        "embeddings": [],
+        "embedding_usage": [],
         "verification_results": results,
         "verified_drafts": admitted,
         "review_drafts": review,

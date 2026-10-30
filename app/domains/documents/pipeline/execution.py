@@ -25,6 +25,8 @@ def initialize(state):
             state.get("embedding_text_options", EmbeddingTextOptions())
         ),
         "embedding_texts": [],
+        "embeddings": [],
+        "embedding_usage": [],
         "all_parsed_documents": [],
         "all_documents": [],
         "all_chunks": [],
@@ -188,6 +190,8 @@ def prepare_retry(state):
         "active_retry": work,
         "retry_route": target,
         "embedding_texts": [],
+        "embeddings": [],
+        "embedding_usage": [],
         "sources": sources,
         "parsed_documents": parsed,
         "documents": docs,

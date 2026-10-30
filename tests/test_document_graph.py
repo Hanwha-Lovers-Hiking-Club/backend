@@ -7,7 +7,11 @@ import pytest
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import InMemorySaver
 
-from app.domains.documents.pipeline.devtools.demo import DemoGenerator, get_demo_graph
+from app.domains.documents.pipeline.devtools.demo import (
+    DemoGenerator,
+    get_demo_graph,
+    skip_demo_embedding,
+)
 from app.domains.documents.pipeline.devtools.web import app as viewer_app
 from app.domains.documents.pipeline.graph import build_graph
 from app.domains.documents.pipeline.llm import GenerationError
@@ -68,6 +72,7 @@ def sources(tmp_path):
 
 def graph_for(model, **kwargs):
     return build_graph(
+        embed_node=skip_demo_embedding,
         extract_node=make_extract_node(model),
         draft_node=make_draft_node(model),
         verify_node=make_verify_node(
@@ -143,6 +148,7 @@ def test_unchanged_draft_stops_without_paying_for_another_verification(sources):
         return await make_draft_node(model)({**state, "retry_feedback": []})
 
     graph = build_graph(
+        embed_node=skip_demo_embedding,
         extract_node=make_extract_node(model),
         draft_node=unchanged_writer,
         verify_node=make_verify_node(
@@ -170,6 +176,7 @@ def test_normalization_error_routes_to_normalize_without_reparsing(sources):
         )
 
     graph = build_graph(
+        embed_node=skip_demo_embedding,
         extract_node=make_extract_node(model),
         draft_node=make_draft_node(model),
         verify_node=verifier,

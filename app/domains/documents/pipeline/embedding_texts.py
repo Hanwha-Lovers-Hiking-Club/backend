@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domains.documents.pipeline.models import KnowledgeCardDraft, NonBlankText
+from app.domains.documents.pipeline.verification.models import VerificationResult
 
 EmbeddingView = Literal["content", "situation", "solution", "lesson"]
 TEMPLATE_VERSION = "card-views-v1"
@@ -103,3 +104,19 @@ def build_embedding_texts(
             continue
         texts[view] = EmbeddingText(text=text, included_fields=included)
     return CardEmbeddingTexts(experience_id=draft.experience_id, texts=texts, skipped=skipped)
+
+
+def build_admitted_embedding_texts(
+    drafts: list[KnowledgeCardDraft],
+    results: list[VerificationResult],
+    *,
+    options: EmbeddingTextOptions,
+) -> list[CardEmbeddingTexts]:
+    decisions = {item.experience_id: item.decision for item in results}
+    if len(decisions) != len(results):
+        raise ValueError("embedding texts require unique final verification results")
+    if len({item.experience_id for item in drafts}) != len(drafts):
+        raise ValueError("embedding texts require unique admitted experiences")
+    if any(decisions.get(item.experience_id) != "pass" for item in drafts):
+        raise ValueError("embedding texts require a matching final Gate pass")
+    return [build_embedding_texts(item, options=options) for item in drafts]

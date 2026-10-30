@@ -173,7 +173,7 @@ def test_actual_graph_routes_selected_openai_models_via_mock_http(monkeypatch):
 
     from app.config import settings
     from app.domains.documents.pipeline import llm
-    from app.domains.documents.pipeline.devtools.demo import DemoGenerator
+    from app.domains.documents.pipeline.devtools.demo import DemoGenerator, skip_demo_embedding
     from app.domains.documents.pipeline.graph import build_graph
 
     for name, value in {
@@ -211,7 +211,7 @@ def test_actual_graph_routes_selected_openai_models_via_mock_http(monkeypatch):
     monkeypatch.setattr(llm, "AsyncOpenAI", client_factory)
     path = Path("app/domains/documents/pipeline/devtools/demo.md").resolve()
     result = asyncio.run(
-        build_graph().ainvoke(
+        build_graph(embed_node=skip_demo_embedding).ainvoke(
             {
                 "sources": [
                     {

@@ -280,3 +280,20 @@ class ConfiguredGenerator:
             return await generator.generate(
                 instructions=instructions, payload=payload, output_type=output_type
             )
+
+
+@asynccontextmanager
+async def configured_embedder():
+    from app.config import settings
+    from app.domains.documents.pipeline.embeddings.kure import (
+        KureEmbeddingClient,
+        validate_kure_key,
+    )
+    from app.domains.documents.pipeline.embeddings.models import EmbeddingSpec
+
+    key = validate_kure_key(settings.KURE_API_KEY)
+    spec = EmbeddingSpec(model=settings.EMBEDDING_MODEL, dimensions=settings.EMBEDDING_DIMENSIONS)
+    async with httpx.AsyncClient(
+        timeout=settings.EMBEDDING_TIMEOUT_SECONDS, follow_redirects=False
+    ) as client:
+        yield KureEmbeddingClient(client, spec, key)

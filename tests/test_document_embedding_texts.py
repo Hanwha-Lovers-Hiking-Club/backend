@@ -6,7 +6,11 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import ValidationError
 
-from app.domains.documents.pipeline.devtools.demo import DemoGenerator, get_demo_graph
+from app.domains.documents.pipeline.devtools.demo import (
+    DemoGenerator,
+    get_demo_graph,
+    skip_demo_embedding,
+)
 from app.domains.documents.pipeline.embedding_texts import (
     CardEmbeddingTexts,
     EmbeddingTextOptions,
@@ -250,7 +254,9 @@ def test_node_uses_only_passed_drafts_and_replaces_old_results():
     assert first["embedding_texts"][0].experience_id == draft.experience_id
     assert build_texts_node({**state, **first}) == first
     assert build_texts_node({"embedding_texts": first["embedding_texts"]}) == {
-        "embedding_texts": []
+        "embedding_texts": [],
+        "embeddings": [],
+        "embedding_usage": [],
     }
 
 
@@ -302,6 +308,7 @@ def test_actual_graph_keeps_independent_experiences_and_excludes_rule_only_revie
 ):
     generator = DemoGenerator()
     graph = build_graph(
+        embed_node=skip_demo_embedding,
         extract_node=make_extract_node(generator),
         draft_node=make_draft_node(generator),
         verify_node=make_verify_node(

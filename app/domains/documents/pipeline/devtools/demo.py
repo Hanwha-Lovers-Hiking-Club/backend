@@ -83,10 +83,16 @@ def demo_initialize(state):
     )
 
 
+async def skip_demo_embedding(state):
+    # 개발 데모는 텍스트 생성까지만 확인하며 실제 임베딩이나 가짜 벡터를 만들지 않는다.
+    return {"embeddings": [], "embedding_usage": []}
+
+
 def get_demo_graph():
     generator = DemoGenerator()
     return build_graph(
         initialize_node=demo_initialize,
+        embed_node=skip_demo_embedding,
         extract_node=make_extract_node(generator),
         draft_node=make_draft_node(generator),
         verify_node=make_verify_node(

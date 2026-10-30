@@ -12,7 +12,7 @@
 - 4번의 형식별 파서, DocumentIR, 구조 기반 청킹, Parse/Normalize/Chunk 노드와 최소 State를 구현했다.
 - 5번 Extract/Draft 노드와 작성 모델, 근거 연결, 생략 사유, OpenAI/Ollama/Anthropic 비동기 어댑터를 구현했다.
   6번 Verification Gate와 실제 LangGraph 조건부 재처리를 연결했다.
-  7번 중 결정적 임베딩 입력 텍스트 생성을 연결했다. 실제 Embed/Save와 제품 업로드·SSE는 아직 미구현이다.
+  7번의 결정적 입력 텍스트 생성과 실제 KURE Embed를 연결했다. Save와 제품 업로드·SSE는 아직 미구현이다.
 - `fake_function.py`에 개발용 `fake_save_cards`가 있다. DB에 저장하지 않는 독립적인 가짜 함수다.
   그래프·save 노드에는 아직 연결하지 않았다. 실제 서비스의 확정 계약이 아니다.
 - `knowledge_cards/service.py`에는 조회용 `list_cards`가 있으나 카드 생성/저장 함수는 없다.
@@ -188,7 +188,7 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
   로컬 .env는 일반 설정만 가지며 Git에서 제외한다. 새 사용자 환경변수는 VS Code/서버 재시작 후 상속된다.
   OpenAI/Anthropic/KURE 키는 SecretStr로 마스킹하며 설정 검증 오류도 입력 값을 숨긴다.
   이것이 저장소 암호화를 뜻하지는 않는다. 기존 Supabase 클라이언트의 키 전달 계약은 변경하지 않았다.
-  KURE_API_KEY는 별도 임베딩 연동용 예약 설정이며 제품 파이프라인에서는 아직 호출하지 않는다.
+  KURE_API_KEY는 LLM 공급자와 별개로 최종 pass 카드의 실제 KURE 임베딩에 사용한다.
   공용 설정 예시는 [로컬 실행 안내](devtools/README.md#환경-설정)에 두며 로컬 `.env`를 재생성하거나 커밋하지 않는다.
   같은 이름이면 프로세스 환경변수가 `.env`보다 우선한다. 환경변수 값에는 실제 키만 넣고 앞뒤 공백을 제거한다.
 - Ollama를 선택하면 모델 서버 실행·모델 설치가 필요하다. 자동 설치·다운로드·추론 또는 유료 fallback은 없다.
@@ -217,7 +217,7 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
   SDK 자동 재시도·유료 API 자동 fallback은 없다. 재처리 요청 제어는 아래 6번을 따른다.
 - 거절·미완료·빈 출력·잘못된 구조·API 오류를 성공으로 처리하지 않는다.
 - make_extract_node/make_draft_node로 클라이언트를 주입할 수 있다. 테스트는 가짜 클라이언트와 모의 HTTP를 사용한다.
-  전체 StateGraph와 백그라운드/API/SSE 연결은 후속 작업이다.
+  실제 StateGraph를 연결했으며 제품 백그라운드/API/SSE 연결은 후속 작업이다.
 - 실제 유료 API 실행 및 실제 문서에 대한 의미 품질 평가는 이번 검증에 포함하지 않았다.
 
 공식 근거: [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs),
@@ -239,7 +239,7 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
 | LLM 검증 없는 실행 | 초기 설계의 의미 검증 전체를 규칙으로 대체할 수 없음. 확신하지 못한 결과는 needs_review |
 | 문서 제목은 원래 파일명 | 파이프라인에서 유지. 공유 docs/schema.md의 'LLM 추출' 설명과의 차이는 여전히 담당자 확인 사항 |
 | 기술명 정규화 | 현재 원래 문자열/목록을 보존함. 별칭·오타 자동 통합을 구현했다고 주장하지 않음 |
-| API/DB 호환, 4중 임베딩, Save | 외부 계약은 변경하지 않음. 임베딩/저장/업로드·SSE 연결은 후속 7~8번 |
+| API/DB 호환, 4중 임베딩, Save | 외부 계약은 변경하지 않음. 입력 생성과 KURE 임베딩은 연결. 저장/업로드·SSE는 후속 8번 |
 | 3순위 품질 평가·자동 개선 | 점수/가중치/사후 개선/스케줄러 미구현 유지 |
 
 위의 최소 초안 조건, 규칙 모드의 보수적 보류, 작업 단위 재처리 상한은 현재 구현 정책이다.
@@ -316,7 +316,7 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
   데모는 실제 모델 추론이나 DB 저장을 하지 않으며, 실행 스크립트는 브라우저 자동 조작 없이 서버만 시작한다.
   실행 방법은 [devtools/README.md](devtools/README.md), 팀 연결 계약은 [regulations.md](regulations.md)를 본다.
   제품 작업 스케줄러/업로드/SSE와 영속 저장은 아직 연결하지 않았다.
-- 후속 Embed/Save는 원래 drafts가 아닌 verified_drafts만 받아야 한다.
+- Embed와 후속 Save는 원래 drafts가 아닌 verified_drafts만 받아야 한다.
   부분 저장 실패/영속 이력/카드 상태 매핑은 8번 담당 범위이며 이번에 DB를 변경하지 않는다.
 - Gate의 내부 판정/이력은 quality_score/last_verified_at/verification_version에 자동으로 쓰지 않는다.
   3순위 Quality Evaluator/Card Improvement는 구현하지 않았다. 향후 검사 모듈과 결과 계약을 재사용할 수 있다.
@@ -376,7 +376,7 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
 - 카드+근거 저장 도중 일부만 성공했을 때의 처리와 재시도 중복 방지는 실제 서비스 담당자와 합의한다.
   현재 함수가 없으므로 원자성이 보장된다고 주장하지 않는다.
 
-## 7번 — 임베딩 입력 생성 구현 / 실제 벡터 호출·저장은 후속
+## 7번 — 임베딩 입력 생성과 실제 KURE 호출 / DB 저장은 후속
 
 출처는 사용자가 첨부한 「지식카드는 어떻게 임베딩할 것인가?」 PDF(2026-10-27)다.
 하나의 카드 ID에 전체 맥락·상황과 문제·대응과 해결·교훈이라는 네 관점을 연결한다.
@@ -439,23 +439,61 @@ problem이 필요한 다른 관점은 `INSUFFICIENT_FIELDS`와 누락 필드를 
   원본 사실 상태·필드별 근거·lesson_status는 초안에 그대로 남으며 텍스트 생성이 이를 확정 사실로 바꾸지 않는다.
 - `embedding_text_options.max_chars`는 호출자가 지정할 수 있는 양의 정수 글자 수 제한이며 기본 None이다.
   초과 관점은 `INPUT_TOO_LARGE`로 보류하고 자르거나 요약하지 않는다. 토큰 한도라는 뜻은 아니다.
-  실제 모델의 tokenizer/토큰 한도·배치 크기·입력 유형은 다음 Embed 구현에서 별도로 검증해야 한다.
+  실제 KURE의 토큰 한도·배치·입력 유형 검사는 아래 호출 구현을 따른다.
 - 재실행은 결과를 덮어쓰며 새 작업·상위 노드 재실행·재검증·재처리는 이전 입력 텍스트를 초기화한다.
   클라이언트·모델·비밀키는 State에 추가하지 않았다.
-- 실제 임베딩 API·벡터·DB 필드·검색 API·품질 점수는 이번 단계에 추가하지 않았다.
-  KURE 최소 호출에서 본 2,048차원을 최종 DB/검색 계약으로 고정하지 않는다.
+- 실제 KURE 호출과 벡터 결과를 아래 후속 구현에서 연결했다. DB 필드·검색 API·품질 점수는 추가하지 않았다.
+  기본 2,048차원은 실행 설정이며 최종 DB/검색 계약으로 고정하지 않는다.
 
 ### 초기 목표 대조 결과
 
 원본 첨부 설계서의 `Verification Gate → Build Embedding Texts → Embed → Save` 중
-Build Embedding Texts까지 연결했다. 다섯 문서 형식에 독립적인 카드 입력, 0~N개 경험,
+Build Embedding Texts와 실제 Embed까지 연결했다. 다섯 문서 형식에 독립적인 카드 입력, 0~N개 경험,
 근거·가설 보존, 누락 내용 비생성, 기존 API/DB 호환성과 3순위 품질 평가 제외 원칙을 유지한다.
 원본 청크를 네 부분으로 나누거나 모든 카드에 네 벡터를 강제로 생성하는 구조로 바꾸지 않았다.
 
-검증 결과: `tests/test_document_embedding_texts.py`의 신규 25개를 포함해 전체 231개 테스트가 통과했다.
+입력 생성 단계 검증 기록: `tests/test_document_embedding_texts.py`의 신규 25개를 포함해 당시 전체 231개 테스트가 통과했다.
 Ruff lint와 95개 Python 파일의 포맷 검사도 통과했다. 실제 API 호출·DB 쓰기 없이 검증했다.
 관점별 정확한 조합·누락/길이 초과·한글/코드/로그 보존·가설 원인 비포함·추론 교훈 상태 보존,
 여러 독립 경험과 규칙 모드 검토 대기 제외·조건부 재작성 후 최종 입력·체크포인트 재실행을 포함한다.
+
+### KURE 클라이언트 연결과 입력 재검토
+
+- 입력 생성의 네 관점 조합과 기존 최소 조건은 원본 설계와 일치해 유지했다.
+  생성 시점의 검사를 공통 함수로 분리하고, embed 직전에 현재 Gate pass/초안/옵션으로 다시 조립해
+  State의 텍스트와 비교한다. 오래됐거나 변조된 입력은 `EMBEDDING_STALE_INPUT`으로 요청 전에 거부한다.
+- `embeddings/models.py`: 교체 가능한 EmbeddingClient 계약, 공통 모델 설정·배치 결과·사용량·카드 벡터 모델.
+  `embeddings/kure.py`: 공식 HTTPS 주소로만 요청하고 스냅샷 모델·응답 수·index·차원·유한 수·0 벡터를 검사한다.
+  `embeddings/service.py`: 최대 8개 순차 배치와 경험/관점별 벡터·입력 SHA-256 해시 연결.
+  `nodes/embed.py`: 입력 재검토와 클라이언트 호출만 담당하며, 생성할 관점이 없으면 키/클라이언트 없이 종료한다.
+  `llm.py`는 클라이언트 생성·종료, `graph.py`는 build_embedding_texts → embed 연결만 담당한다.
+- 기본값은 EMBEDDING_MODEL=kure-v3-20261016, EMBEDDING_DIMENSIONS=2048,
+  EMBEDDING_BATCH_SIZE=8, EMBEDDING_TIMEOUT_SECONDS=30이다. settings와 로컬 `.env`/공용 예시에 반영한다.
+  KURE 클라이언트는 변동 가능한 별칭을 허용하지 않는다. 공통 인터페이스는 다른 공급자/모델도 표현하며
+  명시적으로 주입한 클라이언트+모델 설정으로 교체 가능하다. 자동 대체 모델이나 가짜 벡터는 없다.
+- 요청은 input_type=document, encoding_format=float를 사용한다. 모델용 passage 접두어를 직접 붙이지 않는다.
+  키의 앞뒤 공백을 제거하고 빈 키/내부 공백은 거부한다. 환경변수 원본은 수정하지 않는다.
+  키·클라이언트는 State에 넣지 않으며 오류에 서버의 원문 메시지나 키를 포함하지 않는다.
+- 8,192토큰 한도는 서버가 검사한다. 글자 수를 토큰으로 근사하거나 임의로 잘라 보내지 않는다.
+  400 context_length_exceeded는 EMBEDDING_INPUT_TOO_LARGE로 실패한다. 로컬 tokenizer 다운로드는 없다.
+- 401/403, 모델 없음/폐기, 429, 5xx, 연결 실패·시간 초과를 구분한다.
+  자동 재시도는 없으며 재시도 가능 여부와 숫자 Retry-After만 전달한다. Verify의 재처리 예산과 별개다.
+- State의 embeddings에는 생성된 경험별 관점 벡터와 provider/model/dimensions/input_type/template_version/
+  입력 해시를 보존하고, embedding_usage에는 실제 배치별 토큰 사용량을 보존한다. 카드 ID·저장 성공을 생성하지 않는다.
+- 모든 배치가 성공한 뒤 한 번에 결과를 반환한다. 뒤 배치가 실패하면 일부 벡터를 성공으로 공개하지 않는다.
+  노드 재시도 시 앞선 성공 배치가 재호출될 수 있다. 영속 캐시/배치 복구는 아직 없으며 과금·사용량이 중복될 수 있다.
+  완료한 노드의 체크포인트 재개는 재호출하지 않는다. 새 작업·상위 재실행·재검증·입력 생성은 오래된 벡터/사용량을 지운다.
+- documents_demo는 embed를 명시적으로 생략하고 가짜 벡터를 생성하지 않는다. documents는 실제 KURE를 호출한다.
+  기본 규칙 모드에서 needs_review만 나온다면 임베딩 호출이 없는 것이 정상이다. 검증 통과 없이 강제로 호출하지 않는다.
+- 실제 확인: 합성 카드 1개/네 관점/요청 1회로 kure-v3-20261016의 2,048차원 벡터를 받았다.
+  입력 137토큰이며 OpenAI 호출/DB 쓰기는 없었다. 실제 문서 품질/전체 제품 연결 확인과 구분한다.
+- 클라이언트 연결 후 검증: 신규 46개를 포함한 전체 277개 테스트와 Ruff lint/100개 Python 파일 포맷 검사를 통과했다.
+  요청·인덱스/차원/벡터·모델 버전·긴 입력 오류·인증/할당량/연결 실패·부분 배치 실패·입력 변조를 검사했다.
+  실제 그래프의 최종 재작성 후 호출과 완료 체크포인트 재개 시 중복 호출 방지, 클라이언트 교체도 모의 HTTP로 확인했다.
+  `.env`의 숫자 문자열이 차원·배치·시간 제한으로 읽히는 회귀 테스트와 실제 로컬 설정 로딩 확인도 포함한다.
+
+공식 계약: [KURE 임베딩 API](https://kure.kullm.ai/en/docs/embeddings),
+[모델·스냅샷](https://kure.kullm.ai/en/docs/models), [오류·제한](https://kure.kullm.ai/en/docs/limits).
 
 ## 형식별 도구 선정 제안 — 채택 전 확인
 

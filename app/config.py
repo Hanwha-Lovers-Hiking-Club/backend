@@ -17,8 +17,12 @@ class Settings(BaseSettings):
     LLM_BASE_URL: AnyHttpUrl = "http://localhost:11434"
     ANTHROPIC_API_KEY: SecretStr | None = None
     OPENAI_API_KEY: SecretStr | None = None
-    # Reserved for the separate embedding integration; no KURE call is made yet.
+    # LLM 공급자와 별도로 공식 KURE 임베딩 API에 사용한다.
     KURE_API_KEY: SecretStr | None = None
+    EMBEDDING_MODEL: str = Field(default="kure-v3-20261016", pattern=r"^kure-v3-[0-9]{8}$")
+    EMBEDDING_DIMENSIONS: int = 2048
+    EMBEDDING_BATCH_SIZE: int = Field(default=8, ge=1, le=8)
+    EMBEDDING_TIMEOUT_SECONDS: float = Field(default=30, gt=0)
     EXTRACT_MODEL: str = "gpt-6.1-sol"
     DRAFT_MODEL: str = "gpt-6-luna"
     VERIFY_MODEL: str | None = "gpt-6.1-sol"
@@ -34,6 +38,13 @@ class Settings(BaseSettings):
     def require_verification_rules(cls, value: bool) -> bool:
         if not value:
             raise ValueError("MVP verification rules must remain enabled")
+        return value
+
+    @field_validator("EMBEDDING_DIMENSIONS")
+    @classmethod
+    def require_supported_embedding_dimensions(cls, value: int) -> int:
+        if value not in (256, 512, 768, 1024, 2048):
+            raise ValueError("unsupported KURE embedding dimensions")
         return value
 
 
