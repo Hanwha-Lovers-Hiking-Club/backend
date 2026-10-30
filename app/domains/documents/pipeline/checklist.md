@@ -29,7 +29,7 @@ Extract/Draft/Verify, 실제 LangGraph 조건부 재처리와 7번 임베딩 입
 - [x] 5번: 가설 원인을 확정 본문으로 복사하지 않고 새로 도출한 교훈은 inferred로 표시한다.
 - [x] 5번: 가짜 모델·모의 HTTP·파싱부터 초안까지의 연결 테스트를 통과한다.
 - [x] LLM_PROVIDER로 OpenAI/Ollama/Anthropic 및 단계별 모델을 교체한다.
-- [x] OpenAI 기본 모델은 Extract/Verify=gpt-6.1-sol, Draft=gpt-6-luna로 맞춘다. LLM Verify는 기본 비활성이다.
+- [x] OpenAI 기본 모델은 Extract/Verify=gpt-6.1-sol, Draft=gpt-6-luna로 맞춘다. 후속 사용자 결정으로 LLM Verify를 기본 활성화한다.
 - [x] 사용자 환경변수에서 키를 읽고 Git에서 제외된 로컬 `.env`에는 일반 설정만 보관한다. 공용 설정 예시는 `devtools/README.md`에 둔다.
 - [x] 실제 OpenAI SDK의 모의 HTTP와 전체 그래프에서 단계별 모델 선택·구조화 출력·재처리를 검증한다.
 - [x] 공급자별 JSON 스키마 요청·응답 검증, 오류와 유료 API 자동 전환 금지를 모의 HTTP로 확인한다.
@@ -38,6 +38,10 @@ Extract/Draft/Verify, 실제 LangGraph 조건부 재처리와 7번 임베딩 입
 - [ ] 등록된 KURE_API_KEY 앞뒤 공백을 수정하고 재시작한 프로세스에서 원본 값으로 호출되는지 확인한다.
 - [x] KURE 클라이언트가 읽은 키의 앞뒤 공백을 제거하고 내부 공백·빈 키는 요청 전에 거부한다. 등록 값 자체는 변경하지 않는다.
 - [ ] 대표 문서로 추출·검증 품질, 작업당 비용·응답 시간 및 필요한 할당량을 평가한다.
+- [x] 합성 한글 사례로 기본 의미 검증 분기와 pass/retry/needs_review/모델 실패·규칙 opt-out을 검증한다. 실제 모델 품질 평가와 구분한다.
+- [x] 최소 PDF의 이미지 없음/본문 작은 이미지/별도 부록 이미지에서 실제 파싱부터 Gate까지 현 경고 영향을 확인한다.
+- [x] 한글 부정·반박 5개 합성 사례로 현재 문자열 검사 범위와 관련 없는 부정 문장에 의한 차단을 기록한다. 규칙은 아직 완화하지 않는다.
+- [x] 합성 임베딩 입력 4개 중 긴 관점 하나의 현재 배치 실패와 선택적 글자 수 제한의 동작을 검증한다. 토큰 계산·자동 실패 입력 식별은 미구현이다.
 - [x] 5번 재검증: 초안의 필드별 근거 배열을 해당 Extract 필드와 일치시키고 공급자 응답 속성을 명시적으로 요구한다.
 - [x] 6번: VERIFY_RULES_ENABLED/VERIFY_LLM_ENABLED와 명시적 VERIFY_MODEL을 Gate 실행 분기에 연결한다.
 - [x] DB 필수 필드 구조 검증과 선택적 LLM 내용 검증을 나누고 판정 이유를 추적한다.

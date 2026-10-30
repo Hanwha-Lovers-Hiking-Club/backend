@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     DRAFT_MODEL: str = "gpt-6-luna"
     VERIFY_MODEL: str | None = "gpt-6.1-sol"
     VERIFY_RULES_ENABLED: bool = True
-    VERIFY_LLM_ENABLED: bool = False
+    VERIFY_LLM_ENABLED: bool = True
     VERIFY_MAX_RETRIES: int = Field(default=2, ge=0, le=5)
     DOCUMENT_LLM_TIMEOUT_SECONDS: float = Field(default=60, gt=0)
     DOCUMENT_LLM_MAX_OUTPUT_TOKENS: int = Field(default=4096, gt=0)

@@ -16,7 +16,7 @@ class GateModel(BaseModel):
 
 class VerificationOptions(GateModel):
     rules_enabled: Literal[True] = True
-    llm_enabled: bool = False
+    llm_enabled: bool = True
     max_retries: int = Field(default=2, ge=0, le=5)
     max_input_chars: int = Field(default=48000, gt=0)
 

@@ -37,7 +37,7 @@ EXTRACT_MODEL=gpt-6.1-sol
 DRAFT_MODEL=gpt-6-luna
 VERIFY_MODEL=gpt-6.1-sol
 VERIFY_RULES_ENABLED=true
-VERIFY_LLM_ENABLED=false
+VERIFY_LLM_ENABLED=true
 VERIFY_MAX_RETRIES=2
 DOCUMENT_LLM_TIMEOUT_SECONDS=60
 DOCUMENT_LLM_MAX_OUTPUT_TOKENS=4096
@@ -89,8 +89,10 @@ document_id는 제품 연결 시 documents.id를 받아야 한다. 위 UUID는 �
 LLM 공급자를 Ollama/Anthropic으로 바꿔도 임베딩은 별도 KURE 클라이언트를 사용한다.
 Ollama/Anthropic은 명시적으로 선택할 수 있으며 공급자 변경 시 모델 ID도 바꿔야 한다.
 Ollama qwen 모델은 자동 다운로드하지 않으며 유료 API로 자동 fallback하지 않는다.
-규칙 모드에서는 의미를 확인할 수 없는 카드는 needs_review다. LLM 의미 검증을 쓰려면
-VERIFY_LLM_ENABLED=true와 VERIFY_MODEL을 명시한다. 예제의 통과가 실제 모델의 품질을 입증하지는 않는다.
+2026-10-30 후속 사용자 결정으로 LLM 의미 검증을 기본으로 켰다. 규칙 검사도 계속 필수이며
+코드 검사를 통과한 초안만 VERIFY_MODEL로 의미를 검증한다. 모델 오류·불확실성은 통과로 처리하지 않는다.
+규칙 모드가 필요하면 VERIFY_LLM_ENABLED=false를 명시할 수 있지만 확인 불가한 의미는 needs_review다.
+PDF 누락 경고 같은 선행 검사는 LLM 검증을 켜도 그대로 적용된다. 예제의 통과가 실제 모델 품질을 입증하지는 않는다.
 
 ## 최소 연결 확인 기록 — 2026-10-30
 
@@ -115,7 +117,8 @@ KURE는 등록된 키 앞뒤 공백 때문에 첫 시도에서 로컬 헤더 검
 이 결과는 해당 시점의 인증과 최소 호출 성공만 확인한다. 실제 프로젝트 문서의 추출·검증 품질,
 작업당 비용, 지속 처리량·할당량, Supabase Storage 업로드·카드 저장은 아직 검증하지 않았다.
 KURE의 관측된 기본 차원은 최종 임베딩/DB/검색 계약을 확정한 값이 아니다.
-실제 파이프라인 전체 실행과 구분하며, LLM Verify의 기본 비활성 설정도 유지한다.
+실제 파이프라인 전체 실행과 구분한다. 위 최소 호출 당시에는 LLM Verify 기본값이 비활성이었고,
+이후 사용자 결정으로 기본 활성화했다. 활성화 후 대표 문서의 보류율·정확도·비용은 아직 측정하지 않았다.
 
 ## 중단·재개와 결과
 

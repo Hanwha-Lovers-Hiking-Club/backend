@@ -128,7 +128,8 @@
 - 확인: OpenAI/Anthropic 키의 모델 접근·예산, Ollama 설치/메모리/컨텍스트 길이, 선택적 VERIFY_MODEL,
   실제 문서 반출·로깅·tracing 설정, 배포 환경의 다운로드/임시 파일 접근·동시 실행 정책.
 - 2026-10-30 사용자 확정 설정: OpenAI, Extract/Verify=gpt-6.1-sol, Draft=gpt-6-luna.
-  규칙 검증은 켜고 LLM 검증은 기본으로 끈다. LLM 검증을 켤 때만 VERIFY_MODEL을 호출한다.
+  후속 사용자 결정으로 규칙 검증과 LLM 의미 검증을 기본으로 모두 켠다.
+  선행 코드 검사를 통과한 초안에서 VERIFY_MODEL을 호출하며 모델 오류/불확실성을 pass로 처리하지 않는다.
   OPENAI_API_KEY/SUPABASE_SERVICE_ROLE_KEY/KURE_API_KEY는 사용자 환경변수에 등록되어 있다.
   2026-10-30 최소 요청으로 Sol·Luna 구조화 응답, Supabase 조회, KURE 임베딩 연결을 확인했다.
   현재 KURE 클라이언트는 읽은 키 앞뒤 공백을 제거한다. 등록 값 자체는 수정하지 않았다.
