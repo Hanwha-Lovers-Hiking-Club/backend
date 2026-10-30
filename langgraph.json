@@ -1,0 +1,9 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "documents": "./app/domains/documents/pipeline/graph.py:get_graph",
+    "documents_demo": "./app/domains/documents/pipeline/devtools/demo.py:get_demo_graph"
+  },
+  "env": ".env",
+  "http": {"app": "./app/domains/documents/pipeline/devtools/web.py:app"}
+}

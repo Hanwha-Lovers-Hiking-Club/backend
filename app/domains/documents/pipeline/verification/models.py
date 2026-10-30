@@ -4,7 +4,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.domains.documents.pipeline.models import EvidenceId, NonBlankText
+from app.domains.documents.pipeline.models import EvidenceId, KnowledgeCardDraft, NonBlankText
 
 RetryNode = Literal["parse", "normalize", "chunk", "extract", "draft_card"]
 Decision = Literal["pass", "retry", "reject", "needs_review"]
@@ -65,6 +65,11 @@ class Claim(GateModel):
     value: NonBlankText
     status: Literal["confirmed", "hypothesis", "inferred", "unknown", "conflicted"]
     evidence_refs: list[EvidenceId] = Field(min_length=1)
+
+
+class RetryWork(GateModel):
+    request: RetryRequest
+    draft: KnowledgeCardDraft
 
 
 class ClaimAssessment(GateModel):

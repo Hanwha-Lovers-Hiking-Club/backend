@@ -221,3 +221,7 @@ __marimo__/
 
 # Local document pipeline instructions (keep the shared root CLAUDE.md tracked)
 /app/domains/documents/pipeline/CLAUDE.md
+
+# LangGraph local development checkpoints and logs
+/.langgraph_api/
+/.local/

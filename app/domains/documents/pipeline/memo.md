@@ -11,7 +11,7 @@
   `ExtractionResult`로 0~N개 독립 경험을 표현한다.
 - 4번의 형식별 파서, DocumentIR, 구조 기반 청킹, Parse/Normalize/Chunk 노드와 최소 State를 구현했다.
 - 5번 Extract/Draft 노드와 작성 모델, 근거 연결, 생략 사유, Ollama/Anthropic 비동기 어댑터를 구현했다.
-  6번 Verification Gate와 제한된 재처리 요청을 구현했다. 전체 graph 연결과 Embed/Save는 아직 구현하지 않았다.
+  6번 Verification Gate와 실제 LangGraph 조건부 재처리를 연결했다. Embed/Save와 제품 업로드·SSE는 아직 미구현이다.
 - `fake_function.py`에 개발용 `fake_save_cards`가 있다. DB에 저장하지 않는 독립적인 가짜 함수다.
   그래프·save 노드에는 아직 연결하지 않았다. 실제 서비스의 확정 계약이 아니다.
 - `knowledge_cards/service.py`에는 조회용 `list_cards`가 있으나 카드 생성/저장 함수는 없다.
@@ -21,7 +21,7 @@
 - DB 필드가 정해져 있는 것과 함수가 받을 입력·반환값이 정해져 있는 것은 다르다.
 - `pyproject.toml`에 pdfplumber, python-docx, openpyxl, markdown-it-py를 추가했다.
   reportlab은 최소 PDF 테스트 문서를 만들기 위한 개발 의존성이다. 데이터셋 생성 기능은 없다.
-  Anthropic SDK와 Ollama용 HTTP 클라이언트를 사용하며 LangChain·LangGraph는 아직 직접 의존성으로 등록하지 않았다.
+  Anthropic SDK와 Ollama용 HTTP 클라이언트를 사용한다. LangGraph는 직접 의존성이며 CLI[inmem]는 개발 의존성이다.
   `app/config.py`와 `.env.example`에 LLM 설정을 추가했다. 사용자 요청대로 Ollama/qwen3:14b·8b를 기본값으로 두며
   공급자 변경 시 단계별 모델명도 변경한다. 검증 LLM 모델은 임의 기본값 없이 VERIFY_MODEL로 받는다.
 
@@ -283,9 +283,25 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
   실제 출력이 달라져야 의미 있는 재검사가 된다. 무작위 nonce나 시각만 바꿔 재처리로 간주하지 않는다.
 - Parse/Normalize/Chunk/Extract/Draft 재실행은 이전 verified_drafts/검증 판정을 지운다.
   같은 작업의 이력/피드백은 유지한다. 새 작업은 새 State로 시작해야 한다.
-- **현재는 노드와 제한된 재처리 요청·피드백 계약까지 구현했다.** 전체 LangGraph 조건부 엣지,
-  작업 스케줄러, 요청을 실제 노드 실행으로 연결하는 부분은 아직 연결하지 않았다.
+- **실제 LangGraph 조건부 재처리 실행을 연결했다.** prepare_retry가 대상 입력을 복원하여
+  Parse/Normalize/Chunk/Extract/Draft 중 지정된 노드로 보내고 다시 Verify한다.
   Chunk 요청만으로 문맥 확장 전략이 자동 생성되지는 않는다. 동일 결과이면 다음 판정에서 보류한다.
+- graph.py는 StateGraph 조립만 담당한다. execution.py가 원본/결과/재처리 큐를 관리하며,
+  nodes/initialize.py, select_candidates.py, settle.py, prepare_retry.py, finish.py가 각각 하나의 보조 노드를 노출한다.
+  State의 all_*/settled_*는 재처리로 다른 경험의 결과를 잃지 않기 위한 작업 내부 데이터다.
+- Draft 재처리는 해당 경험만 대상으로 한다. 앞 단계 재처리는 필요한 문서 범위의 콘텐츠를 다시 처리한다.
+  재발견한 settled/다른 pending 경험의 동일 후보 ID는 건너뛴다. 의미가 비슷한 새 ID를 자동 병합하지 않는다.
+  원본이 변경되면 그 문서에 의존한 이전 판정을 needs_review로 내려 오래된 pass를 유지하지 않는다.
+- 재처리에서 후보가 0개면 reject/RETRY_NO_DRAFT로 사유를 남긴다. 파싱/모델 호출 예외는 그래프 오류로 전파한다.
+  prepare_retry의 실행 문맥이 없으면 needs_review다. 같은 내용의 판단 fingerprint는 다른 경험이
+  배치에서 빠졌다는 이유만으로 달라지지 않도록 대상 경험·참조 문서·스냅샷 일치 여부로 계산한다.
+- 그래프 recursion_limit은 100으로 두고 Gate의 최대 재처리 요청 0~5가 실제 비용/횟수 상한을 제어한다.
+  checkpointer 주입 및 verify 직전 중단/동일 thread 재개를 테스트했다. Agent Server에서는 서버가 체크포인트를 소유한다.
+- langgraph.json에 documents(실제 설정)와 documents_demo(명시적 예제 응답)를 등록했다.
+  로컬 화면 /dev는 실제 컴파일된 그래프와 실제 실행 노드 기록을 제공한다. 제품 API 경로와는 별도다.
+  데모는 실제 모델 추론이나 DB 저장을 하지 않으며, 실행 스크립트는 브라우저 자동 조작 없이 서버만 시작한다.
+  실행 방법은 [devtools/README.md](devtools/README.md), 팀 연결 계약은 [regulations.md](regulations.md)를 본다.
+  제품 작업 스케줄러/업로드/SSE와 영속 저장은 아직 연결하지 않았다.
 - 후속 Embed/Save는 원래 drafts가 아닌 verified_drafts만 받아야 한다.
   부분 저장 실패/영속 이력/카드 상태 매핑은 8번 담당 범위이며 이번에 DB를 변경하지 않는다.
 - Gate의 내부 판정/이력은 quality_score/last_verified_at/verification_version에 자동으로 쓰지 않는다.
@@ -301,8 +317,8 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
 | documents service → graph/parse | 상위 service가 업로드 후 파이프라인 실행 | 문서 ID·원래 파일명 외에 Storage 위치, bytes, 로컬 경로 중 무엇을 전달할지; 호출 함수명과 async 여부 |
 | parse → normalize → chunk | DocumentIR와 원문 블록/근거 ID를 보존 | 기본 구조는 위와 같이 구현. OCR/비전, 복잡한 PDF 구조 및 청킹 고도화는 후속 |
 | chunk → extract | 청크와 원문 ID로 0~N개 경험 추출 | 실제 모델명/계정 설정과 토큰 한도, 청크 간 문맥 확장/경험 병합 정책 |
-| extract → draft_card | 경험별 KnowledgeCardDraft와 근거/상태 보존, Gate 주장 대조 | 실제 모델의 의미 품질 실측, 문맥 보완·재처리 실행 연결 |
-| verify → graph/save | pass/retry/reject/needs_review, 원인별 요청·한도·피드백 구현 | 실제 LangGraph 재처리 연결, 판정과 DB 카드 상태 매핑, 검토 대기 영속 보관 |
+| extract → draft_card | 경험별 초안·근거/상태 보존, Gate 대조와 실제 재처리 연결 | 실제 모델의 의미 품질 실측, 청크 문맥 보완 전략 |
+| verify → graph/save | 네 판정과 원인별 조건부 재처리·한도·피드백 구현 | DB 카드 상태 매핑, 검토 대기 영속 보관, 실제 Save 서비스 연결 |
 | save → knowledge_cards service | 다른 도메인의 service를 통해 카드와 근거 저장 | 진짜 함수명, 카드/근거를 한 번에 받을지, 단건/배치, 성공 시 ID·건수·실패 정보, 예외/async 여부, 원자성·재시도 중복 방지 책임 |
 | graph → documents service | 진행과 결과를 상위 진입점에 전달 | 최종 결과 필드, 일부 문서 실패·카드 0개 처리, 진행 이벤트 콜백/저장 방식, 작업 실행·구독 계약 |
 

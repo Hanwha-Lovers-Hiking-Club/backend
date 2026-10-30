@@ -4,7 +4,8 @@
 완료 표시는 구현 또는 확인한 항목에만 한다. 가짜 함수 구현과 실제 저장/그래프 연결을 구분한다.
 
 내부 추출 스키마, Parse/Normalize/Chunk와 독립 가짜 함수를 구현했다.
-Extract/Draft와 Verify 노드도 구현했다. Embed/Save 및 전체 graph·재처리 실행 연결은 아직 구현하지 않았다.
+Extract/Draft/Verify와 실제 LangGraph 조건부 재처리를 연결했다. Embed/Save와 제품 업로드·SSE 연결은 아직 미구현이다.
+팀과 맞출 파일별 계약은 [regulations.md](regulations.md), 로컬 실행은 [devtools/README.md](devtools/README.md)를 본다.
 실제로 확인한 항목만 완료 처리한다.
 
 ## pipeline에서 먼저 확인·구현할 항목
@@ -37,7 +38,11 @@ Extract/Draft와 Verify 노드도 구현했다. Embed/Save 및 전체 graph·재
 - [x] 6번: 제목/요약/교훈의 원문 대조, 가설 강화·충돌·불확실성 판정과 규칙 모드 한계를 구현·기록한다.
 - [x] pass/retry/reject/needs_review 분리, 원인별 재처리 요청과 같은 입력/작업별 횟수 제한을 구현한다.
 - [x] 상위 노드 재실행 시 오래된 통과 목록을 지우고 재처리 이력/피드백을 유지한다.
-- [ ] 전체 LangGraph 조건부 엣지에 재처리 요청과 실제 노드 실행을 연결한다. 현재는 요청/피드백 계약만 구현했다.
+- [x] 실제 LangGraph 조건부 엣지에 재처리 요청과 Parse/Normalize/Chunk/Extract/Draft 실행을 연결한다.
+- [x] 재처리 중 다른 경험의 pass/needs_review 결과를 유지하고 재발견한 동일 후보를 중복 처리하지 않는다.
+- [x] 같은 입력 반복 제한과 중단·재개 시 Parse/Extract 중복 실행 방지를 실제 그래프로 검사한다.
+- [x] 로컬 개발 서버, 로그인 없는 그래프 화면과 명시적인 예제 LLM 데모를 실행한다.
+- [x] regulations.md에 팀 확인 계약, 대상 파일, 미정 사항과 완료 기준을 저장한다.
 - [ ] 대표 실제 문서로 규칙 검사의 보류율 및 검증 LLM의 거절/가설 강화/충돌 탐지 정확도를 평가한다.
 - [ ] needs_review의 보관/검토 경로를 정하고 검증 통과 active 카드와 구분한다.
 - [ ] 카드 저장 함수의 입력·반환값·카드+근거 원자성·재시도 책임을 다른 담당자와 합의한다.

@@ -12,7 +12,17 @@ from app.domains.documents.pipeline.document import (
     ParseOptions,
 )
 from app.domains.documents.pipeline.models import DraftSkip, ExtractionResult, KnowledgeCardDraft
-from app.domains.documents.pipeline.verification.models import RetryRequest, VerificationResult
+from app.domains.documents.pipeline.verification.models import (
+    RetryRequest,
+    RetryWork,
+    VerificationResult,
+)
+
+
+class IngestionInput(TypedDict, total=False):
+    sources: list[DocumentSource]
+    parse_options: ParseOptions
+    chunk_options: ChunkOptions
 
 
 class IngestionState(TypedDict, total=False):
@@ -33,3 +43,13 @@ class IngestionState(TypedDict, total=False):
     retry_requests: list[RetryRequest]
     retry_feedback: list[RetryRequest]
     verification_history: list[RetryRequest]
+    all_sources: list[DocumentSource]
+    all_parsed_documents: list[ParsedDocument]
+    all_documents: list[DocumentIR]
+    all_chunks: list[Chunk]
+    settled_results: list[VerificationResult]
+    settled_drafts: list[KnowledgeCardDraft]
+    settled_skips: list[DraftSkip]
+    pending_retries: list[RetryWork]
+    active_retry: RetryWork | None
+    retry_route: str

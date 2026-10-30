@@ -15,10 +15,17 @@ def fingerprint(raw, state):
     def serialize(value):
         return value.model_dump(mode="json") if isinstance(value, BaseModel) else str(value)
 
+    data = raw.model_dump(mode="json") if isinstance(raw, BaseModel) else raw
+    source = data.get("source_extraction", {}) if isinstance(data, dict) else {}
+    ids = {str(ref.get("document_id")) for ref in source.get("evidence_index", {}).values()}
+    extraction = state.get("extraction_result")
     payload = {
-        "draft": raw,
-        "documents": state.get("documents", []),
-        "extraction_result": state.get("extraction_result"),
+        "draft": data,
+        "documents": [
+            item for item in state.get("documents", []) if not ids or str(item.document_id) in ids
+        ],
+        "snapshot_present": extraction is not None
+        and any(item.model_dump(mode="json") == source for item in extraction.experiences),
     }
     return hashlib.sha256(
         json.dumps(payload, default=serialize, sort_keys=True).encode()

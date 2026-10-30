@@ -4,6 +4,7 @@
 로컬 `CLAUDE.md`가 있으면 작업 전에 읽는다. Codex도 같은 지침을 직접 읽어 사용한다.
 이 개인 지침은 Git에서 제외되므로 다른 환경에는 없을 수 있다.
 설계 확인은 [memo.md](memo.md), 개발 체크리스트는 [checklist.md](checklist.md)에 있다.
+팀 연결 계약은 [regulations.md](regulations.md), 로컬 그래프 실행은 [devtools/README.md](devtools/README.md)를 본다.
 
 저장소 공통 규칙은 루트 `CLAUDE.md`와 루트 `.claude/skills/backend-conventions/SKILL.md`를 따른다.
 이 지침은 다른 도메인의 담당 범위나 공통 규칙을 변경하지 않는다.
