@@ -1,15 +1,17 @@
-# 챗봇 로직: 질문에 맞는 지식카드를 찾고(검색) 답변을 만들어(생성) SSE 이벤트로 흘려보낸다.
-# 지금 검색/생성은 mock이다.
-# RAG가 준비되면 _retrieve_references, _generate_answer 두 함수만 교체한다.
-import asyncio
+# 챗봇 로직: 질문 의도 파악 -> 지식카드 검색 -> (검증) -> 답변 생성을 SSE 이벤트로 흘려보낸다.
+# 각 단계의 구현은 intent.py / retriever.py / verifier.py / generator.py에 있고, 여기서는 순서와
+# 분기(범위 밖 질문, 역질문, 카드 없음)만 정한다.
 import logging
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
-from uuid import UUID
 
 from fastapi.sse import ServerSentEvent
 
+from app.config import settings
 from app.core.sse import to_sse
+from app.domains.chat.generator import OFF_TOPIC_MESSAGE, generate_answer
+from app.domains.chat.intent import understand_intent
+from app.domains.chat.models import VerifiedCandidate
+from app.domains.chat.retriever import search_cards
 from app.domains.chat.schemas import (
     ChatCompletedEvent,
     ChatErrorEvent,
@@ -19,99 +21,80 @@ from app.domains.chat.schemas import (
     ChatSourceDocument,
     ChatTokenEvent,
 )
-from app.domains.knowledge_cards.schemas import CardEvidence, KnowledgeCard
+from app.domains.chat.verifier import unverified, verify_candidates
 
 logger = logging.getLogger(__name__)
 
 CHAT_FAILED_MESSAGE = "답변을 생성하지 못했습니다."
-# mock 답변을 토큰 단위로 나눠 보낼 때 토큰 사이 간격(초). 스트리밍처럼 보이게 하는 용도
-TOKEN_INTERVAL = 0.05
-
-# mock 표시. 실제 답변/근거로 오인하지 않도록 답변 첫 토큰과 근거 reason에 붙인다
-MOCK_LABEL = "[Mock]"
-# DB에 없는 nil UUID라 실제 카드/문서와 겹치지 않는다
-MOCK_ID = UUID(int=0)
-MOCK_TIMESTAMP = datetime(2026, 1, 1, tzinfo=timezone.utc)
+# 답변에 붙이는 참조(지식카드) 최대 개수. 많으면 답변이 산만해지고 화면 참조 버튼도 길어진다
+MAX_REFERENCES = 3
 
 
-async def _wait() -> None:
-    await asyncio.sleep(TOKEN_INTERVAL)
-
-
-async def _retrieve_references(message: str, history: list[ChatMessage]) -> list[ChatReference]:
-    # mock: 실제로는 질문을 임베딩해 active 지식카드를 검색하고 근거(card_documents)를 붙인다.
-    # 카드 조회/변환은 knowledge_cards/service.py의 CARD_SELECT, _to_card와 같은 모양으로 맞춘다
-    evidence = CardEvidence(
-        id=MOCK_ID,
-        document_id=MOCK_ID,
-        document_title="Mock 문서",
-        original_filename="mock.md",
-        location="Mock 위치",
-        excerpt="Mock 근거 발췌문입니다.",
+def _to_reference(verified: VerifiedCandidate) -> ChatReference:
+    # 참조 하나 = 카드 하나 + 그 카드의 근거 하나. 근거가 여러 개면 첫 번째를 보여준다
+    card = verified.candidate.card
+    evidence = card.evidences[0]
+    return ChatReference(
+        id=evidence.id,
+        type="knowledge-card",
+        label=card.title,
+        card=card,
+        reason=verified.reason,
+        document=ChatSourceDocument(
+            id=evidence.document_id,
+            document_title=evidence.document_title,
+            location=evidence.location,
+            excerpt=evidence.excerpt,
+        ),
     )
-    card = KnowledgeCard(
-        id=MOCK_ID,
-        title=f"{MOCK_LABEL} 테스트 지식카드",
-        summary="실제 검색 결과가 아닌 테스트 카드입니다.",
-        context="챗봇 API를 RAG 연결 전에 프론트와 연동하기 위한 Mock 데이터입니다.",
-        problem=None,
-        cause=None,
-        approach="검색과 답변 생성을 Mock 함수로 분리해 두고 나중에 교체합니다.",
-        rationale=None,
-        outcome=None,
-        lesson="Mock 응답은 실제 결과와 구분되도록 표시합니다.",
-        technologies=[],
-        keywords=[],
-        status="active",
-        quality_score=None,
-        last_verified_at=None,
-        verification_version=None,
-        project_name=None,
-        department=None,
-        project_date=None,
-        created_at=MOCK_TIMESTAMP,
-        updated_at=MOCK_TIMESTAMP,
-        evidences=[evidence],
-    )
+
+
+def _text_events(text: str) -> list[ServerSentEvent]:
+    # LLM 없이 고정 문구로 답하는 경우. 참조 없이 token -> references(빈 목록)로 같은 순서를 지킨다
     return [
-        ChatReference(
-            id=evidence.id,
-            type="knowledge-card",
-            label=card.title,
-            card=card,
-            reason=f"{MOCK_LABEL} 실제 검색 결과가 아닌 테스트 근거입니다.",
-            document=ChatSourceDocument(
-                id=evidence.document_id,
-                document_title=evidence.document_title,
-                location=evidence.location,
-                excerpt=evidence.excerpt,
-            ),
-        )
+        to_sse("token", ChatTokenEvent(content=text)),
+        to_sse("references", ChatReferencesEvent(items=[])),
     ]
 
 
-async def _generate_answer(
-    message: str, history: list[ChatMessage], references: list[ChatReference]
-) -> AsyncIterator[str]:
-    # mock: 실제로는 references를 컨텍스트로 LLM을 스트리밍 호출해 토큰을 그대로 흘려보낸다
-    for token in [
-        f"{MOCK_LABEL} ",
-        "실제 RAG 검색 없이 ",
-        "만든 테스트 답변입니다. ",
-        f"받은 질문: {message}",
-    ]:
-        yield token
-        await _wait()
+async def _answer_events(
+    message: str, history: list[ChatMessage]
+) -> AsyncIterator[ServerSentEvent]:
+    intent = await understand_intent(message, history)
+
+    if intent.kind == "off_topic":
+        for event in _text_events(OFF_TOPIC_MESSAGE):
+            yield event
+        return
+
+    # 검색하기엔 정보가 부족하면 검색하지 않고 되묻는다 (되묻는 문장도 token 이벤트로 보낸다)
+    if intent.needs_clarification and intent.clarifying_question:
+        for event in _text_events(intent.clarifying_question):
+            yield event
+        return
+
+    candidates = await search_cards(intent)
+    if settings.CHAT_VERIFY_ENABLED:
+        verified = await verify_candidates(intent.search_query, candidates)
+    else:
+        verified = unverified(candidates)
+
+    # 근거가 하나도 없는 카드는 참조로 보여줄 수 없다 (카드당 근거 1개 이상은 앱 로직이 보장하지만
+    # 방어한다)
+    references = [_to_reference(v) for v in verified if v.candidate.card.evidences][:MAX_REFERENCES]
+
+    cards = [reference.card for reference in references]
+    async for token in generate_answer(message, history, intent.kind, cards):
+        yield to_sse("token", ChatTokenEvent(content=token))
+    yield to_sse("references", ChatReferencesEvent(items=references))
 
 
 async def chat_stream(message: str, history: list[ChatMessage]) -> AsyncIterator[ServerSentEvent]:
     # token(여러 번) -> references -> completed 순서로 보낸다.
     # 스트림이 시작된 뒤엔 HTTP 상태코드를 바꿀 수 없어서, 실패는 error 이벤트로 알리고 끝낸다
     try:
-        references = await _retrieve_references(message, history)
-        async for token in _generate_answer(message, history, references):
-            yield to_sse("token", ChatTokenEvent(content=token))
-        yield to_sse("references", ChatReferencesEvent(items=references))
+        async for event in _answer_events(message, history):
+            yield event
     except Exception:
         logger.exception("챗봇 답변 생성 실패")
         yield to_sse("error", ChatErrorEvent(message=CHAT_FAILED_MESSAGE))

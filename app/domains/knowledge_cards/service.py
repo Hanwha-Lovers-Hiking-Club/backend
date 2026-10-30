@@ -79,6 +79,21 @@ def create_card(card: dict, evidences: list[dict]) -> str:
     return card_id
 
 
+def get_active_cards_by_ids(card_ids: list[str]) -> dict[str, dict]:
+    # 챗봇(chat 도메인)이 검색으로 찾은 id들의 카드를 응답 모양(dict)으로 가져온다.
+    # 없거나 active가 아닌 카드는 결과에서 빠지므로, 호출하는 쪽이 순서와 누락을 직접 처리한다
+    if not card_ids:
+        return {}
+    result = (
+        supabase.table("knowledge_cards")
+        .select(CARD_SELECT)
+        .eq("status", "active")
+        .in_("id", card_ids)
+        .execute()
+    )
+    return {row["id"]: _to_card(row) for row in result.data}
+
+
 async def list_cards(q: str, sort: CardSort, page: int, page_size: int) -> dict:
     q = q.strip()
     column, desc = SORT_COLUMNS[sort]

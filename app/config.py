@@ -14,5 +14,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str
     KURE_API_KEY: str
 
+    # 챗봇이 검색한 지식카드를 독립 검증 에이전트로 교차 검증할지 여부 (답변 지연/LLM 비용이 늘어남)
+    CHAT_VERIFY_ENABLED: bool = True
+
 
 settings = Settings()

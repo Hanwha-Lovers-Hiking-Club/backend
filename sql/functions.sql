@@ -26,3 +26,42 @@ as $$
   order by documents.embedding <=> query_embedding
   limit match_count;
 $$;
+
+
+-- 챗봇 지식카드 검색용. active 카드만 대상으로, 지정한 임베딩 종류와 질문 벡터의 코사인 유사도 순으로 돌려준다.
+-- embedding_kind: 'content'(전체) / 'situation'(상황·문제) / 'solution'(대응·해결) / 'lesson'(교훈).
+-- 그 외 값은 'content'로 처리한다. 해당 임베딩이 NULL인 카드는 제외된다.
+-- 파이썬에서는 supabase.rpc("match_knowledge_cards", {...})로 호출한다.
+-- knowledge_cards의 임베딩 컬럼(vector(1024))은 sql/2026-10-28_add_knowledge_card_embeddings.sql 참고.
+create or replace function match_knowledge_cards(
+  query_embedding vector(1024),
+  embedding_kind text default 'content',
+  match_count int default 8,
+  min_similarity float default 0.0
+)
+returns table (
+  id uuid,
+  similarity float
+)
+language sql stable
+as $$
+  select
+    knowledge_cards.id,
+    (1 - scored.distance)::float as similarity
+  from knowledge_cards
+  cross join lateral (
+    select (
+      case embedding_kind
+        when 'situation' then knowledge_cards.situation_embedding
+        when 'solution' then knowledge_cards.solution_embedding
+        when 'lesson' then knowledge_cards.lesson_embedding
+        else knowledge_cards.content_embedding
+      end
+    ) <=> query_embedding as distance
+  ) as scored
+  where knowledge_cards.status = 'active'
+    and scored.distance is not null
+    and 1 - scored.distance >= min_similarity
+  order by scored.distance
+  limit match_count;
+$$;
