@@ -40,8 +40,12 @@ uv run python scripts/start_langgraph.py
 document_id는 제품 연결 시 documents.id를 받아야 한다. 위 UUID는 로컬 확인용 예시다.
 실제 파일은 서버에서 읽을 수 있어야 한다. 업로드/Storage 다운로드는 이 UI가 구현하지 않는다.
 
-현재 `.env`의 qwen3:14b/qwen3:8b는 확인 당시 설치되지 않았다. 실제 그래프 실행 전에 설치하거나
-사용할 설치 모델로 EXTRACT_MODEL/DRAFT_MODEL을 직접 변경해야 한다. 자동 다운로드/유료 fallback은 없다.
+현재 기본 공급자는 OpenAI이며 Extract/Verify=gpt-6.1-sol, Draft=gpt-6-luna다.
+비밀키 없는 .env.example을 참고해 로컬 .env를 준비하고 OPENAI_API_KEY는 사용자 환경변수로 제공한다.
+Supabase 앱 실행에는 SUPABASE_SERVICE_ROLE_KEY도 필요하다. 새 사용자 환경변수 등록 후 VS Code/서버를 재시작한다.
+KURE_API_KEY는 별도 임베딩 연결용이며 아직 사용하지 않는다. 실제 키의 모델 접근/할당량 검증은 별도다.
+Ollama/Anthropic은 명시적으로 선택할 수 있으며 공급자 변경 시 모델 ID도 바꿔야 한다.
+Ollama qwen 모델은 자동 다운로드하지 않으며 유료 API로 자동 fallback하지 않는다.
 규칙 모드에서는 의미를 확인할 수 없는 카드는 needs_review다. LLM 의미 검증을 쓰려면
 VERIFY_LLM_ENABLED=true와 VERIFY_MODEL을 명시한다. 예제의 통과가 실제 모델의 품질을 입증하지는 않는다.
 

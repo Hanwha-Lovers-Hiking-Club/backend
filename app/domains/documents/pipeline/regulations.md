@@ -119,10 +119,12 @@
 
 - 맞출 담당: pipeline, 백엔드 배포 담당.
 - 파일: `app/config.py`, `.env.example`, `pyproject.toml`, `uv.lock`, `langgraph.json`, 개발 실행 문서.
-- 확인: Ollama 모델 설치/메모리/컨텍스트 길이, Anthropic 계정·키와 예산, 선택적 VERIFY_MODEL,
+- 확인: OpenAI/Anthropic 키의 모델 접근·예산, Ollama 설치/메모리/컨텍스트 길이, 선택적 VERIFY_MODEL,
   실제 문서 반출·로깅·tracing 설정, 배포 환경의 다운로드/임시 파일 접근·동시 실행 정책.
-- 현재 사용자 설정: Ollama/qwen3:14b(Extract), qwen3:8b(Draft), 규칙 검증 켬·LLM 검증 끔.
-  2026-10-28 확인 시 Ollama는 실행 중이나 두 qwen 모델은 설치 목록에 없고 LangSmith 키도 없었다.
+- 2026-10-30 사용자 확정 설정: OpenAI, Extract/Verify=gpt-6.1-sol, Draft=gpt-6-luna.
+  규칙 검증은 켜고 LLM 검증은 기본으로 끈다. LLM 검증을 켤 때만 VERIFY_MODEL을 호출한다.
+  OPENAI_API_KEY/SUPABASE_SERVICE_ROLE_KEY/KURE_API_KEY는 사용자 환경변수에 등록되어 있다.
+  실제 모델 접근·할당량·품질 확인은 아직 미완료다. 원래 Ollama의 qwen 모델은 자동 설치하지 않았다.
 - 개발용 그래프와 예제 응답은 제품 LLM 호출/저장 성공으로 집계하지 않는다.
   개발 서버의 스레드/체크포인트/작업 이력은 로컬 파일이며 저장소에서 제외한다.
 

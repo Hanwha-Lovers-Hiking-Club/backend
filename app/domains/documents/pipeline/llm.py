@@ -5,7 +5,10 @@ from contextlib import asynccontextmanager
 from typing import Literal, Protocol, TypeVar
 
 import httpx2 as httpx
-from anthropic import APIError, AsyncAnthropic, transform_schema
+from anthropic import APIError as AnthropicAPIError
+from anthropic import AsyncAnthropic, transform_schema
+from openai import APIError as OpenAIAPIError
+from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
 OutputT = TypeVar("OutputT", bound=BaseModel)
@@ -61,6 +64,64 @@ def output_schema(output_type: type[BaseModel]) -> dict:
     return schema
 
 
+class OpenAIStructuredGenerator:
+    def __init__(self, client: AsyncOpenAI, model: str, max_output_tokens: int):
+        self.client = client
+        self.model = model
+        self.max_output_tokens = max_output_tokens
+
+    async def generate(
+        self, *, instructions: str, payload: dict, output_type: type[OutputT]
+    ) -> OutputT:
+        try:
+            response = await self.client.responses.create(
+                model=self.model,
+                instructions=instructions,
+                input=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": output_type.__name__,
+                        "strict": True,
+                        "schema": output_schema(output_type),
+                    }
+                },
+                store=False,
+                truncation="disabled",
+                max_output_tokens=self.max_output_tokens,
+            )
+        except OpenAIAPIError as exc:
+            raise GenerationError(
+                "LLM_API_ERROR", "OpenAI structured model request failed"
+            ) from exc
+        output = getattr(response, "output", None)
+        if not isinstance(output, list):
+            raise GenerationError("LLM_INVALID_OUTPUT", "Invalid model response envelope")
+        if any(part.type == "refusal" for item in output for part in getattr(item, "content", [])):
+            raise GenerationError("LLM_REFUSED", "The model refused this request")
+        if response.status != "completed":
+            raise GenerationError("LLM_INCOMPLETE", "The model response did not complete")
+        texts = []
+        for item in output:
+            if item.type == "reasoning":
+                continue
+            if item.type != "message" or item.role != "assistant" or item.status != "completed":
+                raise GenerationError(
+                    "LLM_INVALID_OUTPUT", "Expected a completed assistant message"
+                )
+            for part in item.content:
+                if part.type != "output_text":
+                    raise GenerationError(
+                        "LLM_INVALID_OUTPUT", "Expected structured assistant text"
+                    )
+                texts.append(part.text)
+        if not texts or not any(text.strip() for text in texts):
+            raise GenerationError("LLM_EMPTY", "No structured model output was returned")
+        if len(texts) != 1:
+            raise GenerationError("LLM_INVALID_OUTPUT", "Expected one structured text block")
+        return validate_output(output_type, texts[0])
+
+
 class AnthropicStructuredGenerator:
     def __init__(self, client: AsyncAnthropic, model: str, max_output_tokens: int):
         self.client = client
@@ -84,7 +145,7 @@ class AnthropicStructuredGenerator:
                 },
                 max_tokens=self.max_output_tokens,
             )
-        except APIError as exc:
+        except AnthropicAPIError as exc:
             raise GenerationError("LLM_API_ERROR", "Structured model request failed") from exc
         if response.stop_reason == "refusal":
             raise GenerationError("LLM_REFUSED", "The model refused this request")
@@ -168,6 +229,20 @@ async def configured_generator(stage: GenerationStage):
     }[stage]
     if not model or not model.strip():
         raise GenerationError("LLM_NOT_CONFIGURED", "Set the model for this generation stage")
+    if settings.LLM_PROVIDER == "openai":
+        key = settings.OPENAI_API_KEY
+        if key is None or not key.get_secret_value().strip():
+            raise GenerationError("LLM_NOT_CONFIGURED", "Set OPENAI_API_KEY")
+        async with AsyncOpenAI(
+            api_key=key.get_secret_value().strip(),
+            base_url="https://api.openai.com/v1",
+            timeout=settings.DOCUMENT_LLM_TIMEOUT_SECONDS,
+            max_retries=0,
+        ) as client:
+            yield OpenAIStructuredGenerator(
+                client, model.strip(), settings.DOCUMENT_LLM_MAX_OUTPUT_TOKENS
+            )
+        return
     if settings.LLM_PROVIDER == "ollama":
         async with httpx.AsyncClient(
             base_url=str(settings.LLM_BASE_URL).rstrip("/") + "/",

@@ -10,6 +10,7 @@ from app.domains.documents.pipeline.llm import (
     AnthropicStructuredGenerator,
     GenerationError,
     OllamaStructuredGenerator,
+    OpenAIStructuredGenerator,
     configured_generator,
 )
 from app.domains.documents.pipeline.models import DraftProposal, ExtractionProposal
@@ -154,6 +155,7 @@ def test_empty_default_nodes_do_not_create_a_model_client(monkeypatch):
         pytest.fail("Empty pipeline must not create a model client")
 
     monkeypatch.setattr(llm, "AsyncAnthropic", unexpected)
+    monkeypatch.setattr(llm, "AsyncOpenAI", unexpected)
     monkeypatch.setattr(llm.httpx, "AsyncClient", unexpected)
     assert asyncio.run(extract({"documents": [], "chunks": []}))["drafts"] == []
     assert asyncio.run(draft_card({"extraction_result": ExtractionResult()}))["drafts"] == []
@@ -243,12 +245,13 @@ def test_ollama_connection_failure_does_not_fallback_or_retry(monkeypatch):
     assert len(requests) == 1
 
 
-@pytest.mark.parametrize("provider", ["ollama", "anthropic"])
+@pytest.mark.parametrize("provider", ["ollama", "anthropic", "openai"])
 def test_provider_factory_uses_separate_stage_models(monkeypatch, provider):
     from app.config import settings
 
     monkeypatch.setattr(settings, "LLM_PROVIDER", provider)
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("test-key"))
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("test-key"))
     monkeypatch.setattr(settings, "EXTRACT_MODEL", "test-extract-model")
     monkeypatch.setattr(settings, "DRAFT_MODEL", "test-draft-model")
     monkeypatch.setattr(settings, "VERIFY_MODEL", "test-verify-model")
@@ -265,10 +268,14 @@ def test_provider_factory_uses_separate_stage_models(monkeypatch, provider):
                 if provider == "ollama":
                     assert isinstance(generator, OllamaStructuredGenerator)
                     assert str(generator.client.base_url) == "http://ollama.test:11434/"
-                else:
+                elif provider == "anthropic":
                     assert isinstance(generator, AnthropicStructuredGenerator)
                     assert generator.client.max_retries == 0
                     assert generator.client.base_url.host != "ollama.test"
+                else:
+                    assert isinstance(generator, OpenAIStructuredGenerator)
+                    assert generator.client.max_retries == 0
+                    assert generator.client.base_url.host == "api.openai.com"
 
     asyncio.run(run())
 

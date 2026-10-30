@@ -5,12 +5,12 @@
 내용의 적용 범위는 pipeline 하위다.
 외부 파일 경로는 연결 상대를 설명하며, 수정 권한을 넓히지 않는다.
 
-## 확인된 상태 — 2026-10-28 로컬 기준
+## 확인된 상태 — 2026-10-30 로컬 기준
 
 - `models.py`에 3번 작업의 `EvidenceRef`, `ExtractedField`, `ExtractedElements`를 구현했다.
   `ExtractionResult`로 0~N개 독립 경험을 표현한다.
 - 4번의 형식별 파서, DocumentIR, 구조 기반 청킹, Parse/Normalize/Chunk 노드와 최소 State를 구현했다.
-- 5번 Extract/Draft 노드와 작성 모델, 근거 연결, 생략 사유, Ollama/Anthropic 비동기 어댑터를 구현했다.
+- 5번 Extract/Draft 노드와 작성 모델, 근거 연결, 생략 사유, OpenAI/Ollama/Anthropic 비동기 어댑터를 구현했다.
   6번 Verification Gate와 실제 LangGraph 조건부 재처리를 연결했다. Embed/Save와 제품 업로드·SSE는 아직 미구현이다.
 - `fake_function.py`에 개발용 `fake_save_cards`가 있다. DB에 저장하지 않는 독립적인 가짜 함수다.
   그래프·save 노드에는 아직 연결하지 않았다. 실제 서비스의 확정 계약이 아니다.
@@ -21,9 +21,9 @@
 - DB 필드가 정해져 있는 것과 함수가 받을 입력·반환값이 정해져 있는 것은 다르다.
 - `pyproject.toml`에 pdfplumber, python-docx, openpyxl, markdown-it-py를 추가했다.
   reportlab은 최소 PDF 테스트 문서를 만들기 위한 개발 의존성이다. 데이터셋 생성 기능은 없다.
-  Anthropic SDK와 Ollama용 HTTP 클라이언트를 사용한다. LangGraph는 직접 의존성이며 CLI[inmem]는 개발 의존성이다.
-  `app/config.py`와 `.env.example`에 LLM 설정을 추가했다. 사용자 요청대로 Ollama/qwen3:14b·8b를 기본값으로 두며
-  공급자 변경 시 단계별 모델명도 변경한다. 검증 LLM 모델은 임의 기본값 없이 VERIFY_MODEL로 받는다.
+  OpenAI/Anthropic SDK와 Ollama용 HTTP 클라이언트를 사용한다. LangGraph는 직접 의존성이며 CLI[inmem]는 개발 의존성이다.
+  2026-10-30 사용자 승인으로 OpenAI를 기본 공급자로 변경했다. Extract/Verify는 gpt-6.1-sol,
+  Draft는 gpt-6-luna이며 LLM Verify는 기본 비활성이다. 공급자 변경 시 모델 ID도 함께 변경한다.
 
 ## 3번 구현 — 내부 추출 스키마
 
@@ -135,7 +135,7 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
 |---|---|
 | `extraction.py`, `nodes/extract.py` | 청크마다 0~N개 독립 경험을 추출하고 코드 소유의 근거를 연결 |
 | `drafting.py`, `nodes/draft_card.py` | 경험별 초안 또는 생략 결과 작성. 실제 저장·활성화는 하지 않음 |
-| `llm.py` | 교체 가능한 StructuredGenerator와 Ollama/Anthropic 구조화 출력 어댑터, 단계별 모델·오류·클라이언트 수명 관리 |
+| `llm.py` | 교체 가능한 StructuredGenerator와 OpenAI/Ollama/Anthropic 어댑터, 단계별 모델·오류·클라이언트 수명 관리 |
 | `prompts/extract.md`, `prompts/draft_card.md` | 추출과 작성 지시문. 원문 안의 지시문은 데이터로 취급 |
 | `models.py` | LLM 응답용 Proposal, 근거가 연결된 ExtractedElements, KnowledgeCardDraft, DraftSkip |
 
@@ -181,24 +181,30 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
 
 ### 모델 연결과 검증 범위
 
-- LLM_PROVIDER=ollama 또는 anthropic으로 공급자를 선택한다. Extract는 EXTRACT_MODEL,
+- LLM_PROVIDER=openai/ollama/anthropic으로 공급자를 선택한다. Extract는 EXTRACT_MODEL,
   Draft는 DRAFT_MODEL을 읽으며 파이프라인/State/근거 계약은 동일하다. 모델·클라이언트는 State에 넣지 않는다.
-- 사용자 요청대로 실제 로컬 .env에는 LLM_PROVIDER=ollama, LLM_BASE_URL=http://localhost:11434,
-  EXTRACT_MODEL=qwen3:14b, DRAFT_MODEL=qwen3:8b를 반영했다. 다른 환경에는 .env가 공유되지 않는다.
-  Ollama 서버 실행과 두 모델의 pull은 별도이며 이번 작업에서 자동 설치·다운로드·추론하지 않았다.
+- 현재 설정은 OpenAI다. OPENAI_API_KEY는 사용자 환경변수에서 읽고 코드/State/공용 예시에는 보관하지 않는다.
+  로컬 .env는 일반 설정만 가지며 Git에서 제외한다. 새 사용자 환경변수는 VS Code/서버 재시작 후 상속된다.
+  OpenAI/Anthropic/KURE 키는 SecretStr로 마스킹하며 설정 검증 오류도 입력 값을 숨긴다.
+  이것이 저장소 암호화를 뜻하지는 않는다. 기존 Supabase 클라이언트의 키 전달 계약은 변경하지 않았다.
+  KURE_API_KEY는 별도 임베딩 연동용 예약 설정이며 아직 호출하지 않는다.
+- Ollama를 선택하면 모델 서버 실행·모델 설치가 필요하다. 자동 설치·다운로드·추론 또는 유료 fallback은 없다.
 - Anthropic으로 바꿀 때는 LLM_PROVIDER=anthropic과 두 모델명을 claude-sonnet-5-5로 변경하고
   ANTHROPIC_API_KEY를 설정한다. LLM_BASE_URL은 Ollama 전용이며 Anthropic 키를 해당 주소로 보내지 않는다.
   API 키는 SecretStr로 관리하며 저장소에 올리지 않는다. 빈 입력/생략 결과는 클라이언트를 만들지 않는다.
 - VERIFY_RULES_ENABLED=true는 필수이며 false는 설정 오류다. VERIFY_LLM_ENABLED=false가 기본이다.
-  true로 켜면 VERIFY_MODEL을 명시해야 한다. 검증도 같은 공급자를 사용하며 유료 모델로 자동 전환하지 않는다.
+  true로 켜면 설정된 VERIFY_MODEL(현재 gpt-6.1-sol)을 사용한다. 검증도 같은 공급자를 사용하며 자동 전환하지 않는다.
   검증 모델 누락/호출 실패는 needs_review이고 pass로 대신 처리하지 않는다.
 - DOCUMENT_LLM_TIMEOUT_SECONDS=60, MAX_OUTPUT_TOKENS=4096, MAX_INPUT_CHARS=48000을 기본값으로 쓴다.
   뒤의 두 설정의 전체 이름은 DOCUMENT_LLM_MAX_OUTPUT_TOKENS와 DOCUMENT_LLM_MAX_INPUT_CHARS다.
   입력 문자 수는 토큰 한도가 아니며, 실제 요청 크기가 기준을 넘으면 INPUT_TOO_LARGE로 실패한다.
+- OpenAI는 공식 https://api.openai.com/v1 의 Responses API에 strict JSON Schema를 보낸다.
+  store=false, truncation=disabled, SDK max_retries=0이며 온도/추론 강도를 임의 고정하지 않는다.
+  거절/미완료를 텍스트 파싱보다 먼저 구분하고, 하나의 완료된 assistant 구조화 텍스트를 원래 모델로 검사한다.
 - Ollama는 /api/chat의 format에 JSON Schema를 보내고 stream=false로 받는다.
   Anthropic은 Messages API의 output_config.format에 SDK가 변환한 스키마를 보낸다.
-  두 공급자의 출력 모두 원래 Pydantic 모델로 다시 검증한다. 원문은 user 입력 JSON으로 지침과 분리한다.
-  Ollama의 출력 제한은 num_predict, Anthropic은 max_tokens에 연결한다.
+  모든 공급자의 출력은 원래 Pydantic 모델로 다시 검증한다. 원문은 user 입력 JSON으로 지침과 분리한다.
+  출력 제한은 OpenAI max_output_tokens, Ollama num_predict, Anthropic max_tokens에 연결한다.
   앱에서 원문을 임의로 자르지 않는다. 로컬 모델의 컨텍스트 길이/메모리는 별도 실측해야 하며
   문자 수 상한이 Ollama의 토큰 한도나 서버 측 입력 처리까지 보장하지는 않는다.
   SDK 자동 재시도·유료 API 자동 fallback은 없다. 재처리 요청 제어는 아래 6번을 따른다.
@@ -207,7 +213,8 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
   전체 StateGraph와 백그라운드/API/SSE 연결은 후속 작업이다.
 - 실제 유료 API 실행 및 실제 문서에 대한 의미 품질 평가는 이번 검증에 포함하지 않았다.
 
-공식 근거: [Ollama Structured Outputs](https://docs.ollama.com/capabilities/structured-outputs),
+공식 근거: [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs),
+[Ollama Structured Outputs](https://docs.ollama.com/capabilities/structured-outputs),
 [Anthropic Structured Outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs),
 [Claude Sonnet 5.5](https://platform.claude.com/docs/en/models/sonnet-5-5/overview).
 
@@ -221,7 +228,7 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
 | Extract/Draft/최종 카드 분리 | 유지. Draft는 저장·활성화하지 않으며, Gate 통과 목록도 여전히 draft 객체임 |
 | 필드별 근거와 불확실성 보존 | 유지. 잘못 연결된 필드 근거를 거부하고 Gate에서 원본 대조 추가 |
 | 주요 주장/가설/충돌 확인 | 이전 5번만으로는 충족되지 않았음. 6번에 규칙 검사와 선택적 LLM 의미 검사 추가 |
-| Ollama/Anthropic 교체 | 최신 사용자 요청으로 바뀐 공급자 선택이며 허용된 변경. 임베딩 모델 교체를 뜻하지 않음 |
+| 공급자 교체 | OpenAI 기본 + Ollama/Anthropic 명시 선택. 사용자 승인 변경이며 임베딩 모델 교체를 뜻하지 않음 |
 | LLM 검증 없는 실행 | 초기 설계의 의미 검증 전체를 규칙으로 대체할 수 없음. 확신하지 못한 결과는 needs_review |
 | 문서 제목은 원래 파일명 | 파이프라인에서 유지. 공유 docs/schema.md의 'LLM 추출' 설명과의 차이는 여전히 담당자 확인 사항 |
 | 기술명 정규화 | 현재 원래 문자열/목록을 보존함. 별칭·오타 자동 통합을 구현했다고 주장하지 않음 |

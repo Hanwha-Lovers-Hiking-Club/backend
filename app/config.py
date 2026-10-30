@@ -7,18 +7,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", hide_input_in_errors=True)
 
     SUPABASE_URL: str
     SUPABASE_SERVICE_ROLE_KEY: str
     SUPABASE_STORAGE_BUCKET: str = "documents"
     CORS_ORIGINS: str = "http://localhost:3000"
-    LLM_PROVIDER: Literal["ollama", "anthropic"] = "ollama"
+    LLM_PROVIDER: Literal["openai", "ollama", "anthropic"] = "openai"
     LLM_BASE_URL: AnyHttpUrl = "http://localhost:11434"
     ANTHROPIC_API_KEY: SecretStr | None = None
-    EXTRACT_MODEL: str = "qwen3:14b"
-    DRAFT_MODEL: str = "qwen3:8b"
-    VERIFY_MODEL: str | None = None
+    OPENAI_API_KEY: SecretStr | None = None
+    # Reserved for the separate embedding integration; no KURE call is made yet.
+    KURE_API_KEY: SecretStr | None = None
+    EXTRACT_MODEL: str = "gpt-6.1-sol"
+    DRAFT_MODEL: str = "gpt-6-luna"
+    VERIFY_MODEL: str | None = "gpt-6.1-sol"
     VERIFY_RULES_ENABLED: bool = True
     VERIFY_LLM_ENABLED: bool = False
     VERIFY_MAX_RETRIES: int = Field(default=2, ge=0, le=5)
