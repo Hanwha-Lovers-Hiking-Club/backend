@@ -29,10 +29,13 @@ Extract/Draft/Verify와 실제 LangGraph 조건부 재처리를 연결했다. Em
 - [x] 5번: 가짜 모델·모의 HTTP·파싱부터 초안까지의 연결 테스트를 통과한다.
 - [x] LLM_PROVIDER로 OpenAI/Ollama/Anthropic 및 단계별 모델을 교체한다.
 - [x] OpenAI 기본 모델은 Extract/Verify=gpt-6.1-sol, Draft=gpt-6-luna로 맞춘다. LLM Verify는 기본 비활성이다.
-- [x] 사용자 환경변수에서 키를 읽고 .env.example에는 비밀키 없는 일반 설정만 보관한다.
+- [x] 사용자 환경변수에서 키를 읽고 Git에서 제외된 로컬 `.env`에는 일반 설정만 보관한다. 공용 설정 예시는 `devtools/README.md`에 둔다.
 - [x] 실제 OpenAI SDK의 모의 HTTP와 전체 그래프에서 단계별 모델 선택·구조화 출력·재처리를 검증한다.
 - [x] 공급자별 JSON 스키마 요청·응답 검증, 오류와 유료 API 자동 전환 금지를 모의 HTTP로 확인한다.
-- [ ] 선택한 공급자의 실제 키 권한/모델 접근을 확인하고 대표 문서로 내용·비용·응답 시간을 평가한다.
+- [x] 2026-10-30: OpenAI Sol·Luna 각각 최소 요청으로 실제 모델 접근과 구조화 응답을 확인한다.
+- [x] 2026-10-30: Supabase 최소 조회와 KURE 문장 1개 임베딩을 확인한다. KURE는 요청에서만 키 앞뒤 공백을 제거했다.
+- [ ] 등록된 KURE_API_KEY 앞뒤 공백을 수정하고 재시작한 프로세스에서 원본 값으로 호출되는지 확인한다.
+- [ ] 대표 문서로 추출·검증 품질, 작업당 비용·응답 시간 및 필요한 할당량을 평가한다.
 - [x] 5번 재검증: 초안의 필드별 근거 배열을 해당 Extract 필드와 일치시키고 공급자 응답 속성을 명시적으로 요구한다.
 - [x] 6번: VERIFY_RULES_ENABLED/VERIFY_LLM_ENABLED와 명시적 VERIFY_MODEL을 Gate 실행 분기에 연결한다.
 - [x] DB 필수 필드 구조 검증과 선택적 LLM 내용 검증을 나누고 판정 이유를 추적한다.

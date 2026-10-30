@@ -3,7 +3,7 @@
 이 도구는 6번까지의 실제 LangGraph 실행을 확인한다. 제품 백엔드의 업로드/SSE API와 별개다.
 팀 연결 계약은 [regulations.md](../regulations.md)를 확인한다.
 
-저장소 루트의 VS Code 터미널에서 실행한다.
+아래 환경 설정을 준비한 뒤 저장소 루트의 VS Code 터미널에서 실행한다.
 
 ```powershell
 uv sync
@@ -19,6 +19,43 @@ uv run python scripts/start_langgraph.py
 - 기본 포트는 2024다. `--port 2025`로 바꿀 수 있다.
 - 스크립트는 서버를 숨김 창으로 시작하고 브라우저를 자동 조작하지 않는다. 이미 포트를 쓰는 프로세스는 중지하지 않는다.
   코드 변경을 반영하려면 이 서버 프로세스를 종료한 뒤 다시 시작한다.
+
+## 환경 설정
+
+설정은 `app/config.py`의 Settings가 읽는다. 비밀키는 Windows 사용자 환경변수로,
+일반 설정은 저장소 루트의 로컬 `.env`로 제공한다. 같은 이름이면 프로세스 환경변수가 `.env`보다 우선한다.
+`.env`는 Git에서 제외되며 새 clone에는 없으므로 직접 준비한다. 아래 예시의 프로젝트 URL은 실제 값으로 바꾼다.
+
+```dotenv
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_STORAGE_BUCKET=documents
+CORS_ORIGINS=http://localhost:3000
+
+LLM_PROVIDER=openai
+EXTRACT_MODEL=gpt-6.1-sol
+DRAFT_MODEL=gpt-6-luna
+VERIFY_MODEL=gpt-6.1-sol
+VERIFY_RULES_ENABLED=true
+VERIFY_LLM_ENABLED=false
+VERIFY_MAX_RETRIES=2
+DOCUMENT_LLM_TIMEOUT_SECONDS=60
+DOCUMENT_LLM_MAX_OUTPUT_TOKENS=4096
+DOCUMENT_LLM_MAX_INPUT_CHARS=48000
+```
+
+| 사용자 환경변수 이름 | 용도 |
+|---|---|
+| `OPENAI_API_KEY` | OpenAI Extract/Draft 및 선택적 LLM Verify |
+| `SUPABASE_SERVICE_ROLE_KEY` | 제품 백엔드의 Supabase DB/Storage 접근 |
+| `KURE_API_KEY` | 향후 KURE 임베딩 연결. 현재 제품 파이프라인에서는 미사용 |
+
+환경변수의 값에는 발급받은 실제 키만 입력한다. 앞뒤 공백·줄바꿈·값을 감싸는 따옴표를 넣지 않는다.
+`OPENAI_API_KEY="OPENAI_API_KEY"`는 변수 참조가 아니라 이름 문자열을 값으로 저장하는 설정이다.
+키를 `.env`나 공용 문서에 다시 적지 않는다.
+
+앱은 Windows 사용자 환경변수 저장소를 직접 조회하지 않고 시작한 프로세스의 환경변수를 읽는다.
+등록·수정 후 VS Code를 완전히 종료하고 다시 열며, 이미 실행 중인 서버도 종료 후 다시 시작한다.
+VS Code만 재시작해도 기존 서버의 환경변수는 바뀌지 않는다.
 
 ## 그래프 선택
 
@@ -41,13 +78,30 @@ document_id는 제품 연결 시 documents.id를 받아야 한다. 위 UUID는 �
 실제 파일은 서버에서 읽을 수 있어야 한다. 업로드/Storage 다운로드는 이 UI가 구현하지 않는다.
 
 현재 기본 공급자는 OpenAI이며 Extract/Verify=gpt-6.1-sol, Draft=gpt-6-luna다.
-비밀키 없는 .env.example을 참고해 로컬 .env를 준비하고 OPENAI_API_KEY는 사용자 환경변수로 제공한다.
-Supabase 앱 실행에는 SUPABASE_SERVICE_ROLE_KEY도 필요하다. 새 사용자 환경변수 등록 후 VS Code/서버를 재시작한다.
-KURE_API_KEY는 별도 임베딩 연결용이며 아직 사용하지 않는다. 실제 키의 모델 접근/할당량 검증은 별도다.
+설정 방법은 위 환경 설정 절을 따른다. KURE 호출은 아직 제품 그래프에 연결하지 않았다.
 Ollama/Anthropic은 명시적으로 선택할 수 있으며 공급자 변경 시 모델 ID도 바꿔야 한다.
 Ollama qwen 모델은 자동 다운로드하지 않으며 유료 API로 자동 fallback하지 않는다.
 규칙 모드에서는 의미를 확인할 수 없는 카드는 needs_review다. LLM 의미 검증을 쓰려면
 VERIFY_LLM_ENABLED=true와 VERIFY_MODEL을 명시한다. 예제의 통과가 실제 모델의 품질을 입증하지는 않는다.
+
+## 최소 연결 확인 기록 — 2026-10-30
+
+사용자 요청으로 실제 키를 사용해 다음 최소 요청만 확인했다. 정기 자동 테스트가 아니다.
+
+| 서비스 | 확인한 요청 | 결과 |
+|---|---|---|
+| OpenAI | Sol·Luna 각각 짧은 요청 1회. 기존 OpenAI 어댑터 사용 | 두 모델 모두 구조화 JSON 응답 검증 통과 |
+| Supabase | 기존 앱 클라이언트로 knowledge_cards의 ID 최대 1건 조회 | 정상 응답, 결과 0건. DB 쓰기 없음 |
+| KURE | kure-v3에 짧은 문장 1개 임베딩 | HTTP 200, 기본 2,048차원 벡터, 입력 6토큰 |
+
+KURE는 등록된 키 앞뒤 공백 때문에 첫 시도에서 로컬 헤더 검증에 실패했다.
+이번 요청에서만 공백을 제거해 성공했으며 사용자 환경변수 원본은 수정하지 않았다.
+다음 실행 전 등록된 값의 공백을 제거하고 해당 프로세스를 재시작해야 한다.
+
+이 결과는 해당 시점의 인증과 최소 호출 성공만 확인한다. 실제 프로젝트 문서의 추출·검증 품질,
+작업당 비용, 지속 처리량·할당량, Supabase Storage 업로드·카드 저장은 아직 검증하지 않았다.
+KURE의 관측된 기본 차원은 최종 임베딩/DB/검색 계약을 확정한 값이 아니다.
+실제 파이프라인 전체 실행과 구분하며, LLM Verify의 기본 비활성 설정도 유지한다.
 
 ## 중단·재개와 결과
 

@@ -187,7 +187,9 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
   로컬 .env는 일반 설정만 가지며 Git에서 제외한다. 새 사용자 환경변수는 VS Code/서버 재시작 후 상속된다.
   OpenAI/Anthropic/KURE 키는 SecretStr로 마스킹하며 설정 검증 오류도 입력 값을 숨긴다.
   이것이 저장소 암호화를 뜻하지는 않는다. 기존 Supabase 클라이언트의 키 전달 계약은 변경하지 않았다.
-  KURE_API_KEY는 별도 임베딩 연동용 예약 설정이며 아직 호출하지 않는다.
+  KURE_API_KEY는 별도 임베딩 연동용 예약 설정이며 제품 파이프라인에서는 아직 호출하지 않는다.
+  공용 설정 예시는 [로컬 실행 안내](devtools/README.md#환경-설정)에 두며 로컬 `.env`를 재생성하거나 커밋하지 않는다.
+  같은 이름이면 프로세스 환경변수가 `.env`보다 우선한다. 환경변수 값에는 실제 키만 넣고 앞뒤 공백을 제거한다.
 - Ollama를 선택하면 모델 서버 실행·모델 설치가 필요하다. 자동 설치·다운로드·추론 또는 유료 fallback은 없다.
 - Anthropic으로 바꿀 때는 LLM_PROVIDER=anthropic과 두 모델명을 claude-sonnet-5-5로 변경하고
   ANTHROPIC_API_KEY를 설정한다. LLM_BASE_URL은 Ollama 전용이며 Anthropic 키를 해당 주소로 보내지 않는다.
@@ -198,6 +200,10 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
 - DOCUMENT_LLM_TIMEOUT_SECONDS=60, MAX_OUTPUT_TOKENS=4096, MAX_INPUT_CHARS=48000을 기본값으로 쓴다.
   뒤의 두 설정의 전체 이름은 DOCUMENT_LLM_MAX_OUTPUT_TOKENS와 DOCUMENT_LLM_MAX_INPUT_CHARS다.
   입력 문자 수는 토큰 한도가 아니며, 실제 요청 크기가 기준을 넘으면 INPUT_TOO_LARGE로 실패한다.
+- 2026-10-30 최소 실제 연결 확인: Sol·Luna 각각 짧은 구조화 응답, Supabase 카드 ID 최대 1건 조회,
+  KURE 문장 1개 임베딩이 성공했다. DB 쓰기는 없었다. KURE는 요청에서만 키 앞뒤 공백을 제거했으며
+  사용자 환경변수 수정은 아직 하지 않았다. 실제 문서의 품질·비용 및 전체 파이프라인 검증과 구분한다.
+  상세 범위와 한계는 [연결 확인 기록](devtools/README.md#최소-연결-확인-기록--2026-10-30)을 따른다.
 - OpenAI는 공식 https://api.openai.com/v1 의 Responses API에 strict JSON Schema를 보낸다.
   store=false, truncation=disabled, SDK max_retries=0이며 온도/추론 강도를 임의 고정하지 않는다.
   거절/미완료를 텍스트 파싱보다 먼저 구분하고, 하나의 완료된 assistant 구조화 텍스트를 원래 모델로 검사한다.
