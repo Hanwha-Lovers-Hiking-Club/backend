@@ -4,6 +4,20 @@
 DB 저장과 제품 백엔드의 업로드/SSE API는 아직 연결하지 않았다.
 팀 연결 계약은 [regulations.md](../regulations.md)를 확인한다.
 
+청크별 호출은 각각 그래프 단계로 기록하며 일시적 호출 오류만 기본 최대 3회(최초 포함) 시도한다.
+입력의 `processing_options`에서 `max_chunk_attempts`(1~5), `retry_delay_seconds`(0~10)를 바꿀 수 있다.
+이 예산은 Gate의 의미 재작성 예산과 별개다. 문서별 결과는 State의 `document_progress`,
+실패는 `processing_failures`, 청크별 결과·호출 시도는 `chunk_progress`에서 확인한다.
+한 문서가 불완전하면 해당 문서는 임베딩·저장하지 않으며 다른 문서는 계속 진행한다.
+
+최종 후보를 모은 뒤 문서별 `embed → save → complete_document`를 실행한다.
+실제 저장 어댑터가 없는 기본 실행은 `ready_to_save`로 끝나며 청크 결과를 보관한다.
+save 노드가 보인다는 이유만으로 DB에 저장됐다고 판단하지 않는다. 실제 어댑터의 확인 후에만
+`completed`가 되고 현재 임시 데이터가 정리된다. 과거 체크포인트 삭제는 별도다.
+체크포인터가 있는 같은 thread를 재개할 때는 새 sources를 보내지 말고 입력 `None`으로 재개한다.
+모델/설정·코드가 바뀌었으면 새 thread에서 시작한다. 메모리 체크포인터는 서버 재시작을 견디지 못한다.
+직접 실행에서 단계별 영속 기록을 기다리려면 영속 체크포인터와 `ainvoke(..., durability="sync")`를 사용한다.
+
 아래 환경 설정을 준비한 뒤 저장소 루트의 VS Code 터미널에서 실행한다.
 
 ```powershell

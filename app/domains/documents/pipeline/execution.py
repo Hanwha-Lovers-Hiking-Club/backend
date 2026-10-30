@@ -7,6 +7,7 @@ from app.domains.documents.pipeline.document import ChunkOptions, DocumentSource
 from app.domains.documents.pipeline.embedding_texts import EmbeddingTextOptions
 from app.domains.documents.pipeline.extraction import experience_id
 from app.domains.documents.pipeline.models import ExtractionResult
+from app.domains.documents.pipeline.processing import ProcessingOptions
 from app.domains.documents.pipeline.verification.models import RetryWork, VerificationResult
 from app.domains.documents.pipeline.verification.retry import TARGET_ORDER
 from app.domains.documents.pipeline.verification.structure_checker import issue
@@ -17,6 +18,15 @@ def initialize(state):
     if len({source.document_id for source in sources}) != len(sources):
         raise ValueError("sources must have unique document IDs")
     return {
+        "processing_options": ProcessingOptions.model_validate(
+            state.get("processing_options", ProcessingOptions())
+        ),
+        "chunk_progress": {},
+        "active_chunk_keys": [],
+        "document_progress": {},
+        "active_document_id": None,
+        "document_save_receipt": None,
+        "processing_failures": [],
         "sources": sources,
         "all_sources": sources,
         "parse_options": ParseOptions.model_validate(state.get("parse_options", ParseOptions())),
@@ -125,25 +135,43 @@ def settle(state):
             )
     active = state.get("active_retry")
     if active and not state.get("verification_results"):
+        active_ids = {
+            ref.document_id for ref in active.draft.source_extraction.evidence_index.values()
+        }
+        failed = any(
+            item.document_id in active_ids for item in state.get("processing_failures", [])
+        )
         drafts[active.draft.experience_id] = active.draft.model_copy(deep=True)
         results[active.draft.experience_id] = VerificationResult(
             experience_id=active.draft.experience_id,
-            decision="reject",
+            decision="needs_review" if failed else "reject",
             issues=[
                 issue(
-                    "minimum",
-                    "RETRY_NO_DRAFT",
+                    "retry" if failed else "minimum",
+                    "RETRY_PROCESSING_FAILED" if failed else "RETRY_NO_DRAFT",
                     "draft",
-                    "Repair produced no supported candidate",
-                    disposition="reject",
+                    "Repair failed to execute"
+                    if failed
+                    else "Repair produced no supported candidate",
+                    disposition="needs_review" if failed else "reject",
                     action="Retain the skip reason; do not create a card",
                 )
             ],
         )
     docs = state.get("documents", [])
     active_ids = {item.document_id for item in docs}
-    chunks = [item for item in state.get("all_chunks", []) if item.document_id not in active_ids]
-    chunks.extend(state.get("chunks", []))
+    if active and active.request.target_node == "extract":
+        chunks = list(
+            {
+                item.chunk_id: item
+                for item in [*state.get("all_chunks", []), *state.get("chunks", [])]
+            }.values()
+        )
+    else:
+        chunks = [
+            item for item in state.get("all_chunks", []) if item.document_id not in active_ids
+        ]
+        chunks.extend(state.get("chunks", []))
     skips = {
         item.experience_id: item
         for item in [*state.get("settled_skips", []), *state.get("draft_skips", [])]
@@ -178,6 +206,11 @@ def prepare_retry(state):
     docs = [item for item in state["all_documents"] if item.document_id in ids]
     chunks = [item for item in state["all_chunks"] if item.document_id in ids]
     target = work.request.target_node
+    if target == "extract":
+        refs = set(work.draft.source_extraction.evidence_index)
+        chunks = [
+            item for item in chunks if any(block.evidence_id in refs for block in item.blocks)
+        ]
     required = {
         "parse": sources,
         "normalize": parsed,
@@ -239,6 +272,7 @@ def finish(state):
     results = state["settled_results"]
     drafts = state["settled_drafts"]
     decisions = {item.experience_id: item.decision for item in results}
+    incomplete = {item.document_id for item in state.get("processing_failures", [])}
     return {
         "sources": state["all_sources"],
         "parsed_documents": state["all_parsed_documents"],
@@ -255,7 +289,14 @@ def finish(state):
         "drafts": drafts,
         "draft_skips": state["settled_skips"],
         "verification_results": results,
-        "verified_drafts": [item for item in drafts if decisions[item.experience_id] == "pass"],
+        "verified_drafts": [
+            item
+            for item in drafts
+            if decisions[item.experience_id] == "pass"
+            and not incomplete.intersection(
+                ref.document_id for ref in item.source_extraction.evidence_index.values()
+            )
+        ],
         "review_drafts": [
             item for item in drafts if decisions[item.experience_id] == "needs_review"
         ],

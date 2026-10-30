@@ -14,6 +14,13 @@ from app.domains.documents.pipeline.document import (
 from app.domains.documents.pipeline.embedding_texts import CardEmbeddingTexts, EmbeddingTextOptions
 from app.domains.documents.pipeline.embeddings.models import CardEmbeddings, EmbeddingUsage
 from app.domains.documents.pipeline.models import DraftSkip, ExtractionResult, KnowledgeCardDraft
+from app.domains.documents.pipeline.processing import (
+    ChunkProgress,
+    DocumentProgress,
+    ProcessingFailure,
+    ProcessingOptions,
+    SaveReceipt,
+)
 from app.domains.documents.pipeline.verification.models import (
     RetryRequest,
     RetryWork,
@@ -26,12 +33,20 @@ class IngestionInput(TypedDict, total=False):
     parse_options: ParseOptions
     chunk_options: ChunkOptions
     embedding_text_options: EmbeddingTextOptions
+    processing_options: ProcessingOptions
 
 
 class IngestionState(TypedDict, total=False):
     """Upstream retries clear stale extraction. Draft must retain the current extraction."""
 
     sources: list[DocumentSource]
+    processing_options: ProcessingOptions
+    chunk_progress: dict[str, ChunkProgress]
+    active_chunk_keys: list[str]
+    document_progress: dict[str, DocumentProgress]
+    active_document_id: str | None
+    document_save_receipt: SaveReceipt | None
+    processing_failures: list[ProcessingFailure]
     parse_options: ParseOptions
     chunk_options: ChunkOptions
     embedding_text_options: EmbeddingTextOptions

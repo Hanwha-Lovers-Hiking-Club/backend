@@ -37,6 +37,10 @@
 - 파일: `pipeline/graph.py`, `pipeline/state.py`, `documents/service.py`, `router.py`, `schemas.py`.
 - 명세상 유지 대상: POST /api/upload, GET /api/jobs/{job_id}/events.
   현재 documents 라우터는 /documents prefix만 있고 업로드/SSE 엔드포인트는 구현되지 않았다.
+- 2026-10-30 내부 후속: processing.py/state.py의 청크 진행·문서 요약·처리 오류를 추가했다.
+  문서의 failed/incomplete/needs_review/ready_to_save/completed를 구분하며 SSE 이름을 정한 것은 아니다.
+  청크별 체크포인트 재개를 사용하고, 한 파일/청크의 처리 오류가 다른 문서 결과를 지우지 않도록 했다.
+  최종 job 결과를 따로 저장한 뒤 document_lifecycle.release_completed_checkpoints를 누가 호출할지 합의해야 한다.
 - 확인할 사항:
   1. job_id 발급·작업 등록·실행·구독의 책임. SSE 연결이 작업 실행 트리거가 되지 않도록 할 것.
   2. stage/progress/completed/failed 등 이벤트 이름과 JSON 필드, 이벤트 ID·재연결·늦은 구독 처리.
@@ -68,6 +72,11 @@
   조회·API 응답은 `knowledge_cards/router.py`, `schemas.py`와 호환되어야 한다.
 - 현재 상태: list_cards 조회 함수는 있지만 실제 생성/저장 함수는 없다.
   `pipeline/fake_function.py`는 실제 생성 수 0과 is_fake=True를 반환하는 임시 함수일 뿐이다.
+- 2026-10-30 내부 후속: nodes/save.py에 선택적 어댑터 경계만 추가했다. 기본값은 미연결이다.
+  graph.build_graph(document_saver=...)에 주입하는 호출자는 DocumentSaveRequest를 받아 SaveReceipt를 반환한다.
+  카드·근거·필요한 벡터·문서 완료 기록을 저장했다는 확인 전에는 임시 청크/결과를 지우지 않는다.
+  실제 함수 계약을 이 내부 모델로 강제한 것은 아니며 어댑터에서 변환한다.
+  payload_hash는 동일 요청 재사용을 돕지만 job/document 기반의 영속 멱등 키를 대신하지 않는다.
 - 확인할 입력: 단건/배치, 기존 카드 본문 필드, 문서·근거 목록, 내부 필드별 근거/사실 상태,
   관점별 벡터, 작업·경험 단위 멱등 키를 어떤 형태로 받을지.
 - 확인할 반환: 저장된 카드 ID, 신규 생성/기존 결과 재사용 수, 항목별 실패, 재시도 가능 여부.

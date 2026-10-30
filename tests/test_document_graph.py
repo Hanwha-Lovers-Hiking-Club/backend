@@ -207,13 +207,15 @@ def test_checkpoint_resume_does_not_restart_parse_or_extract(sources):
     assert len([call for call in model.calls if "extraction" in call]) == 2
 
 
-def test_node_error_propagates_instead_of_reaching_finish(sources):
+def test_chunk_call_failure_is_recorded_instead_of_aborting_other_sources(sources):
     class Broken:
         async def generate(self, **kwargs):
-            raise GenerationError("LLM_API_ERROR", "failed")
+            raise GenerationError("LLM_NOT_CONFIGURED", "failed")
 
-    with pytest.raises(GenerationError, match="failed"):
-        invoke(graph_for(Broken()), sources[:1])
+    result = asyncio.run(graph_for(Broken()).ainvoke({"sources": sources}))
+    assert len(result["processing_failures"]) == 2
+    assert not result["verified_drafts"]
+    assert all(item.status == "incomplete" for item in result["document_progress"].values())
 
 
 def test_no_sources_finishes_without_model_calls():
