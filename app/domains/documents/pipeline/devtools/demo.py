@@ -1,4 +1,4 @@
-"""Actual LangGraph with explicit synthetic model responses, no API or DB calls."""
+# 실제 LangGraph에 명시적인 예제 모델 응답을 연결한 데모다. 외부 API나 DB는 호출하지 않는다.
 
 from pathlib import Path
 from uuid import UUID

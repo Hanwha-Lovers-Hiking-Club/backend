@@ -1,4 +1,4 @@
-"""Check evidence against code-owned DocumentIR, never against LLM-created quotes."""
+# LLM이 만든 인용문이 아닌 파서·정규화 코드의 DocumentIR를 기준으로 근거를 검증한다.
 
 from app.domains.documents.pipeline.extraction import experience_id
 from app.domains.documents.pipeline.verification.structure_checker import issue

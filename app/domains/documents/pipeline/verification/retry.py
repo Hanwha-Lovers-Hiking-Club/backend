@@ -1,4 +1,4 @@
-"""Issue bounded, feedback-bearing retry requests; never execute a node here."""
+# 횟수 제한과 피드백을 포함한 재처리 요청을 만든다. 실제 노드 실행은 그래프가 담당한다.
 
 import hashlib
 import json

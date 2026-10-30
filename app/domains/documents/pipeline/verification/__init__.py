@@ -1,1 +1,1 @@
-"""MVP admission checks for new drafts; no stored-card quality evaluation."""
+# 새 초안의 MVP 필수 검증을 수행하는 모듈이다. 저장된 카드의 사후 품질 평가는 포함하지 않는다.

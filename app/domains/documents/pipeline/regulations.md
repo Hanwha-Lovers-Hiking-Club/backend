@@ -95,12 +95,15 @@
 ## C07. 네 관점 임베딩 저장과 검색 연결
 
 - 맞출 담당: pipeline 담당, DB 담당, 챗봇 검색 담당.
-- 파일: 향후 `pipeline/nodes/build_embedding_texts.py`, `nodes/embed.py`, `llm.py`, `state.py`,
+- 파일: `pipeline/embedding_texts.py`, `nodes/build_embedding_texts.py`, `nodes/embed.py`, `llm.py`, `state.py`,
   `nodes/save.py`, `knowledge_cards/service.py`, `agent/service.py`, `sql/functions.sql`, `docs/schema.md`.
 - 확정: 카드 하나에 content/situation/solution/lesson 최대 네 벡터. 구성 필드는 memo.md를 따른다.
   원본 청크마다 네 벡터를 생성하는 방식이 아니다.
-- 미정: 관점별 최소 생성 조건, 모델/차원/정규화/배치 크기/텍스트 한도와 템플릿 버전,
-  누락 관점 표현, 별도 테이블 또는 컬럼, 카드 ID와의 연결·유일 제약·인덱스.
+- 7번 입력 구현: `card-views-v1` 템플릿과 관점별 최소 생성 조건은 memo.md의 구현 기본 정책을 따른다.
+  최종 Gate pass 카드만 대상으로 생성 가능 텍스트/누락 사유를 구분한다. 내부 경험 ID를 DB 카드 ID로 쓰지 않는다.
+  이는 제품 임베딩/저장·검색 계약의 확정이 아니다.
+- 미정: 실제 모델/차원/정규화/배치 크기/토큰 한도·입력 유형과 템플릿의 적합성,
+  별도 테이블 또는 컬럼, 카드 ID와의 연결·유일 제약·인덱스, 영속 템플릿/모델 버전 관리.
 - 검색 담당과 확인: 질문별 관점 선택, 복수 검색 결과 통합/리랭킹, 검색 대상 카드 상태,
   모델/차원/템플릿 버전이 다른 벡터의 혼용 방지, 카드 수정 시 재계산 범위.
 - 완료 기준: 모델·DB·검색 계약이 일치하고 누락 관점을 가짜/0 벡터로 채우지 않는 통합 테스트.

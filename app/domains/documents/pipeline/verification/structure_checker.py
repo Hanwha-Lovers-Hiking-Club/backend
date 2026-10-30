@@ -1,4 +1,4 @@
-"""Validate mutable/model_construct inputs again at the admission boundary."""
+# 수정된 모델이나 model_construct로 만든 입력도 Gate 진입 시 구조와 최소 요건을 다시 검증한다.
 
 from pydantic import BaseModel, ValidationError
 

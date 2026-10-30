@@ -1,8 +1,10 @@
-"""Graph execution bookkeeping; no LLM/DB clients and no graph assembly."""
+# 그래프의 작업 상태·독립 경험별 결과·재처리 대기열을 관리한다.
+# LLM·DB 클라이언트 생성과 그래프 조립은 담당하지 않는다.
 
 from typing import Literal
 
 from app.domains.documents.pipeline.document import ChunkOptions, DocumentSource, ParseOptions
+from app.domains.documents.pipeline.embedding_texts import EmbeddingTextOptions
 from app.domains.documents.pipeline.extraction import experience_id
 from app.domains.documents.pipeline.models import ExtractionResult
 from app.domains.documents.pipeline.verification.models import RetryWork, VerificationResult
@@ -19,6 +21,10 @@ def initialize(state):
         "all_sources": sources,
         "parse_options": ParseOptions.model_validate(state.get("parse_options", ParseOptions())),
         "chunk_options": ChunkOptions.model_validate(state.get("chunk_options", ChunkOptions())),
+        "embedding_text_options": EmbeddingTextOptions.model_validate(
+            state.get("embedding_text_options", EmbeddingTextOptions())
+        ),
+        "embedding_texts": [],
         "all_parsed_documents": [],
         "all_documents": [],
         "all_chunks": [],
@@ -181,6 +187,7 @@ def prepare_retry(state):
         "pending_retries": queue,
         "active_retry": work,
         "retry_route": target,
+        "embedding_texts": [],
         "sources": sources,
         "parsed_documents": parsed,
         "documents": docs,

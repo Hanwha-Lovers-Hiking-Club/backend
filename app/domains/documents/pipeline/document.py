@@ -1,4 +1,4 @@
-"""Parse/Normalize/Chunk data contracts; no API, DB or LLM clients."""
+# 파싱·정규화·청킹 단계의 데이터 모델과 옵션을 정의한다. API·DB·LLM 클라이언트는 포함하지 않는다.
 
 from pathlib import Path
 from typing import Literal, Self

@@ -1,4 +1,4 @@
-"""Format-specific loaders. Dispatch uses the original filename, not a GitHub layout."""
+# 원래 파일명을 기준으로 형식별 파서를 선택한다. GitHub 전용 문서 구조는 가정하지 않는다.
 
 import hashlib
 from io import BytesIO

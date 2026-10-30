@@ -1,4 +1,4 @@
-"""Conservative literal checks and optional source-grounded semantic checks."""
+# 원문과의 보수적인 문자열 대조와 선택적인 LLM 기반 의미 일치 검사를 수행한다.
 
 import re
 

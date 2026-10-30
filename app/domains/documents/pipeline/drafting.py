@@ -1,4 +1,4 @@
-"""Write one unverified draft per supported independent experience."""
+# 카드 생성 요건을 충족하는 독립 경험마다 검증 전 지식카드 초안을 작성한다.
 
 from app.domains.documents.pipeline.extraction import experience_id, prompt_text
 from app.domains.documents.pipeline.llm import StructuredGenerator, generate_structured

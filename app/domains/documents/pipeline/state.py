@@ -11,6 +11,7 @@ from app.domains.documents.pipeline.document import (
     ParsedDocument,
     ParseOptions,
 )
+from app.domains.documents.pipeline.embedding_texts import CardEmbeddingTexts, EmbeddingTextOptions
 from app.domains.documents.pipeline.models import DraftSkip, ExtractionResult, KnowledgeCardDraft
 from app.domains.documents.pipeline.verification.models import (
     RetryRequest,
@@ -23,6 +24,7 @@ class IngestionInput(TypedDict, total=False):
     sources: list[DocumentSource]
     parse_options: ParseOptions
     chunk_options: ChunkOptions
+    embedding_text_options: EmbeddingTextOptions
 
 
 class IngestionState(TypedDict, total=False):
@@ -31,6 +33,8 @@ class IngestionState(TypedDict, total=False):
     sources: list[DocumentSource]
     parse_options: ParseOptions
     chunk_options: ChunkOptions
+    embedding_text_options: EmbeddingTextOptions
+    embedding_texts: list[CardEmbeddingTexts]
     parsed_documents: list[ParsedDocument]
     documents: list[DocumentIR]
     chunks: list[Chunk]

@@ -1,4 +1,4 @@
-"""Local development UI mounted by langgraph.json; not the product backend API."""
+# langgraph.json에 연결하는 로컬 개발 화면과 확인용 API를 제공한다. 제품 백엔드 API와는 별개다.
 
 from pathlib import Path
 

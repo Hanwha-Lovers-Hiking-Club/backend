@@ -1,4 +1,4 @@
-"""Admit individual new drafts while keeping review/retry/reject separate."""
+# 새 초안을 개별 검증하고 통과·검토 대기·재처리·거절 결과를 구분한다.
 
 from pydantic import ValidationError
 
@@ -107,6 +107,7 @@ async def verify_state(
         elif result.decision == "needs_review" and draft is not None:
             review.append(draft.model_copy(deep=True))
     return {
+        "embedding_texts": [],
         "verification_results": results,
         "verified_drafts": admitted,
         "review_drafts": review,

@@ -1,1 +1,1 @@
-"""Local graph development entry points; never imported by the public backend API."""
+# 제품 백엔드 API와 분리된 로컬 그래프 개발 도구의 진입점을 모은다.

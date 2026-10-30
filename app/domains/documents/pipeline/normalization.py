@@ -1,4 +1,4 @@
-"""Assign deterministic source identities without rewriting extracted text."""
+# 추출한 텍스트를 바꾸지 않고 재현 가능한 원본 블록·근거 식별자를 부여한다.
 
 import hashlib
 import json

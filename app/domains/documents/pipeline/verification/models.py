@@ -1,4 +1,4 @@
-"""Internal gate decisions, claim checks and bounded retry contracts."""
+# 내부 Gate 판정, 주장 검증, 횟수가 제한된 재처리 요청의 데이터 모델을 정의한다.
 
 from typing import Literal, Self
 

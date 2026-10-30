@@ -4,6 +4,7 @@
 from langgraph.graph import END, START, StateGraph
 
 from app.domains.documents.pipeline.execution import next_step, retry_target
+from app.domains.documents.pipeline.nodes.build_embedding_texts import build_embedding_texts
 from app.domains.documents.pipeline.nodes.chunk import chunk
 from app.domains.documents.pipeline.nodes.draft_card import draft_card
 from app.domains.documents.pipeline.nodes.extract import extract
@@ -40,6 +41,7 @@ def build_graph(
         "settle": settle,
         "prepare_retry": prepare_retry,
         "finish": finish,
+        "build_embedding_texts": build_embedding_texts,
     }.items():
         builder.add_node(name, node)
     for source, target in [
@@ -52,7 +54,8 @@ def build_graph(
         ("select_candidates", "draft_card"),
         ("draft_card", "verify"),
         ("verify", "settle"),
-        ("finish", END),
+        ("finish", "build_embedding_texts"),
+        ("build_embedding_texts", END),
     ]:
         builder.add_edge(source, target)
     builder.add_conditional_edges(

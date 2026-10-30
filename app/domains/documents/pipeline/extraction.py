@@ -1,4 +1,4 @@
-"""Extract independent experiences and bind only code-owned source evidence."""
+# 독립적인 개발 경험을 추출하고 파서·정규화 코드가 관리하는 원본 근거만 연결한다.
 
 import hashlib
 import json

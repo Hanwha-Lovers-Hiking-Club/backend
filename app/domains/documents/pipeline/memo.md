@@ -11,7 +11,8 @@
   `ExtractionResult`로 0~N개 독립 경험을 표현한다.
 - 4번의 형식별 파서, DocumentIR, 구조 기반 청킹, Parse/Normalize/Chunk 노드와 최소 State를 구현했다.
 - 5번 Extract/Draft 노드와 작성 모델, 근거 연결, 생략 사유, OpenAI/Ollama/Anthropic 비동기 어댑터를 구현했다.
-  6번 Verification Gate와 실제 LangGraph 조건부 재처리를 연결했다. Embed/Save와 제품 업로드·SSE는 아직 미구현이다.
+  6번 Verification Gate와 실제 LangGraph 조건부 재처리를 연결했다.
+  7번 중 결정적 임베딩 입력 텍스트 생성을 연결했다. 실제 Embed/Save와 제품 업로드·SSE는 아직 미구현이다.
 - `fake_function.py`에 개발용 `fake_save_cards`가 있다. DB에 저장하지 않는 독립적인 가짜 함수다.
   그래프·save 노드에는 아직 연결하지 않았다. 실제 서비스의 확정 계약이 아니다.
 - `knowledge_cards/service.py`에는 조회용 `list_cards`가 있으나 카드 생성/저장 함수는 없다.
@@ -122,7 +123,7 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
   extraction_result/drafts/draft_skips와 이전 검증 판정/통과 목록을 초기화한다. 반면 Draft는 현재 extraction_result를 유지한다.
   같은 작업의 verification_history/retry_feedback은 재처리 상한과 피드백을 위해 유지한다.
 - 현재 Parse 노드는 배치 중 하나가 실패하면 예외로 종료한다. 최종 작업의 부분 성공/SSE 정책은 8번에서 결정한다.
-- 기존 API 경로·응답, DB·SQL은 변경하지 않았다. 업로드/Storage/백그라운드/SSE 및 전체 그래프는 후속 범위다.
+- 기존 API 경로·응답, DB·SQL은 변경하지 않았다. 제품 업로드/Storage/백그라운드/SSE 연결은 후속 범위다.
 
 로더 API 참고: [pdfplumber](https://github.com/jsvine/pdfplumber),
 [python-docx](https://python-docx.readthedocs.io/en/latest/api/document.html),
@@ -353,7 +354,7 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
 - 작업 진행 상태와 카드 상태도 서로 다른 개념이다. 카드 상태 컬럼을 작업 진행 저장소로 쓰지 않는다.
 - needs_review는 Gate 판정이며 현재 CardStatus에 같은 값을 추가하지 않는다.
   검증을 통과한 active 카드와 구분한다. 검토 대기 결과를 어디에 보관할지는 6/8번에서 결정한다.
-- 임베딩은 최대 4개이며 각 관점의 최소 생성 조건은 7번에서 별도로 정의한다.
+- 임베딩은 최대 4개이며 각 관점의 입력 텍스트 최소 생성 조건은 아래 7번 구현 기본 정책을 따른다.
   누락 정보를 채워 넣지 않는다. 카드·근거·생성 가능한 벡터 저장의 부분 실패/재시도는 8번에서 처리한다.
 
 ## 가짜 카드 저장 함수 — 임시 구현
@@ -375,7 +376,7 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
 - 카드+근거 저장 도중 일부만 성공했을 때의 처리와 재시도 중복 방지는 실제 서비스 담당자와 합의한다.
   현재 함수가 없으므로 원자성이 보장된다고 주장하지 않는다.
 
-## 네 가지 임베딩 — 구성 확정 / 구현 정책 미정
+## 7번 — 임베딩 입력 생성 구현 / 실제 벡터 호출·저장은 후속
 
 출처는 사용자가 첨부한 「지식카드는 어떻게 임베딩할 것인가?」 PDF(2026-10-27)다.
 하나의 카드 ID에 전체 맥락·상황과 문제·대응과 해결·교훈이라는 네 관점을 연결한다.
@@ -403,9 +404,58 @@ title/summary 작성과 기존 필드 이름을 유지하는 초안 변환은 �
 
 임베딩 구현 전 결정 항목은 [checklist.md](checklist.md)의 해당 절에서 관리한다.
 
-추가 제안: 원문을 보존하면서 임베딩 입력을 결정적으로 조립하고,
-누락 정보를 LLM으로 보충하거나 가짜/0 벡터를 실제 임베딩처럼 저장하지 않는다.
-모델과 템플릿 변경을 추적할 식별 정보는 저장 계약을 정할 때 함께 검토한다.
+### 이번 구현의 기본 정책 — 원래 설계의 필드 조합과 구분
+
+원래 설계는 관점별 필드 조합과 최대 4개라는 원칙을 정했으나 최소 생성 조건은 열어 두었다.
+아래 조건은 이번 구현에서 정한 `card-views-v1` 기본 정책이다. 팀의 DB/검색 계약이 확정됐다는 뜻은 아니다.
+
+| 관점 | 최소 생성 조건 | 나머지 구성 필드 |
+|---|---|---|
+| content | title + summary + context + lesson, 그리고 problem/cause/approach/rationale/outcome 중 1개 이상 | 존재하는 값만 포함. 기존 카드의 최소 본문 요건과 동일 |
+| situation | context + problem | 두 필드만 사용 |
+| solution | problem + approach | cause/rationale/outcome은 있을 때만 사용. 원인이 미확인이라는 이유만으로 해결 방법을 버리지 않음 |
+| lesson | context + problem + lesson | 세 필드만 사용 |
+
+문제 없이 접근·결과만 있는 카드도 기존 카드 요건을 충족하면 content는 생성할 수 있다.
+problem이 필요한 다른 관점은 `INSUFFICIENT_FIELDS`와 누락 필드를 남긴다.
+이는 카드 자체의 Gate 판정이나 DB 상태를 바꾸는 동작이 아니다.
+
+### 모듈·입출력·재실행
+
+- `embedding_texts.py`: 순수 함수 `build_embedding_texts(draft, options=...)`와 내부 결과/옵션 모델.
+  `nodes/build_embedding_texts.py`: 최종 pass 판정이 있는 verified_drafts만 함수에 전달한다.
+  판정 누락·비통과·중복 경험/판정이 섞인 잘못된 입력은 오류로 중단한다.
+- 그래프는 모든 재처리 결과를 `finish`에서 모은 뒤 `build_embedding_texts`를 실행한다.
+  재처리 도중의 임시 pass나 needs_review/reject 카드는 입력으로 사용하지 않는다.
+- State의 `embedding_texts: list[CardEmbeddingTexts]`는 경험별 결과다. 각 결과는 experience_id,
+  template_version, 생성 가능한 관점의 texts와 생성 불가 관점의 skipped를 가진다.
+  texts의 각 항목은 text/included_fields, skipped는 오류 코드·누락 필드 또는 초과 글자 수를 보존한다.
+  experience_id는 내부 경험 식별자이며 DB 카드 ID나 저장 성공을 뜻하지 않는다.
+- 템플릿은 설계 표 순서대로 `[필드명]` 줄과 원래 값을 쓰고, 필드 사이에 빈 줄 하나를 넣는다.
+  원래 값의 공백·줄바꿈·코드·로그를 보존한다. 문서 파일명·인용문·근거 ID·키워드·기술 태그는 덧붙이지 않는다.
+  구성 필드·라벨·순서·최소 조건을 바꾸면 템플릿 버전도 올려 후속 저장/검색에서 구분해야 한다.
+  카드 본문에 이미 있는 기술명은 유지한다. 카드 title과 원본 문서 파일명은 계속 구분한다.
+- Extract 스냅샷에서 누락 필드를 다시 채우지 않는다. KnowledgeCardDraft를 재검증하고 카드 본문만 조합한다.
+  원본 사실 상태·필드별 근거·lesson_status는 초안에 그대로 남으며 텍스트 생성이 이를 확정 사실로 바꾸지 않는다.
+- `embedding_text_options.max_chars`는 호출자가 지정할 수 있는 양의 정수 글자 수 제한이며 기본 None이다.
+  초과 관점은 `INPUT_TOO_LARGE`로 보류하고 자르거나 요약하지 않는다. 토큰 한도라는 뜻은 아니다.
+  실제 모델의 tokenizer/토큰 한도·배치 크기·입력 유형은 다음 Embed 구현에서 별도로 검증해야 한다.
+- 재실행은 결과를 덮어쓰며 새 작업·상위 노드 재실행·재검증·재처리는 이전 입력 텍스트를 초기화한다.
+  클라이언트·모델·비밀키는 State에 추가하지 않았다.
+- 실제 임베딩 API·벡터·DB 필드·검색 API·품질 점수는 이번 단계에 추가하지 않았다.
+  KURE 최소 호출에서 본 2,048차원을 최종 DB/검색 계약으로 고정하지 않는다.
+
+### 초기 목표 대조 결과
+
+원본 첨부 설계서의 `Verification Gate → Build Embedding Texts → Embed → Save` 중
+Build Embedding Texts까지 연결했다. 다섯 문서 형식에 독립적인 카드 입력, 0~N개 경험,
+근거·가설 보존, 누락 내용 비생성, 기존 API/DB 호환성과 3순위 품질 평가 제외 원칙을 유지한다.
+원본 청크를 네 부분으로 나누거나 모든 카드에 네 벡터를 강제로 생성하는 구조로 바꾸지 않았다.
+
+검증 결과: `tests/test_document_embedding_texts.py`의 신규 25개를 포함해 전체 231개 테스트가 통과했다.
+Ruff lint와 95개 Python 파일의 포맷 검사도 통과했다. 실제 API 호출·DB 쓰기 없이 검증했다.
+관점별 정확한 조합·누락/길이 초과·한글/코드/로그 보존·가설 원인 비포함·추론 교훈 상태 보존,
+여러 독립 경험과 규칙 모드 검토 대기 제외·조건부 재작성 후 최종 입력·체크포인트 재실행을 포함한다.
 
 ## 형식별 도구 선정 제안 — 채택 전 확인
 

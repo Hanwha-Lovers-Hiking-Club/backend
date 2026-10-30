@@ -1,4 +1,4 @@
-"""Node: convert parser output into stable DocumentIR blocks and evidence IDs."""
+# 노드: 파싱 결과를 DocumentIR로 변환하고 재현 가능한 블록·근거 식별자를 부여한다.
 
 from app.domains.documents.pipeline.models import ExtractionResult
 from app.domains.documents.pipeline.normalization import normalize_document

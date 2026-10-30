@@ -1,4 +1,4 @@
-"""Start the local LangGraph developer server without changing Windows policies."""
+# Windows 정책을 변경하지 않고 로컬 LangGraph 개발 서버를 숨김 창으로 실행한다.
 
 import argparse
 import os

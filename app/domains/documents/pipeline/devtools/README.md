@@ -1,6 +1,7 @@
 # LangGraph 로컬 실행
 
-이 도구는 6번까지의 실제 LangGraph 실행을 확인한다. 제품 백엔드의 업로드/SSE API와 별개다.
+이 도구는 검증·재처리와 7번 임베딩 입력 생성까지의 실제 LangGraph 실행을 확인한다.
+실제 임베딩 API/DB 저장과 제품 백엔드의 업로드/SSE API는 아직 연결하지 않았다.
 팀 연결 계약은 [regulations.md](../regulations.md)를 확인한다.
 
 아래 환경 설정을 준비한 뒤 저장소 루트의 VS Code 터미널에서 실행한다.
@@ -59,7 +60,7 @@ VS Code만 재시작해도 기존 서버의 환경변수는 바뀌지 않는다.
 
 ## 그래프 선택
 
-- `documents_demo`: 실제 Parse/Normalize/Chunk/Extract/Draft/Verify 및 조건부 재처리.
+- `documents_demo`: 실제 Parse/Normalize/Chunk/Extract/Draft/Verify 및 조건부 재처리, 임베딩 입력 텍스트 생성.
   LLM 부분은 명시적인 예제 응답이다. 원본은 이 폴더의 작은 demo.md이며 데이터셋 생성 기능이 아니다.
   첫 초안의 잘못된 주장을 검증에서 발견하고 Draft만 재작성하여 통과한다. API 비용/DB 저장은 없다.
 - `documents`: 실제 `.env`의 공급자·단계별 모델을 사용한다. Studio 입력 예:
@@ -110,6 +111,10 @@ Python에서 `build_graph(checkpointer=..., interrupt_before=["verify"])`로 검
 Agent Server에서 실행할 때는 서버가 체크포인트를 관리하므로 별도 checkpointer를 그래프에 넣지 않는다.
 
 통과 초안은 verified_drafts, 보류 초안은 review_drafts, 판정은 verification_results에서 확인한다.
+`finish` 다음 `build_embedding_texts`가 실행되며 State의 embedding_texts에서 경험별 texts/skipped를 확인한다.
+관점별 최소 생성 조건과 `card-views-v1` 템플릿은 memo.md를 따른다. 실제 벡터나 저장 결과는 아니다.
+선택적 입력 `embedding_text_options: {"max_chars": 12000}`으로 관점별 글자 수를 제한할 수 있다.
+기본값은 제한 없음이며, 초과 관점은 자르지 않고 보류한다. 실제 모델 토큰 한도는 Embed에서 별도 검사해야 한다.
 settled_*와 all_*는 재처리 중 다른 경험의 결과·원본을 잃지 않기 위한 작업 내부 상태다.
 파싱 예외/모델 호출 오류는 그래프 오류로 전파한다. 저장 성공이나 completed job으로 대신 표시하지 않는다.
 최종 제품 job 상태 및 API/SSE 매핑은 regulations.md의 C03 계약에서 합의한다.

@@ -1,9 +1,7 @@
-"""카드 저장 service가 준비되기 전 사용하는 개발용 가짜 함수.
-
-DB/Storage에 접근하지 않는다. 향후 knowledge_cards.service의 실제 저장 함수로
-교체한다. payload 필드, 근거 전달 방식, 실제 반환값과 원자성은 아직 합의 전이다.
-현재 임시 입력/반환 타입을 도메인 공통 계약으로 사용하지 않는다.
-"""
+# 카드 저장 서비스가 준비되기 전 사용하는 개발용 가짜 함수다.
+# DB/Storage에 접근하지 않으며 향후 knowledge_cards.service의 실제 저장 함수로 교체한다.
+# 입력 필드, 근거 전달 방식, 실제 반환값과 원자성은 아직 합의 전이다.
+# 현재 임시 입력·반환 타입을 도메인 공통 계약으로 사용하지 않는다.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field

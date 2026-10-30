@@ -1,4 +1,4 @@
-"""Section-aware grouping. Preserve code/log/table blocks and source identity."""
+# 섹션 경계를 기준으로 청크를 구성하고 코드·로그·표 블록과 원본 식별자를 보존한다.
 
 from uuid import uuid5
 
