@@ -4,6 +4,7 @@
 -- 접근 방식: RLS를 켜고 정책은 만들지 않는다.
 -- anon/authenticated 키로는 접근 불가, 백엔드의 service role 키만 접근 가능(RLS 우회).
 -- 회원 시스템이 생기면 user_id 컬럼과 정책을 추가한다.
+create extension if not exists vector;
 
 -- ---------------------------------------------------------------
 -- documents: 원본 문서 메타. 실제 파일은 Supabase Storage에 있다.
@@ -52,6 +53,10 @@ create table if not exists knowledge_cards (
   quality_score        numeric,
   last_verified_at     timestamptz,
   verification_version text,
+  content_embedding    vector(1024),
+  situation_embedding  vector(1024),
+  solution_embedding   vector(1024),
+  lesson_embedding     vector(1024),
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now(),
 
@@ -102,9 +107,19 @@ create table if not exists card_documents (
 create index if not exists card_documents_card_id_idx on card_documents (card_id);
 create index if not exists card_documents_document_id_idx on card_documents (document_id);
 
+-- 문서별 저장 요청의 완료 확인과 재시도 중복 방지.
+create table if not exists document_save_receipts (
+  document_id uuid primary key references documents (id) on delete cascade,
+  payload_hash text not null check (payload_hash ~ '^[0-9a-f]{64}$'),
+  card_ids uuid[] not null default '{}',
+  created_at timestamptz not null default now()
+);
+grant select, insert, update on document_save_receipts to service_role;
+
 -- ---------------------------------------------------------------
 -- RLS: 켜기만 하고 정책은 만들지 않음 (백엔드 service role 전용)
 -- ---------------------------------------------------------------
 alter table documents enable row level security;
 alter table knowledge_cards enable row level security;
 alter table card_documents enable row level security;
+alter table document_save_receipts enable row level security;

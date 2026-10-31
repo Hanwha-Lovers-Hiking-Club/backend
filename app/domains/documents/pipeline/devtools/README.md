@@ -1,7 +1,8 @@
 # LangGraph 로컬 실행
 
 이 도구는 검증·재처리와 7번 입력 생성/KURE 임베딩까지의 실제 LangGraph 실행을 확인한다.
-DB 저장과 제품 백엔드의 업로드/SSE API는 아직 연결하지 않았다.
+실제 그래프에는 DB 저장 어댑터가 연결돼 있다. 운영 DB에 영수증 테이블과 RPC를 적용해야
+저장 완료가 가능하다. 제품 백엔드의 업로드/SSE API는 아직 연결하지 않았다.
 팀 연결 계약은 [regulations.md](../regulations.md)를 확인한다.
 
 청크별 호출은 각각 그래프 단계로 기록하며 일시적 호출 오류만 기본 최대 3회(최초 포함) 시도한다.
@@ -11,7 +12,8 @@ DB 저장과 제품 백엔드의 업로드/SSE API는 아직 연결하지 않았
 한 문서가 불완전하면 해당 문서는 임베딩·저장하지 않으며 다른 문서는 계속 진행한다.
 
 최종 후보를 모은 뒤 문서별 `embed → save → complete_document`를 실행한다.
-실제 저장 어댑터가 없는 기본 실행은 `ready_to_save`로 끝나며 청크 결과를 보관한다.
+`build_graph()`에 저장 어댑터를 주입하지 않으면 `ready_to_save`로 끝나며 청크 결과를 보관한다.
+`get_graph()`는 실제 저장 어댑터를 사용한다.
 save 노드가 보인다는 이유만으로 DB에 저장됐다고 판단하지 않는다. 실제 어댑터의 확인 후에만
 `completed`가 되고 현재 임시 데이터가 정리된다. 과거 체크포인트 삭제는 별도다.
 체크포인터가 있는 같은 thread를 재개할 때는 새 sources를 보내지 말고 입력 `None`으로 재개한다.
@@ -58,7 +60,7 @@ DOCUMENT_LLM_MAX_OUTPUT_TOKENS=4096
 DOCUMENT_LLM_MAX_INPUT_CHARS=48000
 
 EMBEDDING_MODEL=kure-v3-20261016
-EMBEDDING_DIMENSIONS=2048
+EMBEDDING_DIMENSIONS=1024
 EMBEDDING_BATCH_SIZE=8
 EMBEDDING_TIMEOUT_SECONDS=30
 ```

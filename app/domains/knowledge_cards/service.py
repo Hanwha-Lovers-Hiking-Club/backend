@@ -1,13 +1,22 @@
-# 지식카드 로직: Supabase 조회와 DB 행 -> 응답 모양 변환.
+# 지식카드 조회와 검증된 문서의 원자적 저장을 담당한다.
+import asyncio
+import math
+
+import httpx
 from fastapi import HTTPException
 from postgrest.exceptions import APIError
 
 from app.db import supabase
+from app.domains.documents.pipeline.document_lifecycle import DocumentSaveError
+from app.domains.documents.pipeline.processing import DocumentSaveRequest, SaveReceipt
 from app.domains.knowledge_cards.schemas import CardSort
 
 # 근거(card_documents)와 근거 문서(documents)를 한 번에 가져온다
 CARD_SELECT = (
-    "*, card_documents(id, document_id, location, excerpt, documents(title, original_filename))"
+    "id,title,summary,context,problem,cause,approach,rationale,outcome,lesson,"
+    "technologies,keywords,status,quality_score,last_verified_at,verification_version,"
+    "project_name,department,project_date,created_at,updated_at,"
+    "card_documents(id,document_id,location,excerpt,documents(title,original_filename))"
 )
 
 # (정렬 컬럼, 내림차순 여부)
@@ -21,6 +30,85 @@ SORT_COLUMNS: dict[str, tuple[str, bool]] = {
 RANGE_NOT_SATISFIABLE = "PGRST103"
 
 LIST_FAILED_DETAIL = "지식카드 목록을 조회하지 못했습니다."
+
+EMBEDDING_COLUMNS = {
+    "content": "content_embedding",
+    "situation": "situation_embedding",
+    "solution": "solution_embedding",
+    "lesson": "lesson_embedding",
+}
+
+
+async def save_document_cards(request: DocumentSaveRequest) -> SaveReceipt:
+    """Persist one document's passed cards, evidence and vectors in one DB transaction.
+
+    The database RPC owns the transaction and the document-scoped idempotency key.
+    Its receipt is returned only after all rows and the completion record commit.
+    """
+    from app.config import settings
+
+    request = DocumentSaveRequest.model_validate(request)
+    document_id = request.document.document_id
+    if len({card.experience_id for card in request.cards}) != len(request.cards):
+        raise DocumentSaveError("Duplicate card experiences")
+    vectors_by_experience = {item.experience_id: item for item in request.embeddings}
+    if len(vectors_by_experience) != len(request.embeddings):
+        raise DocumentSaveError("Duplicate card embeddings")
+    if set(vectors_by_experience) - {card.experience_id for card in request.cards}:
+        raise DocumentSaveError("Embedding has no matching card")
+
+    rows = []
+    for card in request.cards:
+        if any(
+            ref.document_id != document_id for ref in card.source_extraction.evidence_index.values()
+        ):
+            raise DocumentSaveError("Card references a different document")
+        evidence_ids = dict.fromkeys(
+            evidence_id for refs in card.field_evidence_refs.values() for evidence_id in refs
+        )
+        if not evidence_ids:
+            raise DocumentSaveError("Card has no source evidence")
+        embedding = vectors_by_experience.get(card.experience_id)
+        if embedding is not None and (
+            embedding.model != settings.EMBEDDING_MODEL
+            or embedding.dimensions != settings.EMBEDDING_DIMENSIONS
+            or set(embedding.vectors) != set(embedding.input_hashes)
+            or any(
+                len(vector) != settings.EMBEDDING_DIMENSIONS
+                or not all(type(value) in (int, float) and math.isfinite(value) for value in vector)
+                or not any(value != 0 for value in vector)
+                for vector in embedding.vectors.values()
+            )
+        ):
+            raise DocumentSaveError("Embedding does not match configured model")
+        row = card.to_card_fields()
+        row["status"] = "active"
+        row["evidences"] = [
+            {
+                "location": card.source_extraction.evidence_index[evidence_id].location,
+                "excerpt": card.source_extraction.evidence_index[evidence_id].excerpt,
+            }
+            for evidence_id in evidence_ids
+        ]
+        for view, column in EMBEDDING_COLUMNS.items():
+            row[column] = embedding.vectors.get(view) if embedding is not None else None
+        rows.append(row)
+
+    params = {
+        "p_document_id": str(document_id),
+        "p_payload_hash": request.payload_hash,
+        "p_cards": rows,
+    }
+    try:
+        result = await asyncio.to_thread(
+            lambda: supabase.rpc("save_document_cards", params).execute()
+        )
+    except (APIError, httpx.RequestError) as exc:
+        raise DocumentSaveError("Database did not confirm document save") from exc
+    try:
+        return SaveReceipt.model_validate(result.data)
+    except (ValueError, TypeError) as exc:
+        raise DocumentSaveError("Database returned an invalid save receipt") from exc
 
 
 def _quote(value: str) -> str:

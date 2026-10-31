@@ -5,6 +5,17 @@
 내용의 적용 범위는 pipeline 하위다.
 외부 파일 경로는 연결 상대를 설명하며, 수정 권한을 넓히지 않는다.
 
+## 2026-10-31 현재 상태
+
+운영 Supabase의 `knowledge_cards`에는 네 벡터 컬럼이 모두 `vector(1024)`로 존재한다.
+KURE 스냅샷 `kure-v3-20261016`의 1,024차원 응답을 실제로 확인했고 기본 설정을 맞췄다.
+`get_graph()`는 `knowledge_cards.service.save_document_cards`를 주입한다. 이 함수는
+`save_document_cards` RPC로 카드·근거·벡터·문서별 저장 영수증을 한 트랜잭션에서 저장하도록 작성했다.
+기존 DB에는 아직 영수증 테이블과 RPC가 없으므로 SQL 적용 전에는 저장 완료가 불가능하다.
+마이그레이션은 `sql/2026-10-31_document_card_embeddings.sql`과 `sql/functions.sql`에 있다.
+운영 DB의 벡터 인덱스 상태와 실제 DB 저장·재조회는 아직 확인하지 않았다.
+제품 업로드·Job·SSE는 여전히 미구현이다. 아래 날짜가 붙은 기록은 당시 상태를 설명한다.
+
 ## 확인된 상태 — 2026-10-30 로컬 기준
 
 - `models.py`에 3번 작업의 `EvidenceRef`, `ExtractedField`, `ExtractedElements`를 구현했다.
@@ -444,7 +455,7 @@ problem이 필요한 다른 관점은 `INSUFFICIENT_FIELDS`와 누락 필드를 
 - 재실행은 결과를 덮어쓰며 새 작업·상위 노드 재실행·재검증·재처리는 이전 입력 텍스트를 초기화한다.
   클라이언트·모델·비밀키는 State에 추가하지 않았다.
 - 실제 KURE 호출과 벡터 결과를 아래 후속 구현에서 연결했다. DB 필드·검색 API·품질 점수는 추가하지 않았다.
-  기본 2,048차원은 실행 설정이며 최종 DB/검색 계약으로 고정하지 않는다.
+  당시 기본 2,048차원은 실행 설정이며 최종 DB/검색 계약으로 고정하지 않았다.
 
 ### 초기 목표 대조 결과
 
@@ -468,7 +479,7 @@ Ruff lint와 95개 Python 파일의 포맷 검사도 통과했다. 실제 API �
   `embeddings/service.py`: 최대 8개 순차 배치와 경험/관점별 벡터·입력 SHA-256 해시 연결.
   `nodes/embed.py`: 입력 재검토와 클라이언트 호출만 담당하며, 생성할 관점이 없으면 키/클라이언트 없이 종료한다.
   `llm.py`는 클라이언트 생성·종료, `graph.py`는 build_embedding_texts → embed 연결만 담당한다.
-- 기본값은 EMBEDDING_MODEL=kure-v3-20261016, EMBEDDING_DIMENSIONS=2048,
+- 당시 기본값은 EMBEDDING_MODEL=kure-v3-20261016, EMBEDDING_DIMENSIONS=2048,
   EMBEDDING_BATCH_SIZE=8, EMBEDDING_TIMEOUT_SECONDS=30이다. settings와 로컬 `.env`/공용 예시에 반영한다.
   KURE 클라이언트는 변동 가능한 별칭을 허용하지 않는다. 공통 인터페이스는 다른 공급자/모델도 표현하며
   명시적으로 주입한 클라이언트+모델 설정으로 교체 가능하다. 자동 대체 모델이나 가짜 벡터는 없다.

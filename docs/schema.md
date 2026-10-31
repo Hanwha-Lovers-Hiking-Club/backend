@@ -7,6 +7,10 @@
 # DB 스키마
 
 생성 SQL은 `sql/tables.sql`. 모든 테이블은 RLS 켜짐 + 정책 없음 (백엔드 service role 키로만 접근).
+기존 DB에는 `sql/2026-10-31_document_card_embeddings.sql`을 적용한 뒤
+`sql/functions.sql`의 `save_document_cards` 함수를 적용한다. 실제 SQL Editor 실행은 팀장 담당이다.
+2026-10-31 읽기 전용 확인 결과, 운영 DB에는 네 벡터 컬럼이 이미 `vector(1024)`로 있었고
+`document_save_receipts` 및 `save_document_cards` RPC는 없었다. 벡터 인덱스 상태는 별도 확인이 필요하다.
 
 ## documents
 
@@ -47,6 +51,10 @@
 | quality_score | numeric | X | 카드 품질 내부 평가 점수 |
 | last_verified_at | timestamptz | X | 마지막 검증 시각 |
 | verification_version | text | X | 마지막 검증에 쓴 평가 기준/로직 버전 |
+| content_embedding | vector(1024) | X | 카드 전체 맥락의 KURE 벡터 |
+| situation_embedding | vector(1024) | X | 상황·문제 관점의 KURE 벡터 |
+| solution_embedding | vector(1024) | X | 해결 관점의 KURE 벡터 |
+| lesson_embedding | vector(1024) | X | 교훈 관점의 KURE 벡터 |
 | created_at | timestamptz | O | 생성 시각 |
 | updated_at | timestamptz | O | 수정 시각 (트리거로 자동 갱신) |
 
@@ -70,10 +78,20 @@
 
 `location`/`excerpt`는 근거마다 달라서 이 테이블에 둔다. 카드당 근거 1개 이상은 DB가 아니라 앱 로직에서 보장한다.
 
+## document_save_receipts
+
+문서별 카드·근거·벡터 저장을 한 트랜잭션으로 확정하고 같은 요청의 중복 저장을 막는다. `sql/functions.sql`의 `save_document_cards` RPC만 이 테이블과 카드 행을 함께 쓴다.
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| document_id | uuid | PK, FK → documents.id |
+| payload_hash | text | 저장 요청의 SHA-256 해시. 같은 문서의 다른 내용 재저장은 거부 |
+| card_ids | uuid[] | 확정된 카드 ID 목록. 빈 목록 허용 |
+| created_at | timestamptz | 저장 확정 시각 |
+
 ## 아직 DB에 없는 것 (필요해지면 추가)
 
 - 카드 유형(`type`): 추출 결과를 보고 분류가 정해지면 `type text` + CHECK 제약으로 추가.
-- 임베딩: 대상 필드와 모델이 정해진 뒤 추가.
 - 문서 요약(`documents.summary`): 필요해지면 추가.
 - 중복 업로드 정책: 같은 내용의 카드가 쌓이는 것은 현재 허용. 임베딩 도입 후 카드 유사도로 판별(`status = 'flagged'` 활용) 검토.
 - `project_id`: 프로젝트 테이블이 생기면 다시 추가.
