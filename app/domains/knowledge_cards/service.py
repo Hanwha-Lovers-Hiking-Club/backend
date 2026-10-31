@@ -1,10 +1,14 @@
 # 지식카드 로직: Supabase 조회/저장과 DB 행 -> 응답 모양 변환.
+import logging
+
 from fastapi import HTTPException
 from postgrest.exceptions import APIError
 
 from app.core.technology import display_name, find_technologies, is_valid_id, normalize_technology
 from app.db import supabase
 from app.domains.knowledge_cards.schemas import CardSort
+
+logger = logging.getLogger(__name__)
 
 # 근거(card_documents)와 근거 문서(documents)를 한 번에 가져온다
 CARD_SELECT = (
@@ -96,7 +100,21 @@ def create_card(card: dict, evidences: list[dict]) -> str:
     card_id = result.data[0]["id"]
     if evidences:
         rows = [{**evidence, "card_id": card_id} for evidence in evidences]
-        supabase.table("card_documents").insert(rows).execute()
+        try:
+            supabase.table("card_documents").insert(rows).execute()
+        except Exception:
+            # 근거 없는 active 카드가 목록에 노출되지 않게 방금 넣은 카드를 지운다
+            # (근거 insert는 한 번의 호출이라 전부 들어가거나 하나도 안 들어간다).
+            # 지우기가 실패해도 원래 에러를 그대로 던진다.
+            # ponytail: 두 호출 사이에 프로세스가 죽으면 고아 카드가 남는다.
+            # 카드+근거를 한 트랜잭션으로 묶는 RPC로 올릴 수 있다(SQL 변경 필요)
+            try:
+                supabase.table("knowledge_cards").delete().eq("id", card_id).execute()
+            except Exception:
+                logger.exception(
+                    "create_card: 근거 저장 실패 후 카드 정리도 실패 (card_id=%s)", card_id
+                )
+            raise
     return card_id
 
 
