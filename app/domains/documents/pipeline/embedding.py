@@ -11,11 +11,18 @@ from app.config import settings
 EMBEDDING_MODEL_NAME = "kure-v3"
 # pgvector 인덱스 상한선(2,000차원) 대비 여유 있게 잡은 값. docs/schema.md 참고
 EMBEDDING_DIMENSIONS = 1024
+# 일시적 오류(연결 오류, 408/409/429/5xx)는 OpenAI SDK가 0.5초~8초 지수 백오프로 알아서 재시도한다.
+# SDK 기본값(2)과 같지만 정책으로 드러내려고 명시했다. 카드(embed)와 청크(embed_chunks)가 같이 쓴다
+EMBEDDING_MAX_RETRIES = 2
 
 
 @lru_cache
 def get_embedding_client() -> OpenAI:
-    return OpenAI(base_url="https://kure.kullm.ai/api/v1", api_key=settings.KURE_API_KEY)
+    return OpenAI(
+        base_url="https://kure.kullm.ai/api/v1",
+        api_key=settings.KURE_API_KEY,
+        max_retries=EMBEDDING_MAX_RETRIES,
+    )
 
 
 def embed_documents(texts: list[str]) -> list[list[float]]:
@@ -27,7 +34,14 @@ def embed_documents(texts: list[str]) -> list[list[float]]:
         dimensions=EMBEDDING_DIMENSIONS,
         extra_body={"input_type": "document"},
     )
-    return [item.embedding for item in response.data]
+    # 개수/차원이 어긋나면 저장 시점의 모호한 DB 에러가 되기 전에 여기서 원인이 분명하게 실패시킨다
+    vectors = [item.embedding for item in sorted(response.data, key=lambda item: item.index)]
+    if len(vectors) != len(texts):
+        raise ValueError(f"임베딩 개수 불일치: 입력 {len(texts)}개, 결과 {len(vectors)}개")
+    for vector in vectors:
+        if len(vector) != EMBEDDING_DIMENSIONS:
+            raise ValueError(f"임베딩 차원 불일치: 기대 {EMBEDDING_DIMENSIONS}, 실제 {len(vector)}")
+    return vectors
 
 
 def embed_document(text: str) -> list[float]:
