@@ -45,7 +45,7 @@ from app.domains.documents.pipeline.state import IngestionState
 
 logger = logging.getLogger(__name__)
 
-_NODE_ORDER = [
+NODE_ORDER = [
     "parse",
     "chunk",
     "extract",
@@ -82,7 +82,7 @@ def _safe(name: str, node):
 
         @functools.wraps(node)
         async def async_wrapper(state):
-            run = NodeRun(name, state, is_last=name == _NODE_ORDER[-1])
+            run = NodeRun(name, state, is_last=name == NODE_ORDER[-1])
             try:
                 try:
                     result = await node(state)
@@ -98,7 +98,7 @@ def _safe(name: str, node):
 
     @functools.wraps(node)
     def wrapper(state):
-        run = NodeRun(name, state, is_last=name == _NODE_ORDER[-1])
+        run = NodeRun(name, state, is_last=name == NODE_ORDER[-1])
         try:
             try:
                 result = node(state)
@@ -114,7 +114,7 @@ def _safe(name: str, node):
 
 
 def _route_after(node: str):
-    next_node = END if node == _NODE_ORDER[-1] else _NODE_ORDER[_NODE_ORDER.index(node) + 1]
+    next_node = END if node == NODE_ORDER[-1] else NODE_ORDER[NODE_ORDER.index(node) + 1]
 
     def router(state: IngestionState) -> str:
         return END if state.get("error") else next_node
@@ -127,8 +127,8 @@ def build_graph() -> CompiledStateGraph:
     for name, node in _NODES.items():
         graph.add_node(name, _safe(name, node))
 
-    graph.add_edge(START, _NODE_ORDER[0])
-    for node in _NODE_ORDER:
+    graph.add_edge(START, NODE_ORDER[0])
+    for node in NODE_ORDER:
         graph.add_conditional_edges(node, _route_after(node))
 
     return graph.compile()

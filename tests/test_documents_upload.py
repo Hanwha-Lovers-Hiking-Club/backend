@@ -40,6 +40,14 @@ def clear_jobs():
     jobs._jobs.clear()
 
 
+@pytest.fixture(autouse=True)
+def started(monkeypatch) -> list:
+    # 업로드 테스트는 파이프라인을 실제로 띄우지 않고, 시작 요청만 기록한다
+    calls: list[tuple] = []
+    monkeypatch.setattr(service, "_start_pipeline", lambda *args: calls.append(args))
+    return calls
+
+
 @pytest.fixture
 def storage(monkeypatch):
     def install(fail_on: int | None = None, fail_insert: bool = False) -> FakeRepository:
@@ -56,8 +64,8 @@ def _file(name: str, content: bytes = b"data"):
     return ("files", (name, content, "application/octet-stream"))
 
 
-def test_upload_returns_job(client, storage):
-    storage()
+def test_upload_returns_job(client, storage, started):
+    fake = storage()
 
     response = client.post(URL, files=[_file("a.pdf"), _file("b.docx"), _file("c.md")])
 
@@ -65,13 +73,25 @@ def test_upload_returns_job(client, storage):
     body = response.json()
     assert body["documentCount"] == 3
     assert body["status"] == "queued"
-    assert jobs._jobs[UUID(body["jobId"])] == {
+    documents = [
+        {
+            "id": f"doc-{i}",
+            "storage_bucket": "documents",
+            "storage_path": fake.uploads[i][0],
+            "original_filename": name,
+        }
+        for i, name in enumerate(["a.pdf", "b.docx", "c.md"])
+    ]
+    job_id = UUID(body["jobId"])
+    assert jobs._jobs[job_id] == {
         "status": "queued",
         "document_count": 3,
-        "document_ids": ["doc-0", "doc-1", "doc-2"],
+        "documents": documents,
         "active_step": 0,
-        "progress": 16,
+        "progress": 11,
     }
+    # 그래프에 넘길 문서 정보와 함께 파이프라인 시작이 요청된다
+    assert started == [(job_id, documents)]
 
 
 def test_upload_inserts_document_rows(client, storage):
@@ -90,7 +110,7 @@ def test_upload_inserts_document_rows(client, storage):
     assert (md_row["title"], md_row["storage_path"]) == ("README", fake.uploads[1][0])
 
 
-def test_upload_insert_failure_removes_stored_files(client, storage):
+def test_upload_insert_failure_removes_stored_files(client, storage, started):
     fake = storage(fail_insert=True)
 
     response = client.post(URL, files=[_file("a.pdf"), _file("b.md")])
@@ -99,6 +119,7 @@ def test_upload_insert_failure_removes_stored_files(client, storage):
     assert response.json() == {"detail": "문서를 저장하지 못했습니다."}
     assert fake.removed == [[path for path, _, _ in fake.uploads]]
     assert jobs._jobs == {}
+    assert started == []
 
 
 def test_upload_stores_files_under_job(client, storage):
@@ -124,15 +145,16 @@ def test_upload_accepts_uppercase_extension(client, storage):
     assert response.status_code == 202
 
 
-def test_upload_rejects_unsupported_type(client, storage):
+def test_upload_rejects_unsupported_type(client, storage, started):
     fake = storage()
 
-    response = client.post(URL, files=[_file("a.pdf"), _file("sheet.xlsx")])
+    response = client.post(URL, files=[_file("a.pdf"), _file("tool.exe")])
 
     assert response.status_code == 400
-    assert response.json() == {"detail": "지원하지 않는 파일 형식입니다: sheet.xlsx"}
+    assert response.json() == {"detail": "지원하지 않는 파일 형식입니다: tool.exe"}
     assert fake.uploads == []
     assert jobs._jobs == {}
+    assert started == []
 
 
 def test_upload_rejects_too_large_file(client, storage, monkeypatch):

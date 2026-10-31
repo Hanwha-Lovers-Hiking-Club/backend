@@ -1,25 +1,45 @@
 # 노드: 업로드된 파일(pdf/docx/md/txt/xlsx)에서 텍스트를 추출한다.
 # txt는 구조가 없는 순수 텍스트라 docling 없이 그냥 디코딩하고, 나머지는 docling으로 변환한다.
 import asyncio
+import threading
 from io import BytesIO
-
-from docling.datamodel.base_models import DocumentStream, InputFormat
-from docling.document_converter import DocumentConverter
 
 from app.core.logging import summarize_error
 from app.domains.documents import repository
 from app.domains.documents.pipeline.retry import retry_async
 from app.domains.documents.pipeline.state import IngestionState, ParsedDocument
 
-_DOCLING_FORMATS = {
-    ".pdf": InputFormat.PDF,
-    ".docx": InputFormat.DOCX,
-    ".md": InputFormat.MD,
-    ".xlsx": InputFormat.XLSX,
-}
+# docling은 import만으로 torch까지 불러와 20초 가까이 걸리고, PDF 모델 로딩도 따로 걸린다.
+# 서버 시작(과 --reload)을 붙잡지 않도록 import는 이 함수 안에서 하고, 서버가 켜질 때
+# 백그라운드 스레드가 미리 불러 둔다(documents/service.start_converter_warm_up).
+# 미리 불러오는 중에 업로드가 들어와도 변환기를 두 번 만들지 않게 잠그고,
+# 만드는 쪽이 끝나길 기다린다.
+# 변환기는 모델 로딩 비용이 있어서 노드 호출마다 새로 만들지 않고 하나만 재사용한다.
+# 로딩이 실패하면 결과를 저장하지 않으므로 다음 호출에서 다시 시도한다
+_converter = None
+_converter_lock = threading.Lock()
 
-# 모델 로딩 비용이 있어서 노드 호출마다 새로 만들지 않고 모듈 전역에서 하나만 재사용한다
-_converter = DocumentConverter(allowed_formats=list(_DOCLING_FORMATS.values()))
+
+def _build_converter():
+    from docling.datamodel.base_models import InputFormat
+    from docling.document_converter import DocumentConverter
+
+    converter = DocumentConverter(
+        allowed_formats=[InputFormat.PDF, InputFormat.DOCX, InputFormat.MD, InputFormat.XLSX]
+    )
+    # 모델은 첫 변환 때 로딩되는 게 기본이라, PDF(레이아웃/표 모델이 있는 무거운 쪽)를
+    # 미리 로딩한다.
+    # docx/md/xlsx는 가벼운 파이프라인이라 그대로 둔다
+    converter.initialize_pipeline(InputFormat.PDF)
+    return converter
+
+
+def get_converter():
+    global _converter
+    with _converter_lock:
+        if _converter is None:
+            _converter = _build_converter()
+        return _converter
 
 
 # 다운로드 재시도는 retry.py(최초 1회 + 재시도 2회, 1초/2초 지수 백오프 + 지터)를 쓴다.
@@ -49,8 +69,10 @@ def _extract_text(content: bytes, filename: str) -> str:
     if extension == ".txt":
         return _decode_text(content)
 
+    from docling.datamodel.base_models import DocumentStream
+
     stream = DocumentStream(name=filename, stream=BytesIO(content))
-    result = _converter.convert(stream)
+    result = get_converter().convert(stream)
     return result.document.export_to_markdown()
 
 

@@ -205,13 +205,13 @@ def test_job_id_follows_logs_through_real_graph(monkeypatch, captured):
         logging.getLogger("app.test").info("동기 노드 안")
         return {}
 
-    nodes = {name: sync_node for name in G._NODE_ORDER}
+    nodes = {name: sync_node for name in G.NODE_ORDER}
     nodes["parse"] = async_node
     monkeypatch.setattr(G, "_NODES", nodes)
 
     asyncio.run(G.build_graph().ainvoke(_state()))
 
     inner = [line for line in captured.getvalue().splitlines() if "노드 안" in line]
-    assert len(inner) == len(G._NODE_ORDER)
+    assert len(inner) == len(G.NODE_ORDER)
     assert all("[job=3f2a9c1e]" in line for line in inner)
     assert "작업 완료" in captured.getvalue()

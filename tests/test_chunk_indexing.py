@@ -106,6 +106,6 @@ def test_save_nothing_when_no_embedded_chunks(monkeypatch):
 
 
 def test_chunk_indexing_runs_after_card_save_in_graph():
-    assert G._NODE_ORDER[-3:] == ["save", "embed_chunks", "save_chunks"]
+    assert G.NODE_ORDER[-3:] == ["save", "embed_chunks", "save_chunks"]
     assert G._route_after("save")({"error": None}) == "embed_chunks"
     assert G._route_after("save")({"error": "카드 저장 실패"}) == G.END

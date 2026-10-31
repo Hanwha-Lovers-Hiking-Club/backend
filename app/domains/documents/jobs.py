@@ -12,3 +12,8 @@ def create_job(job_id: UUID, job: dict) -> None:
 
 def get_job(job_id: UUID) -> dict | None:
     return _jobs.get(job_id)
+
+
+def update_job(job_id: UUID, **fields) -> None:
+    # 없는 job이면 KeyError. 만든 적 없는 job을 갱신하는 건 버그라서 조용히 넘기지 않는다
+    _jobs[job_id].update(fields)

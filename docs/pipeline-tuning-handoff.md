@@ -423,8 +423,8 @@
 
 ## 3. 프론트 연결 후 해야 할 일 / 고려사항
 
-**연결 자체(보류 중, 팀장 결정: 실제 문서 테스트할 때 연결)** — `documents/service.py`가 그래프를 호출하지 않아 job이 `queued`에서
-안 바뀐다. 연결할 때 정할 것:
+**연결은 끝났다 → `docs/service-connection-handoff.md` 3번 "완료" 참고**(백그라운드 실행, 노드 9개 = 단계 9개, 실패/예외 처리).
+아래는 연결 전에 정리했던 고려사항 기록이다:
 - 노드 9개 ↔ SSE 단계 6개(`STEP_PROGRESS` 0~5) 매핑: 프론트 `processingSteps` 문구와 맞춰야 함
   (예: parse+chunk를 한 단계로 묶기).
 - 실행 방식: `asyncio.create_task`(task 참조를 set에 보관해야 GC로 안 사라짐) vs FastAPI `BackgroundTasks`.
@@ -457,7 +457,7 @@
 
 ## 4. 알려진 이슈와 미결정 사항
 
-- **낡은 테스트**: `tests/test_documents_upload.py::test_upload_rejects_unsupported_type`가 실패한다. 원인은 코드가 아니라
+- ~~**낡은 테스트**~~(해결함, 미지원 확장자를 `.exe`로 바꿈): `tests/test_documents_upload.py::test_upload_rejects_unsupported_type`가 실패했었다. 원인은 코드가 아니라
   테스트다 — `sheet.xlsx`를 "지원하지 않는 형식"으로 기대하는데 xlsx는 이미 지원 형식이다. 미지원 확장자를 `.exe` 같은 것으로
   바꾸면 된다(아직 안 고침).
 - **줄 길이 경고**: `parse.py`의 기존 주석 한 줄(`# 문서 하나라도 실패하면 …`)과 `documents/service.py` 2행이 ruff E501에 걸린다.

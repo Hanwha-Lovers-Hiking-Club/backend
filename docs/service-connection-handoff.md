@@ -55,8 +55,8 @@ parse → chunk → extract → draft_card → verify → embed → save → emb
 ### 서비스 쪽(연결 대상)
 - `app/domains/documents/router.py`: `POST /api/documents/upload`(202, 파일 여러 개), `GET /api/documents/jobs/{job_id}/events`(SSE).
 - `app/domains/documents/service.py`: `upload_documents()`가 검증 → Storage 업로드 → `documents` 행 생성 → `jobs.create_job(job_id, {...status: "queued"...})` 후 반환.
-  **그래프를 호출하는 코드가 없고, job 상태를 `completed`/`failed`로 바꾸는 코드도 없다** → 지금 업로드하면 SSE가 영원히 "처리 중".
-- `app/domains/documents/jobs.py`: 서버 메모리 dict `_jobs`(`create_job`, `get_job`만 있음, 갱신 함수 없음). 재시작하면 사라지고 워커가 여러 개면 공유 안 됨.
+  (구현 전 상태: 그래프를 호출하는 코드가 없어서 SSE가 영원히 "처리 중"이었다 → 3번에서 연결함.)
+- `app/domains/documents/jobs.py`: 서버 메모리 dict `_jobs`(`create_job`, `get_job`, `update_job`). 재시작하면 사라지고 워커가 여러 개면 공유 안 됨.
 - SSE: `service.job_events()`가 0.5초마다 `_jobs`를 읽어 `progress`(상태가 바뀔 때만) → `completed` 또는 `failed`를 보내고 끝낸다.
   `completed`에는 `job["created_card_count"]`, `failed`에는 `job["message"]`가 **반드시** 있어야 한다(없으면 KeyError).
   이벤트 모양(`schemas.py`, camelCase): `progress{activeStep, progress}`, `completed{jobId, status, createdCardCount}`, `failed{jobId, message}`.
@@ -64,6 +64,27 @@ parse → chunk → extract → draft_card → verify → embed → save → emb
 - 기존 테스트: `tests/test_documents_upload.py`, `tests/test_job_events.py`(`jobs._jobs`에 상태를 직접 넣고 `service._wait`를 가짜로 바꿔 검증).
 
 ## 3. 작업 A — 서비스 연결
+
+### 완료 (구현·테스트 끝, 커밋 전)
+- 업로드하면 `service._start_pipeline`이 백그라운드 task로 `_run_pipeline`을 띄운다(`asyncio.create_task`, 참조는 `_background_tasks` set에 보관).
+  `astream(stream_mode="updates")`로 노드가 끝날 때마다 `active_step`/`progress`를 올리고, 끝나면 `error` 유무로 `completed`/`failed`를 기록한다.
+  그래프 밖 예외도 잡아서 `failed`(메시지는 `summarize_error`로 200자 제한)로 기록하고 `finish_job_usage`로 집계를 정리한다.
+- **단계는 9개, 노드 하나가 단계 하나**: `STEP_PROGRESS = [11, 22, 33, 44, 56, 67, 78, 89, 100]`(균등 분할, 실제 소요 시간을 보고 조정).
+  `activeStep=k`는 "`NODE_ORDER[k]` 노드가 지금 실행 중". 단계 **문구는 프론트 `processingSteps`가 가지고** 백엔드는 번호만 보낸다.
+  `NODE_ORDER`(구 `_NODE_ORDER`)는 `graph.py`에서 공개했다. 노드를 추가하면 `STEP_PROGRESS`도 같이 고쳐야 하고,
+  `tests/test_pipeline_service.py::test_step_progress_matches_node_order`가 어긋나면 실패한다.
+- job dict가 `document_ids` 대신 `documents`(id, storage_bucket, storage_path, original_filename)를 가진다. 실패한 job의 documents/Storage는 **남긴다**(재처리 대비).
+- `warnings`는 job에만 저장하고 프론트로는 보내지 않는다(계약 변경 없음). 카드 0개도 `completed`(`createdCardCount: 0`)다. job 전체 타임아웃은 아직 없다.
+- **docling은 서버가 켜질 때 백그라운드 스레드가 미리 불러 둔다**(`main.py`의 lifespan → `service.start_converter_warm_up`, daemon 스레드).
+  서비스가 그래프를 import하면서 서버 시작이 2.5초 → 20초로 늘었던 것을, `parse.py`가 docling을 함수 안에서 import하도록 바꿔 ~6초로 줄이고,
+  PDF 모델 로딩(`initialize_pipeline`)까지 시작 직후 백그라운드에서 끝내 둔다. 실제 측정(개발 PC): 서버 5.9초에 시작, 변환기 준비 완료까지 39초,
+  로딩 중 `/health` 최대 135ms. 로딩이 끝나기 전에 업로드가 들어오면 `get_converter`의 잠금 때문에 한 번만 로딩하고 그 완료를 기다린다
+  (job은 parse 단계에서 잠시 멈춰 있다). 로딩이 실패하면 로그만 남기고 다음 호출에서 다시 시도한다.
+- 확인함: 진짜 서버를 띄워(저장소와 노드만 가짜) 업로드 → SSE 수신까지 통과. 202 응답 0.03초, 노드가 0.4초씩 블로킹하는 동안 `/health` 최대 68ms(**동기 노드가 이벤트 루프를 막지 않는다**).
+- 주의(프론트): SSE는 0.5초마다 현재 상태를 읽어 보내므로 **짧은 단계는 건너뛰어서 올 수 있다**(예: 3 → 5). 프론트는 `activeStep`보다 작은 단계를 모두 완료로 그려야 한다.
+- 아직 안 한 것: 실제 Supabase/LLM으로 한 end-to-end(작업 B), 프론트 `processingSteps` 9개와 명세서 API-003 예시 갱신(프론트 쪽), job 타임아웃 값.
+
+### 설계 기록 (구현 전 논의)
 
 ### 이미 정해진 것
 - 연결은 실제 문서 테스트 때 한다(팀장 결정).
@@ -222,7 +243,7 @@ from app.domains.documents.pipeline.graph import build_graph
 ## 6. 알려진 이슈
 
 - ~~테스트가 `.env` 없이는 실패한다~~: 해결함(`tests/conftest.py`에 더미 `OPENAI_API_KEY`, `KURE_API_KEY` 추가).
-- **낡은 테스트**: `tests/test_documents_upload.py::test_upload_rejects_unsupported_type`는 `sheet.xlsx`를 "미지원"으로 기대하지만 xlsx는 지원 형식이다.
+- ~~낡은 테스트~~: 해결함(미지원 확장자를 `.exe`로 바꿈). 원래 내용 — `test_upload_rejects_unsupported_type`는 `sheet.xlsx`를 "미지원"으로 기대하지만 xlsx는 지원 형식이다.
   미지원 확장자를 `.exe` 등으로 바꾸면 된다(코드는 맞음).
 - **줄 길이 경고**(ruff E501, 기존 것): `parse.py`의 `# 문서 하나라도 실패하면 …` 주석, `documents/service.py` 2행.
 - `jobs._jobs`는 메모리 mock(재시작 시 소실, 워커가 여러 개면 공유 안 됨).
