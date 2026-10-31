@@ -152,7 +152,7 @@ def test_list_cards_search_filter(client, fake_db):
         (
             (
                 'title.ilike."*RAG*",summary.ilike."*RAG*",context.ilike."*RAG*",'
-                'keywords.cs.{"RAG"}',
+                'keywords.cs.{"RAG"},technologies.cs.{"rag"}',
             ),
             {},
         )
@@ -209,3 +209,17 @@ def test_list_cards_db_error(client, fake_db):
 
     assert response.status_code == 500
     assert response.json() == {"detail": "지식카드 목록을 조회하지 못했습니다."}
+
+
+def test_search_filter_matches_technologies_by_standard_id():
+    # 입력이 별칭("넥스트")이어도 저장된 표준 ID(nextjs)로 비교한다. 조사가 붙어도 찾는다
+    condition = "technologies.cs.{" + '"nextjs"' + "}"
+    assert condition in service._build_search_filter("넥스트 장애").split(",")
+    assert condition in service._build_search_filter("넥스트에서 장애").split(",")
+    # 사전에 없는 기술도 같은 철자로 맞는다
+    assert 'technologies.cs.{"somenewtool"}' in service._build_search_filter("SomeNewTool")
+
+
+def test_technologies_are_returned_with_display_names():
+    row = {"id": "1", "technologies": ["nextjs", "Supabase", "unknowntool"], "card_documents": []}
+    assert service._to_card(row)["technologies"] == ["Next.js", "Supabase", "unknowntool"]

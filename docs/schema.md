@@ -38,7 +38,7 @@
 | rationale | text | 조건부 | 접근 방식을 선택한 이유 |
 | outcome | text | 조건부 | 적용 후 확인된 결과 |
 | lesson | text | O | 재사용 가능한 교훈 |
-| technologies | text[] | O (빈 배열 가능) | 기술 스택(WebSocket, Supabase 등). 기본값 `{}` |
+| technologies | text[] | O (빈 배열 가능) | 기술 스택. **정규화된 표준 ID로 저장**(`nextjs`, `postgresql`, 사전에 없는 기술은 소문자·구분기호 제거 값). 표기 통일 규칙과 사전은 `app/core/technology/`, 화면 표시명은 API 응답에서 변환. 기본값 `{}` |
 | keywords | text[] | O (빈 배열 가능) | 분야/주제어(웹 개발, QA, 네트워크 등). 기본값 `{}` |
 | department | text | X | 담당 부서. 식별 불가하면 NULL |
 | project_date | date | X | 지식이 나온 프로젝트 시점. 식별 불가하면 NULL |

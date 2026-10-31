@@ -2,6 +2,7 @@
 from fastapi import HTTPException
 from postgrest.exceptions import APIError
 
+from app.core.technology import display_name, find_technologies, is_valid_id, normalize_technology
 from app.db import supabase
 from app.domains.knowledge_cards.schemas import CardSort
 
@@ -28,8 +29,25 @@ def _quote(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+# 한 검색어에서 기술 조건으로 바꿀 최대 개수(긴 문장을 넣어도 필터가 커지지 않게)
+MAX_TECHNOLOGY_CONDITIONS = 10
+
+
+def _technology_ids(q: str) -> list[str]:
+    # 입력에서 기술 표준 ID를 뽑는다. 사전에서 찾은 것("넥스트에서" -> nextjs)에 더해,
+    # 각 단어도 정규화해서 사전에 없는 기술도 같은 철자면 맞게 한다(저장할 때도 같은 규칙을 거쳤다).
+    # technologies에는 표준 ID가 저장되어 있어서 입력을 그대로 비교하면 "넥스트"로는 못 찾는다.
+    ids = find_technologies(q)
+    for token in q.split():
+        tech_id = normalize_technology(token)
+        if tech_id and is_valid_id(tech_id) and tech_id not in ids:
+            ids.append(tech_id)
+    return ids[:MAX_TECHNOLOGY_CONDITIONS]
+
+
 def _build_search_filter(q: str) -> str:
-    # 제목/요약/배경은 부분일치, keywords(text[])는 원소 정확일치만 가능 (PostgREST 제약)
+    # 제목/요약/배경은 부분일치, keywords/technologies(text[])는 원소 정확일치만 가능
+    # (PostgREST 제약). technologies는 정규화한 표준 ID로 비교한다
     pattern = _quote(f"*{q}*")
     return ",".join(
         [
@@ -37,6 +55,7 @@ def _build_search_filter(q: str) -> str:
             f"summary.ilike.{pattern}",
             f"context.ilike.{pattern}",
             f"keywords.cs.{{{_quote(q)}}}",
+            *(f"technologies.cs.{{{_quote(tech_id)}}}" for tech_id in _technology_ids(q)),
         ]
     )
 
@@ -64,7 +83,9 @@ def _to_card(row: dict) -> dict:
         }
         for evidence in card_documents
     ]
-    return {**row, "evidences": evidences}
+    # technologies에는 표준 ID가 저장되어 있어서 화면에는 공식 표기로 내려준다
+    technologies = [display_name(t) for t in row.get("technologies") or []]
+    return {**row, "technologies": technologies, "evidences": evidences}
 
 
 def create_card(card: dict, evidences: list[dict]) -> str:
