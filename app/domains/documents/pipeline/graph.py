@@ -30,6 +30,7 @@ import logging
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from app.core.logging import summarize_error
 from app.domains.documents.pipeline.nodes.chunk import chunk
 from app.domains.documents.pipeline.nodes.draft_card import draft_card
 from app.domains.documents.pipeline.nodes.embed import embed
@@ -39,6 +40,7 @@ from app.domains.documents.pipeline.nodes.parse import parse
 from app.domains.documents.pipeline.nodes.save import save
 from app.domains.documents.pipeline.nodes.save_chunks import save_chunks
 from app.domains.documents.pipeline.nodes.verify import verify
+from app.domains.documents.pipeline.observe import NodeRun
 from app.domains.documents.pipeline.state import IngestionState
 
 logger = logging.getLogger(__name__)
@@ -71,27 +73,42 @@ def _safe(name: str, node):
     # 노드가 try 밖에서 예기치 못한 예외를 내면 ainvoke()가 터져서
     # job이 failed로 바뀌지 않고 SSE가 영원히 "처리 중"으로 남는다.
     # 모든 노드를 감싸서 예외를 노드 이름이 담긴 error로 바꿔 한 곳에서 막는다.
+    # 같은 자리에서 노드 실행 기록(NodeRun)도 남긴다.
     def failure(e: Exception) -> dict:
-        logger.exception("pipeline: %s 단계에서 예기치 못한 오류", name)
-        return {"error": f"{name} 단계에서 예기치 못한 오류: {e}"}
+        logger.exception("%s 단계에서 예기치 못한 오류", name)
+        return {"error": f"{name} 단계에서 예기치 못한 오류: {summarize_error(e)}"}
 
     if inspect.iscoroutinefunction(node):
 
         @functools.wraps(node)
         async def async_wrapper(state):
+            run = NodeRun(name, state, is_last=name == _NODE_ORDER[-1])
             try:
-                return await node(state)
-            except Exception as e:
-                return failure(e)
+                try:
+                    result = await node(state)
+                    raised = False
+                except Exception as e:
+                    result, raised = failure(e), True
+                run.log_done(result, raised)
+                return result
+            finally:
+                run.close()
 
         return async_wrapper
 
     @functools.wraps(node)
     def wrapper(state):
+        run = NodeRun(name, state, is_last=name == _NODE_ORDER[-1])
         try:
-            return node(state)
-        except Exception as e:
-            return failure(e)
+            try:
+                result = node(state)
+                raised = False
+            except Exception as e:
+                result, raised = failure(e), True
+            run.log_done(result, raised)
+            return result
+        finally:
+            run.close()
 
     return wrapper
 

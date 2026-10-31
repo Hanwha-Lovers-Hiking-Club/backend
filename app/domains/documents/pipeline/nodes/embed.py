@@ -5,6 +5,7 @@
 # 그 섹션을 통째로 생략한다("없음" 같은 의미 없는 텍스트가 벡터에 섞이지 않게).
 import logging
 
+from app.core.logging import summarize_error
 from app.domains.documents.pipeline.embedding import embed_documents
 from app.domains.documents.pipeline.models import CardDraft, CardEmbeddings, EmbeddedCard
 from app.domains.documents.pipeline.stage import finish_stage
@@ -64,8 +65,8 @@ def embed(state: IngestionState) -> dict:
             )
         except Exception as e:
             # 임베딩이 없는 카드는 검색에 안 잡히므로 저장하지 않고 건너뛴다. 나머지는 계속 처리한다
-            logger.warning("embed: 카드 건너뜀 %r: %s", verified.draft.title, e)
-            failures.append(f"카드 임베딩 실패 '{verified.draft.title}': {e}")
+            logger.warning("embed: 카드 건너뜀 %r: %s", verified.draft.title, summarize_error(e))
+            failures.append(f"카드 임베딩 실패 '{verified.draft.title}': {summarize_error(e)}")
             continue
 
         embedded_cards.append(

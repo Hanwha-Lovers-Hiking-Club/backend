@@ -10,6 +10,7 @@ from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.core.logging import summarize_error
 from app.domains.documents.pipeline.llm import get_llm, invoke_with_retry
 from app.domains.documents.pipeline.models import CardDraft, VerificationResult, VerifiedCard
 from app.domains.documents.pipeline.stage import finish_stage
@@ -101,8 +102,8 @@ def verify(state: IngestionState) -> dict:
         except Exception as e:
             # 검증하지 못한 카드는 통과시키지 않고 건너뛴다(검증 안 된 카드가 저장되면 안 된다).
             # 나머지 카드는 계속 검증한다(stage.finish_stage 참고)
-            logger.warning("verify: 카드 건너뜀 %r: %s", draft.title, e)
-            failures.append(f"카드 검증 실패 '{draft.title}': {e}")
+            logger.warning("verify: 카드 건너뜀 %r: %s", draft.title, summarize_error(e))
+            failures.append(f"카드 검증 실패 '{draft.title}': {summarize_error(e)}")
             continue
 
         llm_verified += 1

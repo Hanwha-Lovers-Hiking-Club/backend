@@ -6,6 +6,7 @@ from io import BytesIO
 from docling.datamodel.base_models import DocumentStream, InputFormat
 from docling.document_converter import DocumentConverter
 
+from app.core.logging import summarize_error
 from app.domains.documents import repository
 from app.domains.documents.pipeline.retry import retry_async
 from app.domains.documents.pipeline.state import IngestionState, ParsedDocument
@@ -63,6 +64,6 @@ async def parse(state: IngestionState) -> dict:
             text = await asyncio.to_thread(_extract_text, content, filename)
         except Exception as e:
             # 문서 하나라도 실패하면 job 전체를 중단한다. 어느 문서인지 바로 알 수 있게 파일명을 남긴다
-            return {"error": f"'{filename}' 파싱 실패: {e}"}
+            return {"error": f"'{filename}' 파싱 실패: {summarize_error(e)}"}
         parsed_documents.append({"document_id": document["id"], "text": text})
     return {"parsed_documents": parsed_documents}

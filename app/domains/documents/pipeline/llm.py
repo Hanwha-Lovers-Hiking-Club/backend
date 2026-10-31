@@ -7,6 +7,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
 from app.config import settings
+from app.domains.documents.pipeline.observe import LlmUsageCallback
 from app.domains.documents.pipeline.retry import retry_sync
 
 MODEL_NAME = "gpt-4.1-mini"
@@ -23,6 +24,7 @@ def get_llm() -> BaseChatModel:
         api_key=settings.OPENAI_API_KEY,
         temperature=0,
         timeout=LLM_TIMEOUT_SECONDS,
+        callbacks=[LlmUsageCallback()],
     )
 
 

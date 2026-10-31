@@ -8,6 +8,7 @@ from pathlib import Path
 import tiktoken
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.core.logging import summarize_error
 from app.domains.documents.pipeline.chunk_formatting import format_chunks
 from app.domains.documents.pipeline.llm import get_llm, invoke_with_retry
 from app.domains.documents.pipeline.models import ExtractedElements, ExtractedElementsBatch
@@ -58,7 +59,7 @@ def extract(state: IngestionState) -> dict:
         # 본문 속 문장이 지시문과 섞이지 않게 한다
         result = invoke_with_retry(llm, [SystemMessage(_PROMPT), HumanMessage(formatted)])
     except Exception as e:
-        return {"error": f"요소 추출 실패: {e}"}
+        return {"error": f"요소 추출 실패: {summarize_error(e)}"}
 
     elements = _keep_valid_chunk_ids(result.elements, state["chunks"])
     logger.info(

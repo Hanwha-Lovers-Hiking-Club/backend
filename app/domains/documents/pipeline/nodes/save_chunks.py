@@ -5,6 +5,7 @@
 # 이미 들어간 이 job 문서들의 청크를 지우고(반쪽 인덱스를 남기지 않음) state["warnings"]에만 남긴다.
 import logging
 
+from app.core.logging import summarize_error
 from app.domains.documents import repository
 from app.domains.documents.pipeline.state import IngestionState
 
@@ -33,12 +34,14 @@ def save_chunks(state: IngestionState) -> dict:
         for start in range(0, len(rows), INSERT_BATCH_SIZE):
             repository.insert_chunks(rows[start : start + INSERT_BATCH_SIZE])
     except Exception as e:
-        logger.warning("save_chunks: 청크 저장 실패, 이미 넣은 청크를 정리함: %s", e)
+        logger.warning(
+            "save_chunks: 청크 저장 실패, 이미 넣은 청크를 정리함: %s", summarize_error(e)
+        )
         try:
             repository.delete_chunks(sorted({r["document_id"] for r in rows}))
         except Exception:
             logger.exception("save_chunks: 실패한 청크 정리도 실패")
-        return {"warnings": [*state.get("warnings", []), f"청크 저장 실패: {e}"]}
+        return {"warnings": [*state.get("warnings", []), f"청크 저장 실패: {summarize_error(e)}"]}
 
     logger.info("save_chunks: 청크 %d개 저장 완료", len(rows))
     return {}

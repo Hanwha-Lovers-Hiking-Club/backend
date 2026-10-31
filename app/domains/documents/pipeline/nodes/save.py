@@ -5,6 +5,7 @@
 # 변환해서 넘긴다(두 도메인이 서로의 내부 타입을 몰라도 되게).
 import logging
 
+from app.core.logging import summarize_error
 from app.domains.documents.pipeline.models import CardDraft, CardEmbeddings
 from app.domains.documents.pipeline.state import IngestionState
 from app.domains.knowledge_cards import service as knowledge_cards_service
@@ -62,8 +63,8 @@ def save(state: IngestionState) -> dict:
         try:
             knowledge_cards_service.create_card(card, evidences)
         except Exception as e:
-            logger.warning("save: 카드 저장 실패 %r: %s", embedded.draft.title, e)
-            failures.append(f"카드 저장 실패 '{embedded.draft.title}': {e}")
+            logger.warning("save: 카드 저장 실패 %r: %s", embedded.draft.title, summarize_error(e))
+            failures.append(f"카드 저장 실패 '{embedded.draft.title}': {summarize_error(e)}")
             continue
         saved += 1
 

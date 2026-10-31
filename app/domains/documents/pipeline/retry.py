@@ -12,6 +12,8 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
+from app.core.logging import summarize_error
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -37,7 +39,12 @@ def retry_sync(
                 raise
             delay = _delay(backoff, attempt)
             logger.warning(
-                "%s 실패, 재시도 %d/%d (%.1f초 뒤): %s", name, attempt + 1, retries, delay, e
+                "%s 실패, 재시도 %d/%d (%.1f초 뒤): %s",
+                name,
+                attempt + 1,
+                retries,
+                delay,
+                summarize_error(e),
             )
             if delay:
                 time.sleep(delay)
@@ -60,7 +67,12 @@ async def retry_async(
                 raise
             delay = _delay(backoff, attempt)
             logger.warning(
-                "%s 실패, 재시도 %d/%d (%.1f초 뒤): %s", name, attempt + 1, retries, delay, e
+                "%s 실패, 재시도 %d/%d (%.1f초 뒤): %s",
+                name,
+                attempt + 1,
+                retries,
+                delay,
+                summarize_error(e),
             )
             if delay:
                 await asyncio.sleep(delay)

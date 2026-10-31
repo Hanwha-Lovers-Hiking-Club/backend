@@ -10,6 +10,7 @@ from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.core.logging import summarize_error
 from app.core.technology import normalize_technologies
 from app.domains.documents.pipeline.chunk_formatting import format_chunks
 from app.domains.documents.pipeline.llm import get_llm, invoke_with_retry
@@ -126,8 +127,8 @@ def draft_card(state: IngestionState) -> dict:
             content = invoke_with_retry(llm, [SystemMessage(_PROMPT), HumanMessage(user_message)])
         except Exception as e:
             # 경험 하나가 실패해도 나머지는 계속 처리한다(stage.finish_stage 참고)
-            logger.warning("draft_card: 경험 건너뜀 (%s): %s", _label(element), e)
-            failures.append(f"카드 초안 생성 실패 ({_label(element)}): {e}")
+            logger.warning("draft_card: 경험 건너뜀 (%s): %s", _label(element), summarize_error(e))
+            failures.append(f"카드 초안 생성 실패 ({_label(element)}): {summarize_error(e)}")
             continue
 
         evidences, fallbacks, used_all_chunks = _build_evidences(content, source_chunks)

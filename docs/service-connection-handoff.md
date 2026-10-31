@@ -165,7 +165,25 @@ from app.domains.documents.pipeline.graph import build_graph
 
 ## 5. 작업 C — 로깅
 
-### 현황
+### 완료 (팀장 결정대로 구현, 커밋 전)
+- 콘솔만, 사람이 읽는 한국어 텍스트: `2026-10-31 22:41:23 [정보] [job=3f2a9c1e] pipeline.graph: parse 완료 (0.2초)`.
+  설정은 `app/core/logging.py`의 `setup_logging()`(`main.py`에서 1회 호출). 수준은 `LOG_LEVEL` 환경변수(기본 INFO)로 `app.*`만 조절하고,
+  서드파티(docling, httpx 등)는 항상 WARNING부터. uvicorn 자체 로그는 uvicorn 포맷 그대로.
+- **job_id 자동 부착**: `graph._safe`가 쓰는 `observe.NodeRun`이 노드를 실행하는 스레드 안에서 직접 `job_log_context(job_id)`를 연다
+  (그래서 LangGraph가 동기 노드를 어느 스레드에서 돌려도 따라온다. `tests/test_logging.py`로 확인). 로그에는 앞 8자리만 찍힌다.
+  서비스 연결 때 서비스 쪽 로그에도 붙이려면 `with job_log_context(job_id):`로 감싼다.
+- **노드별 기록**: `<노드> 시작` / `<노드> 완료 (N초, LLM n회 (입력 토큰 / 출력 토큰), 임베딩 n회)` / `<노드> 실패`.
+  마지막 노드이거나 error로 끝나면 `작업 완료|오류로 중단: 총 N초 | 노드별(초) … | LLM … | 임베딩 …` 요약 한 줄.
+- **LLM/임베딩 호출·토큰**: `pipeline/observe.py`. LLM은 `get_llm()`의 `LlmUsageCallback`(재시도 호출도 각각 센다, SDK 내부 전송 재시도는 안 보임),
+  임베딩은 `embed_documents`가 기록. 호출 하나하나의 줄은 DEBUG(`LOG_LEVEL=DEBUG`)에서만 나온다. 비용(원/달러)은 계산하지 않는다.
+  **확인 안 됨**: 실제 OpenAI 응답에서 토큰이 잡히는지(가짜 모델로만 검증), kure가 `usage`를 주는지(없으면 토큰 생략).
+  → 첫 실제 문서 테스트 때 `LLM n회 (입력 토큰 …)`이 0이 아닌지 확인할 것.
+- **민감 정보**: `summarize_error()`가 에러 메시지를 한 줄로 합치고 200자에서 자른다. 노드의 warnings/error 문자열, retry 경고, graph 예외에 적용.
+  스택트레이스도 한 줄 300자로 자른다. 카드 제목과 경험의 problem 앞 40자, verify의 rewrite/discard 사유는 의도적으로 남긴다.
+- `observe.py`의 job별 집계는 마지막 노드/error에서 정리된다. 서비스 연결 때 타임아웃으로 job을 끊는 경우 `finish_job_usage(job_id)`를 불러 정리한다.
+- 아직 안 한 것: 서버를 띄워 실제 업로드로 콘솔에서 보는 확인(서비스 연결 후), 소요 시간 기반 job 타임아웃 값 결정.
+
+### 현황 (구현 전 조사 기록)
 - **로깅 설정이 레포 어디에도 없다**(`app/main.py`, `app/config.py` 확인). 파이썬 기본 로거는 WARNING부터만 stderr로 나오므로, uvicorn 기본 실행에서는
   **우리가 남긴 INFO 로그가 안 보일 가능성이 크다**(WARNING은 포맷 없이 나옴). 서버에서 실제로 보이는지 먼저 확인할 것.
 - 반대로 서드파티 로그는 시끄럽다: 이전 end-to-end에서 `docling`(INFO 다수), `httpx`/`openai`의 요청 로그가 쏟아졌다 → 기본 수준을 올려야 한다.
@@ -203,8 +221,7 @@ from app.domains.documents.pipeline.graph import build_graph
 
 ## 6. 알려진 이슈
 
-- **테스트가 `.env` 없이는 실패한다(확인함)**: `app/config.py`의 `Settings`가 `OPENAI_API_KEY`, `KURE_API_KEY`를 필수로 요구하는데 `tests/conftest.py`는
-  Supabase 변수만 더미로 넣는다. `.env`가 없는 환경(새 팀원, CI)에서는 import 단계에서 실패한다. conftest에 더미 값을 추가하면 된다.
+- ~~테스트가 `.env` 없이는 실패한다~~: 해결함(`tests/conftest.py`에 더미 `OPENAI_API_KEY`, `KURE_API_KEY` 추가).
 - **낡은 테스트**: `tests/test_documents_upload.py::test_upload_rejects_unsupported_type`는 `sheet.xlsx`를 "미지원"으로 기대하지만 xlsx는 지원 형식이다.
   미지원 확장자를 `.exe` 등으로 바꾸면 된다(코드는 맞음).
 - **줄 길이 경고**(ruff E501, 기존 것): `parse.py`의 `# 문서 하나라도 실패하면 …` 주석, `documents/service.py` 2행.
@@ -245,7 +262,7 @@ uv run uvicorn app.main:app --reload                 # 서버 (http://localhost:
 
 ## 8. 권장 진행 순서
 
-1. **로깅 먼저**(작음): 이후 작업에서 로그를 보며 진행하려면 설정이 먼저 있어야 한다. 논의(5번) → 설정 → 서버에서 보이는지 확인.
+1. ~~**로깅 먼저**~~: 구현 완료(5번). 서버에서 실제로 보이는지는 서비스 연결 후 확인.
 2. **서비스 연결**(3번): 결정 8개를 팀장과 정하고 구현. 연결하면 프론트와 실제 업로드로 end-to-end가 된다.
 3. **실제 문서 테스트**(4번): 하네스(정식 스크립트화 권장) + 서비스 경로 둘 다로 돌려본다. 결과를 표로 남기고 "나중에" 항목을 결정한다.
 4. 결정/변경은 `docs/pipeline-tuning-handoff.md`에 반영하고, 주제별로 커밋한다(요청 시).

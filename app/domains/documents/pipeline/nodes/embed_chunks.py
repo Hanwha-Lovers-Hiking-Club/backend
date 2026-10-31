@@ -8,6 +8,7 @@
 # 저장되는 content는 항상 원문 그대로다.
 import logging
 
+from app.core.logging import summarize_error
 from app.domains.documents.pipeline.embedding import embed_documents
 from app.domains.documents.pipeline.models import EmbeddedChunk
 from app.domains.documents.pipeline.state import Chunk, IngestionState
@@ -41,10 +42,12 @@ def embed_chunks(state: IngestionState) -> dict:
             )
     except Exception as e:
         # 일부만 성공한 상태로 저장하면 문서가 반쪽만 검색되므로 전부 버린다
-        logger.warning("embed_chunks: 청크 임베딩 실패, 청크 인덱싱을 건너뜀: %s", e)
+        logger.warning(
+            "embed_chunks: 청크 임베딩 실패, 청크 인덱싱을 건너뜀: %s", summarize_error(e)
+        )
         return {
             "embedded_chunks": [],
-            "warnings": [*state.get("warnings", []), f"청크 임베딩 실패: {e}"],
+            "warnings": [*state.get("warnings", []), f"청크 임베딩 실패: {summarize_error(e)}"],
         }
 
     logger.info("embed_chunks: 청크 %d개 임베딩 완료", len(embedded))

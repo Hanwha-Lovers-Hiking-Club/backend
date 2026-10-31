@@ -5,10 +5,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.core.logging import setup_logging
 from app.domains.agent.router import router as agent_router
 from app.domains.chat.router import router as chat_router
 from app.domains.documents.router import router as documents_router
 from app.domains.knowledge_cards.router import router as knowledge_cards_router
+
+setup_logging()
 
 app = FastAPI(title="backend")
 
