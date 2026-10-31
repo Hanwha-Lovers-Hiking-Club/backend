@@ -1,4 +1,8 @@
-# 파이프라인 전체 연결: parse -> chunk -> extract -> draft_card -> verify -> embed -> save.
+# 파이프라인 전체 연결:
+# parse -> chunk -> extract -> draft_card -> verify -> embed -> save
+# -> embed_chunks -> save_chunks.
+# embed_chunks/save_chunks(청크 검색 인덱싱)는 카드 저장 뒤에 붙고,
+# 실패해도 error가 아니라 warnings만 남긴다.
 #
 # ponytail: verify에서 rewrite 판정이 나와도 draft_card로 돌아가는 재시도 루프는 안 만든다.
 # rewrite는 지금 discard와 동일하게 "저장 안 함"으로 취급한다(embed/save가 verdict == "pass"만
@@ -10,19 +14,46 @@
 # draft_card로 돌아가는 조건부 엣지 + 재시도 횟수 제한을 추가한다.
 #
 # 에러 분기: 어느 노드든 state["error"]를 설정하면, 남은 노드를 건너뛰고 즉시 끝낸다.
+# 노드 안에서 처리하지 못한 예외는 _safe가 error로 바꿔준다.
+#
+# 실패 정책(노드별):
+#   fail-fast(error): parse(문서 하나라도 실패하면 중단 — extract가 모든 문서를 한꺼번에 보고 경험을
+#     묶으므로 문서가 빠지면 반쪽짜리 카드가 만들어질 수 있다), extract(호출 1번)
+#   항목 단위 soft-fail(stage.finish_stage): draft_card, verify, embed, save —
+#     실패한 항목은 건너뛰고 warnings에 남기며, 처리하려던 항목이 전부 실패했을 때만 error
+#   soft-fail(warnings만): embed_chunks, save_chunks —
+#     청크 인덱싱은 보조 기능이라 job을 실패시키지 않는다
+import functools
+import inspect
+import logging
+
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.domains.documents.pipeline.nodes.chunk import chunk
 from app.domains.documents.pipeline.nodes.draft_card import draft_card
 from app.domains.documents.pipeline.nodes.embed import embed
+from app.domains.documents.pipeline.nodes.embed_chunks import embed_chunks
 from app.domains.documents.pipeline.nodes.extract import extract
 from app.domains.documents.pipeline.nodes.parse import parse
 from app.domains.documents.pipeline.nodes.save import save
+from app.domains.documents.pipeline.nodes.save_chunks import save_chunks
 from app.domains.documents.pipeline.nodes.verify import verify
 from app.domains.documents.pipeline.state import IngestionState
 
-_NODE_ORDER = ["parse", "chunk", "extract", "draft_card", "verify", "embed", "save"]
+logger = logging.getLogger(__name__)
+
+_NODE_ORDER = [
+    "parse",
+    "chunk",
+    "extract",
+    "draft_card",
+    "verify",
+    "embed",
+    "save",
+    "embed_chunks",
+    "save_chunks",
+]
 _NODES = {
     "parse": parse,
     "chunk": chunk,
@@ -31,7 +62,38 @@ _NODES = {
     "verify": verify,
     "embed": embed,
     "save": save,
+    "embed_chunks": embed_chunks,
+    "save_chunks": save_chunks,
 }
+
+
+def _safe(name: str, node):
+    # 노드가 try 밖에서 예기치 못한 예외를 내면 ainvoke()가 터져서
+    # job이 failed로 바뀌지 않고 SSE가 영원히 "처리 중"으로 남는다.
+    # 모든 노드를 감싸서 예외를 노드 이름이 담긴 error로 바꿔 한 곳에서 막는다.
+    def failure(e: Exception) -> dict:
+        logger.exception("pipeline: %s 단계에서 예기치 못한 오류", name)
+        return {"error": f"{name} 단계에서 예기치 못한 오류: {e}"}
+
+    if inspect.iscoroutinefunction(node):
+
+        @functools.wraps(node)
+        async def async_wrapper(state):
+            try:
+                return await node(state)
+            except Exception as e:
+                return failure(e)
+
+        return async_wrapper
+
+    @functools.wraps(node)
+    def wrapper(state):
+        try:
+            return node(state)
+        except Exception as e:
+            return failure(e)
+
+    return wrapper
 
 
 def _route_after(node: str):
@@ -46,7 +108,7 @@ def _route_after(node: str):
 def build_graph() -> CompiledStateGraph:
     graph = StateGraph(IngestionState)
     for name, node in _NODES.items():
-        graph.add_node(name, node)
+        graph.add_node(name, _safe(name, node))
 
     graph.add_edge(START, _NODE_ORDER[0])
     for node in _NODE_ORDER:

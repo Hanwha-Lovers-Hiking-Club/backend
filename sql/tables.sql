@@ -112,8 +112,25 @@ create index if not exists card_documents_card_id_idx on card_documents (card_id
 create index if not exists card_documents_document_id_idx on card_documents (document_id);
 
 -- ---------------------------------------------------------------
+-- document_chunks: 문서를 잘라 만든 청크 + 임베딩 (챗봇의 원문 검색용)
+-- 문서 1개에 청크 N개. 카드와 직접 연결되지 않는다 (카드의 근거는 card_documents).
+-- 벡터 인덱스는 아직 안 걺 — 데이터가 쌓이고 검색 패턴이 보이면 추가한다.
+-- ---------------------------------------------------------------
+create table if not exists document_chunks (
+  id          uuid primary key default gen_random_uuid(),
+  document_id uuid not null references documents (id) on delete cascade,
+  chunk_index integer not null check (chunk_index >= 0),  -- 문서 안에서의 순서 (0부터)
+  location    text,  -- 원문 내 위치. 예: "2장 · 답변 근거와 지식 연결"
+  content     text not null check (length(trim(content)) > 0),  -- 청크 원문
+  embedding   vector(1024),  -- kure-v3 1024차원. knowledge_cards 임베딩과 같은 모델/차원
+  created_at  timestamptz not null default now(),
+  unique (document_id, chunk_index)
+);
+
+-- ---------------------------------------------------------------
 -- RLS: 켜기만 하고 정책은 만들지 않음 (백엔드 service role 전용)
 -- ---------------------------------------------------------------
 alter table documents enable row level security;
 alter table knowledge_cards enable row level security;
 alter table card_documents enable row level security;
+alter table document_chunks enable row level security;

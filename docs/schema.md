@@ -78,6 +78,26 @@
 
 `location`/`excerpt`는 근거마다 달라서 이 테이블에 둔다. 카드당 근거 1개 이상은 DB가 아니라 앱 로직에서 보장한다.
 
+## document_chunks
+
+문서를 잘라 만든 청크와 그 임베딩. 챗봇이 지식카드에 없는 원문 내용을 검색할 때 쓴다(카드가 안 만들어진
+문서도 검색 가능). 문서 1개에 청크 N개. 카드와 직접 연결되지 않는다(카드의 근거는 `card_documents`).
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| id | uuid | PK |
+| document_id | uuid | FK → documents.id (삭제 시 cascade) |
+| chunk_index | integer | 문서 안에서의 순서 (0부터, 0 이상). `(document_id, chunk_index)` 유니크 |
+| location | text | 원문 내 위치. 예: "2장 · 답변 근거와 지식 연결". NULL 허용 |
+| content | text | 청크 원문 (필수, 빈 문자열 불가) |
+| embedding | vector(1024) | kure-v3 1024차원 (`knowledge_cards` 임베딩과 같은 모델/차원). NULL 허용 |
+| created_at | timestamptz | 생성 시각 |
+
+차원/인덱스 방침은 `knowledge_cards` 임베딩과 같다(벡터 인덱스는 아직 안 걺). `card_documents.excerpt`는
+카드가 근거로 골라 쓴 문장이고, `document_chunks.content`는 문서 전체를 빠짐없이 자른 조각이다. 파이프라인의
+`Chunk.id`(`<document_id>:<index>`)에서 뒤의 숫자가 `chunk_index`다. 마이그레이션은
+`sql/2026-10-30_add_document_chunks.sql`(이 전에 업로드된 문서에는 청크가 없음).
+
 ## 아직 DB에 없는 것 (필요해지면 추가)
 
 - 카드 유형(`type`): 추출 결과를 보고 분류가 정해지면 `type text` + CHECK 제약으로 추가.
