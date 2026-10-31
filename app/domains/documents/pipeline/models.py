@@ -43,7 +43,10 @@ class CardDraftContent(BaseModel):
     keywords: list[str]
     project_name: str | None
     department: str | None
-    project_date: date | None
+    # date 타입으로 받거나 YYYY-MM-DD로 쓰게 하면 LLM이 "2024년 3월" 같은 부분 날짜에 일을 지어내서
+    # 채운다. 원문의 날짜 표현을 그대로 복사해 오게 하고, draft_card가 원문에 실제로 있고 연월일이
+    # 모두 있는 표현만 date로 변환한다
+    project_date: str | None
     excerpts: list[CardExcerptPick]
 
 
@@ -76,8 +79,10 @@ class CardDraft(BaseModel):
 
 # verify 노드의 판정 결과 타입. VerifiedCard 안에 담겨서 쓰인다
 class VerificationResult(BaseModel):
-    verdict: Literal["pass", "rewrite", "discard"]
+    # 구조화 출력은 필드 순서대로 생성되므로, 이유를 먼저 쓰고 판정하게 해서 결론을 정한 뒤
+    # 이유를 끼워 맞추는 걸 줄인다
     reason: str
+    verdict: Literal["pass", "rewrite", "discard"]
 
 
 # verify 노드의 출력 타입. state.IngestionState.verified_cards에 쌓인다
@@ -101,3 +106,14 @@ class CardEmbeddings(BaseModel):
 class EmbeddedCard(BaseModel):
     draft: CardDraft
     embeddings: CardEmbeddings
+
+
+# embed_chunks 노드의 출력 타입. state.IngestionState.embedded_chunks에 쌓인다
+# (save_chunks 노드가 저장)
+# content는 원문 그대로이고, 임베딩은 location을 앞에 붙인 텍스트로 만든 것이다
+class EmbeddedChunk(BaseModel):
+    document_id: UUID
+    chunk_index: int
+    location: str | None
+    content: str
+    embedding: list[float]

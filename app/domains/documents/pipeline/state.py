@@ -10,6 +10,7 @@ from uuid import UUID
 from app.domains.documents.pipeline.models import (
     CardDraft,
     EmbeddedCard,
+    EmbeddedChunk,
     ExtractedElements,
     VerifiedCard,
 )
@@ -33,6 +34,7 @@ class ParsedDocument(TypedDict):
 class Chunk(TypedDict):
     id: str  # f"{document_id}:{index}" 형태. extract 결과가 어떤 청크에서 왔는지 역추적용
     document_id: UUID
+    index: int  # 문서 안에서의 순서(0부터). document_chunks.chunk_index로 저장된다
     text: str
     # 근거 표시용 원문 내 위치. 예: "2장 · 답변 근거와 지식 연결"
     # ponytail: parse 노드가 DoclingDocument(페이지/좌표 정보 있음)를 마크다운 문자열로 평평하게
@@ -52,6 +54,15 @@ class IngestionState(TypedDict):
     verified_cards: list[VerifiedCard]
     # verified_cards 중 verdict == "pass"만 꺼내 임베딩까지 붙인 카드. save 노드가 이것만 저장한다
     embedded_cards: list[EmbeddedCard]
+    # save 노드가 실제로 저장한 카드 수. 일부 카드가 저장에 실패해도 나머지는 저장되므로
+    # len(embedded_cards)와 다를 수 있다. SSE completed의 created_card_count는 이 값을 쓴다
+    saved_card_count: int
+    # embed_chunks 노드의 출력. save_chunks 노드가 document_chunks에 저장한다.
+    # 카드 경로와 독립이라, 임베딩에 실패하면 비어 있고 error가 아니라 warnings에 사유가 남는다
+    embedded_chunks: list[EmbeddedChunk]
+    # 카드 생성은 성공했지만 보조 기능(청크 검색 인덱싱)이 실패했을 때의 사유.
+    # job은 completed로 끝난다
+    warnings: list[str]
     # documents/service.py의 STEP_PROGRESS 인덱스에 대응하는 그래프 진행 단계
     active_step: int
     error: str | None
