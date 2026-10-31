@@ -87,3 +87,59 @@ $$;
 
 revoke all on function save_document_cards(uuid, text, jsonb) from public, anon, authenticated;
 grant execute on function save_document_cards(uuid, text, jsonb) to service_role;
+
+-- 작업 등록과 첫 이벤트를 한 트랜잭션에서 기록한다.
+create or replace function create_document_job(p_job_id uuid, p_document_ids uuid[])
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if p_document_ids is null or array_length(p_document_ids, 1) is null
+     or array_length(p_document_ids, 1) > 10
+     or (select count(distinct id) from unnest(p_document_ids) as source_id(id))
+        <> array_length(p_document_ids, 1)
+     or (select count(*) from documents where id = any(p_document_ids))
+        <> array_length(p_document_ids, 1) then
+    raise exception 'Invalid document job sources';
+  end if;
+  insert into document_jobs (id, document_ids) values (p_job_id, p_document_ids);
+  insert into document_job_events (job_id, event_type, payload)
+  values (p_job_id, 'queued', jsonb_build_object('jobId', p_job_id,
+    'documentIds', to_jsonb(p_document_ids)));
+end;
+$$;
+revoke all on function create_document_job(uuid, uuid[]) from public, anon, authenticated;
+grant execute on function create_document_job(uuid, uuid[]) to service_role;
+
+-- 상태 갱신과 이벤트 기록을 원자적으로 묶는다. 종료한 작업은 다시 쓰지 않는다.
+create or replace function record_document_job_event(
+  p_job_id uuid, p_event_type text, p_payload jsonb, p_status text default null
+)
+returns bigint language plpgsql security definer set search_path = public as $$
+declare
+  v_status text;
+  v_event_id bigint;
+begin
+  select status into v_status from document_jobs where id = p_job_id for update;
+  if not found or v_status in ('completed', 'partial', 'failed') then
+    raise exception 'Document job does not exist or is finished';
+  end if;
+  if p_event_type not in ('started', 'stage', 'completed', 'partial', 'failed')
+     or (p_status is not null and p_status not in ('running', 'completed', 'partial', 'failed'))
+     or (p_event_type in ('completed', 'partial', 'failed')
+         and p_status is distinct from p_event_type)
+     or (p_event_type = 'started' and p_status is distinct from 'running')
+     or (p_event_type = 'stage' and p_status is not null) then
+    raise exception 'Invalid document job event';
+  end if;
+  update document_jobs set
+    status = coalesce(p_status, status),
+    result = case when p_status in ('completed', 'partial', 'failed') then p_payload else result end,
+    updated_at = now()
+  where id = p_job_id;
+  insert into document_job_events (job_id, event_type, payload)
+  values (p_job_id, p_event_type, coalesce(p_payload, '{}'::jsonb)) returning id into v_event_id;
+  return v_event_id;
+end;
+$$;
+revoke all on function record_document_job_event(uuid, text, jsonb, text)
+  from public, anon, authenticated;
+grant execute on function record_document_job_event(uuid, text, jsonb, text) to service_role;

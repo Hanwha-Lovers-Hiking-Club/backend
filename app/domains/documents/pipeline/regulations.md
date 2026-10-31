@@ -49,19 +49,20 @@
 - 맞출 담당: documents service/router 담당과 프론트 담당.
 - 파일: `pipeline/graph.py`, `pipeline/state.py`, `documents/service.py`, `router.py`, `schemas.py`.
 - 명세상 유지 대상: POST /api/upload, GET /api/jobs/{job_id}/events.
-  현재 documents 라우터는 /documents prefix만 있고 업로드/SSE 엔드포인트는 구현되지 않았다.
+- 2026-10-31 제품 연결: 업로드가 Storage 원본과 documents 행을 만든 뒤 Job을 등록한다.
+  작업 상태/이벤트는 DB에 저장하고 `GET /api/jobs/{job_id}` 및 SSE로 조회한다.
+  SSE는 작업을 실행하지 않으며 `Last-Event-ID` 뒤의 이벤트를 재생한다.
+  종료 결과에는 파일별 상태, 초안·통과·검토·거절·생략·저장 수를 구분한다.
 - 2026-10-30 내부 후속: processing.py/state.py의 청크 진행·문서 요약·처리 오류를 추가했다.
   문서의 failed/incomplete/needs_review/ready_to_save/completed를 구분하며 SSE 이름을 정한 것은 아니다.
   청크별 체크포인트 재개를 사용하고, 한 파일/청크의 처리 오류가 다른 문서 결과를 지우지 않도록 했다.
   최종 job 결과를 따로 저장한 뒤 document_lifecycle.release_completed_checkpoints를 누가 호출할지 합의해야 한다.
-- 확인할 사항:
-  1. job_id 발급·작업 등록·실행·구독의 책임. SSE 연결이 작업 실행 트리거가 되지 않도록 할 것.
-  2. stage/progress/completed/failed 등 이벤트 이름과 JSON 필드, 이벤트 ID·재연결·늦은 구독 처리.
-  3. 전체 문서 수, 초안 수, 검증 통과 수, 검토 대기 수, 실제 DB 저장 수를 구분하는 최종 결과.
-  4. 카드 0개, 일부 파일 실패, 모델 오류, 취소·시간 초과의 최종 작업 상태.
-  5. 작업 상태의 메모리/DB 저장 선택과 서버 재시작 복구. LangGraph 개발 서버 체크포인트는 제품 job 저장소가 아니다.
-  6. SSE 스트림 시작 이후 실패와 팀 response_model 규칙의 적용 방식.
-- 완료 기준: 재연결해도 재실행되지 않고, 늦은 구독도 종료 결과를 받으며, 없는 작업은 404인 통합 테스트.
+- 남은 운영 계약: SQL Editor에서 `sql/2026-10-31_document_jobs.sql`을 적용하고
+  저장 RPC까지 적용한 후 실제 업로드·저장 스모크 테스트를 수행한다.
+  BackgroundTasks는 프로세스 재시작 시 실행을 자동 복구하지 않는다.
+  운영 워커·재시도·취소·시간 초과 정책은 후속 설계가 필요하다.
+  현재 그래프는 제품 Job에서 영속 체크포인터를 쓰지 않으므로
+  `release_completed_checkpoints` 호출 대상이 없다.
 
 ## C04. 검증 판정 → 카드 상태·검토 대기 보관
 

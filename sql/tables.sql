@@ -11,7 +11,7 @@ create extension if not exists vector;
 -- ---------------------------------------------------------------
 create table if not exists documents (
   id                uuid primary key default gen_random_uuid(),
-  title             text not null check (length(trim(title)) > 0),  -- LLM이 문서에서 추출
+  title             text not null check (length(trim(title)) > 0),  -- 현재 원래 파일명
   original_filename text not null check (length(trim(original_filename)) > 0),  -- 사용자가 올린 원래 파일명
   size_bytes        bigint not null check (size_bytes >= 0),  -- 파일 용량(바이트)
   storage_bucket    text not null check (length(trim(storage_bucket)) > 0),
@@ -116,6 +116,28 @@ create table if not exists document_save_receipts (
 );
 grant select, insert, update on document_save_receipts to service_role;
 
+-- 업로드 후 실행되는 작업과 재접속 가능한 SSE 이력.
+create table if not exists document_jobs (
+  id uuid primary key,
+  document_ids uuid[] not null check (array_length(document_ids, 1) > 0),
+  status text not null default 'queued'
+    check (status in ('queued', 'running', 'completed', 'partial', 'failed')),
+  result jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create table if not exists document_job_events (
+  id bigint generated always as identity primary key,
+  job_id uuid not null references document_jobs (id) on delete cascade,
+  event_type text not null,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists document_job_events_job_id_id_idx
+  on document_job_events (job_id, id);
+grant select on document_jobs, document_job_events to service_role;
+grant usage, select on sequence document_job_events_id_seq to service_role;
+
 -- ---------------------------------------------------------------
 -- RLS: 켜기만 하고 정책은 만들지 않음 (백엔드 service role 전용)
 -- ---------------------------------------------------------------
@@ -123,3 +145,5 @@ alter table documents enable row level security;
 alter table knowledge_cards enable row level security;
 alter table card_documents enable row level security;
 alter table document_save_receipts enable row level security;
+alter table document_jobs enable row level security;
+alter table document_job_events enable row level security;

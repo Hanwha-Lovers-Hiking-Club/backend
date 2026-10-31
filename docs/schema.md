@@ -12,6 +12,8 @@
 2026-10-31 읽기 전용 확인 결과, 운영 DB에는 네 벡터 컬럼이 이미 `vector(1024)`로 있었고
 `document_save_receipts` 및 `save_document_cards` RPC는 없었다. 벡터 인덱스 상태는 별도 확인이 필요하다.
 운영 인덱스와 pgvector 버전은 `sql/2026-10-31_inspect_embedding_schema.sql`로 읽기 전용 확인한다.
+업로드·Job·SSE는 `sql/2026-10-31_document_jobs.sql`을 기존 DB에 적용한 뒤 사용할 수 있다.
+`document_jobs`/`document_job_events`와 두 작업 RPC는 현재 운영 DB에 적용되지 않았다.
 
 ## documents
 
@@ -20,7 +22,7 @@
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | id | uuid | PK |
-| title | text | 문서 제목. LLM이 문서에서 추출 (필수, 빈 문자열 불가) |
+| title | text | 현재 업로드 시 원래 파일명으로 기록 (필수, 빈 문자열 불가) |
 | original_filename | text | 사용자가 올린 원래 파일명 (필수). 확장자는 여기서 잘라 응답에 내려준다 |
 | size_bytes | bigint | 파일 용량(바이트) (필수, 0 이상) |
 | storage_bucket | text | Storage 버킷 이름 (필수) |
@@ -100,6 +102,25 @@
 | payload_hash | text | 저장 요청의 SHA-256 해시. 같은 문서의 다른 내용 재저장은 거부 |
 | card_ids | uuid[] | 확정된 카드 ID 목록. 빈 목록 허용 |
 | created_at | timestamptz | 저장 확정 시각 |
+
+## document_jobs / document_job_events
+
+업로드는 Storage 원본과 `documents` 행을 먼저 만들고 `create_document_job` RPC로
+작업 및 `queued` 이벤트를 한 트랜잭션에 등록한다. `record_document_job_event` RPC가
+상태 갱신과 SSE 이벤트를 함께 기록한다. 두 테이블은 RLS 활성화, 정책 없음,
+service role 조회만 허용하며 쓰기는 RPC를 통한다.
+
+| 테이블 | 주요 컬럼 | 설명 |
+|---|---|---|
+| document_jobs | id uuid, document_ids uuid[], status text, result jsonb, created_at, updated_at | 상태는 queued/running/completed/partial/failed. result는 종료 시 집계 |
+| document_job_events | id bigint, job_id uuid, event_type text, payload jsonb, created_at | 재접속용 순번과 이벤트 이력 |
+
+API는 `POST /api/upload`(파일 1~10개, 각 50 MB)로 작업 ID를 발급하고,
+`GET /api/jobs/{job_id}`로 상태를 읽으며,
+`GET /api/jobs/{job_id}/events`는 `Last-Event-ID` 이후 이벤트를 SSE로 전달한다.
+종료 상태를 기록한 뒤 구독한 클라이언트도 이력에서 결과를 받는다.
+FastAPI BackgroundTasks 실행 중 프로세스가 종료되면 실행 중인 작업을 자동 재개하지
+않으므로 운영 워커·재시도 정책은 후속 작업이다.
 
 ## 아직 DB에 없는 것 (필요해지면 추가)
 
