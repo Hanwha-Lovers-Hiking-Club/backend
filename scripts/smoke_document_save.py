@@ -1,7 +1,7 @@
-"""Run after the save RPC is installed: uv run python -m scripts.smoke_document_save --run.
+"""Run on a staging Supabase project after the save RPC is installed.
 
 Creates uniquely named test rows, checks RPC behavior, then removes the rows.
-This is an opt-in write test against the configured Supabase project.
+The saved card is briefly active, so do not run this against a live RAG project.
 """
 
 import argparse
@@ -85,9 +85,16 @@ def must_reject(document_id, payload_hash, cards):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", action="store_true", help="write temporary rows to Supabase")
+    parser.add_argument(
+        "--allow-active-test-cards",
+        action="store_true",
+        help="acknowledge that the test creates briefly visible active cards",
+    )
     args = parser.parse_args()
     if not args.run:
         parser.error("pass --run to execute the database write test")
+    if not args.allow_active_test_cards:
+        parser.error("use a staging project and pass --allow-active-test-cards")
     try:
         require_rpc()
     except RuntimeError as exc:
@@ -114,6 +121,10 @@ def main():
         repeated = call_save(document_ids[0], "a" * 64, [card(titles[0])])
         assert repeated["card_ids"] == saved["card_ids"]
         must_reject(document_ids[0], "b" * 64, [card(titles[0])])
+        same_title_rows = (
+            supabase.table("knowledge_cards").select("id").eq("title", titles[0]).execute().data
+        )
+        assert len(same_title_rows) == 1
         rows = (
             supabase.table("knowledge_cards")
             .select(

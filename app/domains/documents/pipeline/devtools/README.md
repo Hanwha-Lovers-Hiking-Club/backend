@@ -3,9 +3,10 @@
 이 도구는 검증·재처리와 7번 입력 생성/KURE 임베딩까지의 실제 LangGraph 실행을 확인한다.
 실제 그래프에는 DB 저장 어댑터가 연결돼 있다. 운영 DB에 영수증 테이블과 RPC를 적용해야
 저장 완료가 가능하다. 제품 백엔드의 업로드/SSE API는 아직 연결하지 않았다.
-DB 적용 후 일회성 실저장 검증은 저장소 루트에서
-`uv run python -m scripts.smoke_document_save --run`으로 실행한다.
+DB 적용 후 일회성 실저장 검증은 **스테이징 Supabase 프로젝트**에서 저장소 루트의
+`uv run python -m scripts.smoke_document_save --run --allow-active-test-cards`로 실행한다.
 이 명령은 고유한 임시 문서/카드를 만들고, 재호출·롤백·0건 결과를 확인한 뒤 삭제한다.
+저장 중 테스트 카드가 잠시 `active`가 되므로 RAG가 사용 중인 운영 프로젝트에서는 실행하지 않는다.
 팀 연결 계약은 [regulations.md](../regulations.md)를 확인한다.
 
 청크별 호출은 각각 그래프 단계로 기록하며 일시적 호출 오류만 기본 최대 3회(최초 포함) 시도한다.

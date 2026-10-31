@@ -12,8 +12,9 @@
 - 카드/DB 담당: 최종 Gate pass 카드만 저장 트랜잭션 커밋과 동시에 `active`로 공개한다.
   카드 0건도 `completed`와 빈 card_ids 영수증으로 기록한다. 제품 결과에는 0건을 명시한다.
 - 검색 담당: 네 관점 벡터는 KURE 1,024차원이다. `sql/functions.sql`의 과거
-  `match_documents` 예시는 제거됐지만 `agent/service.py`는 아직 해당 RPC를 호출한다.
-  현재 검색 RPC가 없으므로 챗봇 경로를 별도 구현해야 한다.
+  `match_documents` 예시는 제거됐고 운영 DB에도 해당 RPC가 없다. `agent/service.py`는
+  연결 전까지 503을 반환한다. 실제 검색 RPC는 `status='active'` 카드만 대상으로 하고,
+  질문 벡터 1,024차원과 content/situation/solution/lesson 관점 선택 계약을 정해야 한다.
 - 운영 DB에는 아직 영수증 테이블과 저장 RPC가 없다. SQL 적용 후 실저장·동일 해시 재호출·
   다른 해시 거절·부분 실패 롤백을 검증한다. 아래 과거 날짜의 항목은 당시 미정 상태 기록이다.
 
