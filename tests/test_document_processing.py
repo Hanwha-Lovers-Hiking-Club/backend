@@ -150,6 +150,25 @@ def inputs(sources, *, attempts=3):
     }
 
 
+def test_no_experiences_completes_with_zero_cards_and_one_receipt(tmp_path):
+    class NoExperience(Model):
+        async def generate(self, *, instructions, payload, output_type):
+            if "blocks" in payload:
+                return output_type.model_validate({"experiences": []})
+            return await super().generate(
+                instructions=instructions, payload=payload, output_type=output_type
+            )
+
+    saver = Saver()
+    item = source(tmp_path, 1, "A valid document with no reusable incident.")
+    state = asyncio.run(graph(NoExperience(), saver=saver).ainvoke(inputs([item])))
+    progress = state["document_progress"][str(UUID(int=1))]
+    assert progress.status == "completed"
+    assert progress.admitted_cards == 0 and progress.saved_card_ids == []
+    assert len(saver.requests) == 1
+    assert saver.requests[0].cards == [] and saver.requests[0].embeddings == []
+
+
 def test_only_failed_chunk_is_retried_and_successes_are_reused(tmp_path):
     model = Model(failures=1)
     item = source(

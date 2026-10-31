@@ -62,6 +62,8 @@
 - `title`, `summary`, `context`, `lesson`은 빈 문자열 불가.
 - 조건부 5개(`problem`, `cause`, `approach`, `rationale`, `outcome`) 중 최소 1개는 공백 아닌 값이 있어야 함 (CHECK).
 - `status`는 text + CHECK. 값이 늘면 제약만 교체하고, pydantic의 Literal/Enum도 같이 수정.
+- 현재 저장 정책: Verification Gate를 통과한 카드만 카드·근거·벡터를 한 트랜잭션으로 저장하며,
+  커밋과 동시에 `active`로 공개한다. `draft`는 일반 테이블 기본값으로 남긴다.
 - 카드의 `source`(근거 문서)는 컬럼이 아니라 `card_documents`로 연결. 카드당 문서 1개 이상은 DB가 아니라 앱 로직(service.py)에서 보장.
 
 ## card_documents
@@ -81,6 +83,9 @@
 ## document_save_receipts
 
 문서별 카드·근거·벡터 저장을 한 트랜잭션으로 확정하고 같은 요청의 중복 저장을 막는다. `sql/functions.sql`의 `save_document_cards` RPC만 이 테이블과 카드 행을 함께 쓴다.
+카드가 0개인 문서도 처리 완료 기록으로 빈 `card_ids` 영수증을 남긴다. 같은 문서 ID와
+같은 payload_hash의 재시도는 기존 결과를 반환한다. 내용이 달라진 같은 ID의 재처리는
+현재 지원하지 않으며, 새 업로드는 새 문서 ID를 발급해야 한다.
 
 | 컬럼 | 타입 | 설명 |
 |---|---|---|

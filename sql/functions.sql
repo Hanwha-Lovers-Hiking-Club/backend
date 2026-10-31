@@ -7,6 +7,8 @@ create extension if not exists vector;
 -- 검증을 통과한 한 문서의 카드·근거·벡터·완료 영수증을 원자적으로 저장한다.
 -- 동일한 document_id/payload_hash 재호출은 기존 카드 ID를 돌려준다.
 -- 다른 payload_hash로 같은 문서를 다시 저장하려면 별도 재처리 정책이 필요하다.
+-- p_cards=[]도 처리 완료로 기록하며 빈 card_ids 영수증을 반환한다.
+-- pass 카드만 입력되고 active 공개는 이 트랜잭션이 커밋될 때 시작한다.
 create or replace function save_document_cards(
   p_document_id uuid,
   p_payload_hash text,

@@ -23,7 +23,7 @@ class EmbeddingSpec(BaseModel):
     # 공통 계약은 다른 모델도 표현하고, 공급자별 제약은 해당 클라이언트가 검사한다.
     provider: NonBlankText = "kure"
     model: NonBlankText = "kure-v3-20261016"
-    dimensions: int = Field(default=2048, gt=0, strict=True)
+    dimensions: int = Field(gt=0, strict=True)
 
 
 class EmbeddingUsage(BaseModel):

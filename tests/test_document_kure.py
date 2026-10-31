@@ -36,6 +36,11 @@ from app.domains.documents.pipeline.verification.models import VerificationOptio
 SPEC = EmbeddingSpec(dimensions=256)
 
 
+def test_embedding_spec_requires_explicit_dimensions():
+    with pytest.raises(ValidationError):
+        EmbeddingSpec()
+
+
 def vector(index=0):
     value = (index + 1) / 100
     return [value, math.sqrt(1 - value**2), *([0.0] * 254)]
