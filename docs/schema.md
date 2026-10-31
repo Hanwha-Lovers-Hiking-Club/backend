@@ -11,6 +11,7 @@
 `sql/functions.sql`의 `save_document_cards` 함수를 적용한다. 실제 SQL Editor 실행은 팀장 담당이다.
 2026-10-31 읽기 전용 확인 결과, 운영 DB에는 네 벡터 컬럼이 이미 `vector(1024)`로 있었고
 `document_save_receipts` 및 `save_document_cards` RPC는 없었다. 벡터 인덱스 상태는 별도 확인이 필요하다.
+운영 인덱스와 pgvector 버전은 `sql/2026-10-31_inspect_embedding_schema.sql`로 읽기 전용 확인한다.
 
 ## documents
 
@@ -65,6 +66,12 @@
 - 현재 저장 정책: Verification Gate를 통과한 카드만 카드·근거·벡터를 한 트랜잭션으로 저장하며,
   커밋과 동시에 `active`로 공개한다. `draft`는 일반 테이블 기본값으로 남긴다.
 - 카드의 `source`(근거 문서)는 컬럼이 아니라 `card_documents`로 연결. 카드당 문서 1개 이상은 DB가 아니라 앱 로직(service.py)에서 보장.
+
+네 `vector(1024)` 컬럼은 현재 저장 차원과 맞는다. 검색 RPC와 거리 연산자가 아직 정해지지 않아
+벡터 인덱스 DDL은 추가하지 않았다. 초기에는 정확 검색을 사용할 수 있고, 검색량·지연시간이
+필요로 할 때 검색 쿼리와 같은 연산자의 HNSW 인덱스를 검토한다. 코사인 거리(`<=>`)를 택하면
+`vector_cosine_ops`를 사용한다. 1,024차원은 pgvector의 `vector` HNSW 인덱스 한도인
+2,000차원 안에 있다. [pgvector 공식 안내](https://github.com/pgvector/pgvector#hnsw)를 따른다.
 
 ## card_documents
 
