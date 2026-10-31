@@ -7,8 +7,9 @@
 # DB 스키마
 
 생성 SQL은 `sql/tables.sql`. 모든 테이블은 RLS 켜짐 + 정책 없음 (백엔드 service role 키로만 접근).
-기존 DB에는 `sql/2026-10-31_document_card_embeddings.sql`을 적용한 뒤
-`sql/functions.sql`의 `save_document_cards` 함수를 적용한다. 실제 SQL Editor 실행은 팀장 담당이다.
+기존 DB에는 `sql/2026-10-31_document_card_embeddings.sql`,
+`sql/2026-10-31_document_jobs.sql`, `sql/functions.sql` 순서로 적용한다.
+마지막 파일은 저장 RPC와 Job RPC를 함께 정의한다. 실제 SQL Editor 실행은 팀장 담당이다.
 2026-10-31 읽기 전용 확인 결과, 운영 DB에는 네 벡터 컬럼이 이미 `vector(1024)`로 있었고
 `document_save_receipts` 및 `save_document_cards` RPC는 없었다. 벡터 인덱스 상태는 별도 확인이 필요하다.
 운영 인덱스와 pgvector 버전은 `sql/2026-10-31_inspect_embedding_schema.sql`로 읽기 전용 확인한다.

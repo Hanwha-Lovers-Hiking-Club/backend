@@ -18,4 +18,4 @@ grant select, insert, update on document_save_receipts to service_role;
 
 alter table document_save_receipts enable row level security;
 
--- 다음에 sql/functions.sql의 save_document_cards 함수를 적용한다.
+-- 다음에 sql/2026-10-31_document_jobs.sql, sql/functions.sql 순서로 적용한다.

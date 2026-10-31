@@ -12,7 +12,8 @@ KURE 스냅샷 `kure-v3-20261016`의 1,024차원 응답을 실제로 확인했�
 `get_graph()`는 `knowledge_cards.service.save_document_cards`를 주입한다. 이 함수는
 `save_document_cards` RPC로 카드·근거·벡터·문서별 저장 영수증을 한 트랜잭션에서 저장하도록 작성했다.
 기존 DB에는 아직 영수증 테이블과 RPC가 없으므로 SQL 적용 전에는 저장 완료가 불가능하다.
-마이그레이션은 `sql/2026-10-31_document_card_embeddings.sql`과 `sql/functions.sql`에 있다.
+기존 DB에는 `sql/2026-10-31_document_card_embeddings.sql`,
+`sql/2026-10-31_document_jobs.sql`, `sql/functions.sql` 순서로 적용해야 한다.
 운영 DB의 벡터 인덱스 상태와 실제 DB 저장·재조회는 아직 확인하지 않았다.
 네 관점의 실제 KURE 1,024차원 벡터를 한 배치로 다시 확인했다. DB의 네 컬럼 타입도
 PostgREST 메타데이터에서 재확인했으며 영수증 테이블과 저장 RPC는 여전히 없다.
