@@ -1,5 +1,9 @@
 # 노드: 업로드된 파일(pdf/docx/md/txt/xlsx)에서 텍스트를 추출한다.
-# txt는 구조가 없는 순수 텍스트라 docling 없이 그냥 디코딩하고, 나머지는 docling으로 변환한다.
+# txt와 md는 이미 텍스트(md는 마크다운 그 자체)라 docling 없이 그냥 디코딩하고,
+# 나머지는 docling으로 변환한다.
+# md를 docling에 넣으면 굵은 글씨 안의 인라인 코드가 문단 중간의 코드블록으로 바뀌어
+# 짝이 안 맞는 펜스가 생기고, 청크 노드가 그 뒤의 헤딩을 전부 잃는 문제가 실제 문서
+# (vigilantis ADR-0010)에서 확인됐다.
 import asyncio
 import threading
 from io import BytesIO
@@ -16,6 +20,7 @@ from app.domains.documents.pipeline.state import IngestionState, ParsedDocument
 # 만드는 쪽이 끝나길 기다린다.
 # 변환기는 모델 로딩 비용이 있어서 노드 호출마다 새로 만들지 않고 하나만 재사용한다.
 # 로딩이 실패하면 결과를 저장하지 않으므로 다음 호출에서 다시 시도한다
+_TEXT_EXTENSIONS = {".txt", ".md"}
 _converter = None
 _converter_lock = threading.Lock()
 
@@ -66,7 +71,7 @@ def _decode_text(content: bytes) -> str:
 
 def _extract_text(content: bytes, filename: str) -> str:
     extension = filename[filename.rfind(".") :].lower() if "." in filename else ""
-    if extension == ".txt":
+    if extension in _TEXT_EXTENSIONS:
         return _decode_text(content)
 
     from docling.datamodel.base_models import DocumentStream
