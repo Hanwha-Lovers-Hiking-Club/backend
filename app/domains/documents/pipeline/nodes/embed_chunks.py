@@ -9,14 +9,14 @@
 import logging
 
 from app.core.logging import summarize_error
-from app.domains.documents.pipeline.embedding import embed_documents
+from app.domains.documents.pipeline.embedding import EMBEDDING_MAX_INPUTS, embed_documents
 from app.domains.documents.pipeline.models import EmbeddedChunk
 from app.domains.documents.pipeline.state import Chunk, IngestionState
 
 logger = logging.getLogger(__name__)
 
-# ponytail: kure의 입력 개수 상한을 몰라서 보수적으로 잡은 임시값. 실제 한도를 확인하면 조정
-BATCH_SIZE = 32
+# kure가 한 번에 받는 개수의 상한(8)에 맞춘다. 더 크게 보내면 청크 전체가 임베딩에 실패한다
+BATCH_SIZE = EMBEDDING_MAX_INPUTS
 
 
 def _embedding_text(chunk: Chunk) -> str:

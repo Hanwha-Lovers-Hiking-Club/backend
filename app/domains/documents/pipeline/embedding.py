@@ -16,6 +16,9 @@ EMBEDDING_DIMENSIONS = 1024
 # 일시적 오류(연결 오류, 408/409/429/5xx)는 OpenAI SDK가 0.5초~8초 지수 백오프로 알아서 재시도한다.
 # SDK 기본값(2)과 같지만 정책으로 드러내려고 명시했다. 카드(embed)와 청크(embed_chunks)가 같이 쓴다
 EMBEDDING_MAX_RETRIES = 2
+# kure가 한 번에 받는 input 개수의 상한. 넘기면 400 "input can contain at most 8 items"
+# (실제 문서 테스트에서 확인). 카드(4종)는 안전하고, 청크 임베딩은 이 크기로 나눠서 보낸다
+EMBEDDING_MAX_INPUTS = 8
 
 
 @lru_cache
@@ -30,6 +33,8 @@ def get_embedding_client() -> OpenAI:
 def embed_documents(texts: list[str]) -> list[list[float]]:
     # kure-v3는 input에 리스트를 받아서 한 번에 임베딩해준다. 서로 독립적인 텍스트들을 묶어서
     # 보낼 때(예: 카드 1개의 4종 임베딩용 텍스트) 왕복 횟수를 줄이는 용도
+    if len(texts) > EMBEDDING_MAX_INPUTS:
+        raise ValueError(f"임베딩 입력이 한도({EMBEDDING_MAX_INPUTS}개)를 넘음: {len(texts)}개")
     started = time.perf_counter()
     response = get_embedding_client().embeddings.create(
         model=EMBEDDING_MODEL_NAME,
