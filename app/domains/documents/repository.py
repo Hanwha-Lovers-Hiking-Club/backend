@@ -57,6 +57,13 @@ async def check_job_store() -> None:
     await asyncio.to_thread(lambda: supabase.table("document_jobs").select("id").limit(0).execute())
 
 
+async def expire_stale_job(job_id: UUID) -> bool:
+    response = await asyncio.to_thread(
+        lambda: supabase.rpc("expire_stale_document_job", {"p_job_id": str(job_id)}).execute()
+    )
+    return bool(response.data)
+
+
 async def record_event(job_id: UUID, event_type: str, payload: dict, status: str | None = None):
     response = await asyncio.to_thread(
         lambda: supabase.rpc(

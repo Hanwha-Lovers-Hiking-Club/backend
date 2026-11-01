@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -33,13 +34,14 @@ class FakeRepository:
         self.documents.pop(str(document_id), None)
 
     async def create_job(self, job_id, document_ids):
+        now = datetime.now(timezone.utc).isoformat()
         self.jobs[str(job_id)] = {
             "id": str(job_id),
             "status": "queued",
             "document_ids": [str(item) for item in document_ids],
             "result": None,
-            "created_at": "2026-10-31T00:00:00Z",
-            "updated_at": "2026-10-31T00:00:00Z",
+            "created_at": now,
+            "updated_at": now,
         }
         await self._event(job_id, "queued", {"jobId": str(job_id)})
 
@@ -63,6 +65,20 @@ class FakeRepository:
         if status in service.TERMINAL:
             self.jobs[str(job_id)]["result"] = payload
         await self._event(job_id, event_type, payload)
+
+    async def expire_stale_job(self, job_id):
+        job = self.jobs[str(job_id)]
+        updated_at = datetime.fromisoformat(job["updated_at"])
+        if (
+            job["status"] in service.TERMINAL
+            or updated_at > datetime.now(timezone.utc) - service.STALE_AFTER
+        ):
+            return False
+        job["status"] = "failed"
+        job["result"] = {"errorCode": "JOB_INTERRUPTED"}
+        job["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await self._event(job_id, "failed", job["result"])
+        return True
 
     async def get_job(self, job_id):
         return self.jobs.get(str(job_id))
@@ -88,6 +104,7 @@ def fake_repository(monkeypatch):
         "create_job",
         "check_job_store",
         "record_event",
+        "expire_stale_job",
         "get_job",
         "get_events",
         "get_documents",
@@ -157,6 +174,23 @@ def test_upload_rejects_unsupported_or_empty_files(client, fake_repository):
     assert not fake_repository.documents
 
 
+def test_upload_rejects_per_file_and_total_size(client, fake_repository, monkeypatch):
+    monkeypatch.setattr(service, "MAX_BYTES", 8)
+    monkeypatch.setattr(service, "MAX_TOTAL_BYTES", 12)
+    too_large = client.post("/api/upload", files=[("files", ("large.txt", b"a" * 9, "text/plain"))])
+    assert too_large.status_code == 413
+    total = client.post(
+        "/api/upload",
+        files=[
+            ("files", ("first.txt", b"a" * 7, "text/plain")),
+            ("files", ("second.txt", b"b" * 6, "text/plain")),
+        ],
+    )
+    assert total.status_code == 413
+    assert not fake_repository.files
+    assert not fake_repository.documents
+
+
 def test_unknown_job_returns_404(client, fake_repository):
     job_id = uuid4()
     assert client.get(f"/api/jobs/{job_id}").status_code == 404
@@ -189,6 +223,94 @@ def test_missing_job_store_fails_before_storage_write(client, fake_repository, m
     assert response.status_code == 503
     assert not fake_repository.files
     assert not fake_repository.documents
+
+
+@pytest.mark.parametrize("status", ["queued", "running"])
+def test_stale_job_becomes_persisted_failure(client, fake_repository, status):
+    import asyncio
+
+    job_id, document_id = uuid4(), uuid4()
+    asyncio.run(fake_repository.create_job(job_id, [document_id]))
+    fake_repository.jobs[str(job_id)]["status"] = status
+    fake_repository.jobs[str(job_id)]["updated_at"] = (
+        datetime.now(timezone.utc) - timedelta(minutes=31)
+    ).isoformat()
+
+    response = client.get(f"/api/jobs/{job_id}")
+    assert response.status_code == 200
+    assert response.json()["status"] == "failed"
+    assert response.json()["result"] == {"errorCode": "JOB_INTERRUPTED"}
+    stream = client.get(f"/api/jobs/{job_id}/events")
+    assert "event: failed" in stream.text
+    assert '"errorCode": "JOB_INTERRUPTED"' in stream.text
+    assert sum(row["event_type"] == "failed" for row in fake_repository.events) == 1
+
+
+def test_recent_running_job_is_not_expired(client, fake_repository):
+    import asyncio
+
+    job_id = uuid4()
+    asyncio.run(fake_repository.create_job(job_id, [uuid4()]))
+    fake_repository.jobs[str(job_id)]["status"] = "running"
+    response = client.get(f"/api/jobs/{job_id}")
+    assert response.status_code == 200
+    assert response.json()["status"] == "running"
+
+
+def test_sse_keepalive_is_a_comment(fake_repository, monkeypatch):
+    import asyncio
+
+    class Request:
+        async def is_disconnected(self):
+            return False
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(service, "KEEPALIVE_SECONDS", 0)
+    monkeypatch.setattr(service.asyncio, "sleep", no_sleep)
+    job_id = uuid4()
+
+    async def run():
+        await fake_repository.create_job(job_id, [uuid4()])
+        fake_repository.jobs[str(job_id)]["status"] = "running"
+        response = await service.job_events(job_id, Request(), None)
+        stream = response.body_iterator
+        assert "event: queued" in await anext(stream)
+        assert await anext(stream) == ": keepalive\n\n"
+        await fake_repository.record_event(
+            job_id, "failed", {"errorCode": "JOB_INTERRUPTED"}, "failed"
+        )
+        assert "event: failed" in await anext(stream)
+
+    asyncio.run(run())
+
+
+def test_sse_delivers_expiration_after_initial_event_read(client, fake_repository, monkeypatch):
+    import asyncio
+
+    job_id = uuid4()
+    asyncio.run(fake_repository.create_job(job_id, [uuid4()]))
+    fake_repository.jobs[str(job_id)]["status"] = "running"
+    original_get_events = fake_repository.get_events
+    reads = 0
+
+    async def get_events_with_interruption(job_id, after_id=0):
+        nonlocal reads
+        rows = await original_get_events(job_id, after_id)
+        reads += 1
+        if reads == 1:
+            fake_repository.jobs[str(job_id)]["updated_at"] = (
+                datetime.now(timezone.utc) - timedelta(minutes=31)
+            ).isoformat()
+        return rows
+
+    monkeypatch.setattr(service.repository, "get_events", get_events_with_interruption)
+    stream = client.get(f"/api/jobs/{job_id}/events")
+    assert stream.status_code == 200
+    assert "event: queued" in stream.text
+    assert "event: failed" in stream.text
+    assert '"errorCode": "JOB_INTERRUPTED"' in stream.text
 
 
 def test_job_failure_is_persisted(fake_repository, monkeypatch):

@@ -54,10 +54,14 @@ class JobResult(CamelModel):
     error_code: str | None = None
 
 
+class InterruptedJobResult(CamelModel):
+    error_code: Literal["JOB_INTERRUPTED"]
+
+
 class JobResponse(CamelModel):
     job_id: UUID = Field(validation_alias="id")
     status: JobStatus
     document_ids: list[UUID]
-    result: JobResult | None = None
+    result: JobResult | InterruptedJobResult | None = None
     created_at: str
     updated_at: str

@@ -5,7 +5,8 @@
 
 내부 추출 스키마, Parse/Normalize/Chunk와 독립 가짜 함수를 구현했다.
 Extract/Draft/Verify, 실제 LangGraph 조건부 재처리와 7번 임베딩 입력 생성을 연결했다.
-실제 KURE Embed와 저장 어댑터를 연결했다. DB의 신규 RPC 적용과 제품 업로드·SSE 연결은 미완료다.
+실제 KURE Embed와 저장 어댑터, 제품 업로드·Job·SSE 코드를 연결했다.
+DB의 신규 RPC 적용과 실환경 전체 흐름 검증은 미완료다.
 팀과 맞출 파일별 계약은 [regulations.md](regulations.md), 로컬 실행은 [devtools/README.md](devtools/README.md)를 본다.
 실제로 확인한 항목만 완료 처리한다.
 
@@ -34,7 +35,8 @@ Extract/Draft/Verify, 실제 LangGraph 조건부 재처리와 7번 임베딩 입
 - [ ] 팀장이 신규 receipt 테이블과 RPC를 운영 DB에 적용한다.
 - [ ] 실제 저장·재조회 및 체크포인트 중단·재개의 DB 통합 테스트를 수행한다.
 - [x] SQL 적용 후 실행할 일회성 DB 스모크 스크립트를 준비했다. 실제 실행은 미완료다.
-- [ ] 문서 업로드·Job·SSE 서비스가 그래프에 문서 ID와 영속 체크포인터를 제공한다.
+- [x] 문서 업로드·Job·SSE 서비스가 그래프에 문서 ID를 제공하고 Job 이벤트를 DB에 기록한다.
+- [ ] 제품 Job에 영속 체크포인터를 연결하고 재시작 복구를 검증한다. 현재 범위에서는 사용하지 않는다.
 - [x] 카드 0건은 완료·빈 영수증으로 남기고 같은 ID의 내용 변경 재처리는 거부하는 v1 정책을 명시했다.
 - [x] `EmbeddingSpec` 생성 시 차원을 명시하도록 해 설정 기본값과의 불일치를 없앴다.
 - [ ] 저장 정책의 active 공개·0건 완료·새 업로드 ID 발급을 팀 연결 계약으로 확인한다.
@@ -43,6 +45,16 @@ Extract/Draft/Verify, 실제 LangGraph 조건부 재처리와 7번 임베딩 입
 
 세부 경계와 현재 제한은 memo.md의 '문서별 완료·정리와 청크별 재시도'를 따른다.
 이 항목은 아래 과거 체크리스트 중 부분 실패/Save 경계에 대한 후속 구현 기록이다.
+
+## 2026-11-01 업로드·Job·SSE 보완
+
+- [x] 업로드 한도를 파일당 5 MB·합계 10 MB로 줄이고 초과 시 413을 반환한다.
+- [x] 30분간 갱신되지 않은 `queued`/`running` Job을 조회 시 `JOB_INTERRUPTED`로 영속 종료한다.
+- [x] SSE에 15초 간격 keepalive 주석을 추가한다.
+- [x] 모의 저장소를 이용해 크기 제한, 중단 Job, SSE 재연결·keepalive를 테스트한다.
+- [ ] 팀장이 `card_embeddings` → `document_jobs` → `functions.sql`을 운영 DB에 적용한다.
+- [ ] 저장 스모크 테스트와 업로드 → Job → SSE → 카드 저장의 실제 KURE/LLM 포함 실행을 확인한다.
+- [ ] 챗봇 담당과 검색 RPC의 1,024차원·네 관점·`active` 계약, 프런트 503 처리를 확인한다.
 
 ## pipeline에서 먼저 확인·구현할 항목
 
@@ -121,8 +133,9 @@ Extract/Draft/Verify, 실제 LangGraph 조건부 재처리와 7번 임베딩 입
 
 ## 상위 문서 도메인 / 다른 담당자와 연결할 항목
 
-- [ ] documents 담당: 다중 업로드 API, 형식/용량 검증과 Storage 원본·문서 메타 저장.
-- [ ] documents 담당: 백그라운드 작업 실행과 진행 상황/SSE 연결 계약. API 경로·응답은 실제 명세와 대조.
+- [x] documents 담당: 다중 업로드 API, 형식/용량 검증과 Storage 원본·문서 메타 저장 코드를 구현했다.
+- [x] documents 담당: 백그라운드 작업과 Job/SSE 조회 코드를 연결하고 모의 테스트를 통과했다.
+- [ ] documents/프런트 담당: 실제 API 경로·응답 계약과 실환경 업로드·SSE를 함께 확인한다.
 - [ ] knowledge_cards 담당: 실제 저장 함수와 카드+근거 저장 결과·오류·원자성 계약.
 - [ ] DB/Storage 담당: 실제 버킷 허용 형식·용량·권한과 스키마 적용 상태 확인.
 - [ ] 챗봇 담당: 검색 대상 카드 상태와 저장 완료 시점에 관한 연결만 확인. 챗봇 본문은 별도 담당.

@@ -76,3 +76,25 @@ $$;
 revoke all on function record_document_job_event(uuid, text, jsonb, text)
   from public, anon, authenticated;
 grant execute on function record_document_job_event(uuid, text, jsonb, text) to service_role;
+
+create or replace function expire_stale_document_job(p_job_id uuid)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare
+  v_job document_jobs%rowtype;
+  v_result jsonb := jsonb_build_object('errorCode', 'JOB_INTERRUPTED');
+begin
+  select * into v_job from document_jobs where id = p_job_id for update;
+  if not found or v_job.status in ('completed', 'partial', 'failed')
+     or v_job.updated_at > now() - interval '30 minutes' then
+    return false;
+  end if;
+  update document_jobs
+    set status = 'failed', result = v_result, updated_at = now()
+    where id = p_job_id;
+  insert into document_job_events (job_id, event_type, payload)
+    values (p_job_id, 'failed', v_result);
+  return true;
+end;
+$$;
+revoke all on function expire_stale_document_job(uuid) from public, anon, authenticated;
+grant execute on function expire_stale_document_job(uuid) to service_role;

@@ -5,6 +5,8 @@ import json
 import logging
 import mimetypes
 import tempfile
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -13,7 +15,7 @@ from fastapi.responses import StreamingResponse
 from pydantic.alias_generators import to_camel
 
 from app.domains.documents import repository
-from app.domains.documents.pipeline.document import DocumentSource, ParseOptions
+from app.domains.documents.pipeline.document import DocumentSource
 from app.domains.documents.pipeline.graph import get_graph
 from app.domains.documents.pipeline.parsers import SUPPORTED_FORMATS
 from app.domains.documents.pipeline.processing import DocumentProgress
@@ -21,7 +23,10 @@ from app.domains.documents.schemas import JobResponse, UploadedDocument, UploadR
 
 logger = logging.getLogger(__name__)
 MAX_FILES = 10
-MAX_BYTES = ParseOptions().max_bytes
+MAX_BYTES = 5 * 1024 * 1024
+MAX_TOTAL_BYTES = 10 * 1024 * 1024
+STALE_AFTER = timedelta(minutes=30)
+KEEPALIVE_SECONDS = 15
 TERMINAL = frozenset({"completed", "partial", "failed"})
 
 
@@ -43,6 +48,7 @@ async def upload_documents(files: list[UploadFile], background_tasks: Background
     except Exception as exc:
         raise HTTPException(503, "문서 작업 저장소가 준비되지 않았습니다.") from exc
     staged = []
+    total_size = 0
     with tempfile.TemporaryDirectory(prefix="document-upload-") as temp_dir:
         for uploaded, filename in zip(files, filenames, strict=True):
             document_id = uuid4()
@@ -51,8 +57,11 @@ async def upload_documents(files: list[UploadFile], background_tasks: Background
             with local_path.open("wb") as target:
                 while chunk := await uploaded.read(1024 * 1024):
                     size += len(chunk)
+                    total_size += len(chunk)
                     if size > MAX_BYTES:
-                        raise HTTPException(413, f"{filename}: 최대 50 MB를 초과했습니다.")
+                        raise HTTPException(413, f"{filename}: 파일당 5 MB를 초과했습니다.")
+                    if total_size > MAX_TOTAL_BYTES:
+                        raise HTTPException(413, "업로드 합계 10 MB를 초과했습니다.")
                     target.write(chunk)
             if size == 0:
                 raise HTTPException(422, f"{filename}: 빈 파일입니다.")
@@ -174,9 +183,19 @@ async def run_job(job_id: UUID, document_ids: list[UUID]) -> None:
             logger.exception("Could not record failure for document job %s", job_id)
 
 
+async def _load_job(job_id: UUID) -> dict | None:
+    row = await repository.get_job(job_id)
+    if row and row["status"] in {"queued", "running"}:
+        updated_at = datetime.fromisoformat(row["updated_at"].replace("Z", "+00:00"))
+        if updated_at <= datetime.now(timezone.utc) - STALE_AFTER:
+            await repository.expire_stale_job(job_id)
+            row = await repository.get_job(job_id)
+    return row
+
+
 async def get_job(job_id: UUID) -> JobResponse:
     try:
-        row = await repository.get_job(job_id)
+        row = await _load_job(job_id)
     except Exception as exc:
         raise HTTPException(503, "작업 상태를 조회하지 못했습니다.") from exc
     if row is None:
@@ -193,6 +212,7 @@ async def job_events(job_id: UUID, request: Request, last_event_id: str | None):
 
     async def events():
         nonlocal cursor
+        last_emit = time.monotonic()
         while not await request.is_disconnected():
             rows = await repository.get_events(job_id, cursor)
             for row in rows:
@@ -201,11 +221,16 @@ async def job_events(job_id: UUID, request: Request, last_event_id: str | None):
                     f"id: {cursor}\nevent: {row['event_type']}\n"
                     f"data: {json.dumps(row['payload'], ensure_ascii=False)}\n\n"
                 )
+                last_emit = time.monotonic()
                 if row["event_type"] in TERMINAL:
                     return
-            job = await repository.get_job(job_id)
+            job = await _load_job(job_id)
             if job and job["status"] in TERMINAL and len(rows) < 100:
-                return
+                if not await repository.get_events(job_id, cursor):
+                    return
+            if time.monotonic() - last_emit >= KEEPALIVE_SECONDS:
+                yield ": keepalive\n\n"
+                last_emit = time.monotonic()
             await asyncio.sleep(1)
 
     return StreamingResponse(
