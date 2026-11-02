@@ -26,6 +26,7 @@ def initialize(state):
         "document_progress": {},
         "active_document_id": None,
         "document_save_receipt": None,
+        "estimated_graph_steps": 0,
         "processing_failures": [],
         "sources": sources,
         "all_sources": sources,

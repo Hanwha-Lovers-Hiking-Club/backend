@@ -43,7 +43,8 @@ async def save_document_cards(request: DocumentSaveRequest) -> SaveReceipt:
     """Persist one document's passed cards, evidence and vectors in one DB transaction.
 
     The database RPC owns the transaction and the document-scoped idempotency key.
-    Its receipt is returned only after all rows and the completion record commit.
+    Its receipt confirms the requested passed cards, not resolution of review drafts.
+    Changed card sets for the same document remain unsupported by this RPC.
     """
     from app.config import settings
 

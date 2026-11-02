@@ -115,17 +115,32 @@ def document_scope(state, document_id):
     return scope
 
 
+def card_payload_hashes(scope):
+    # 보류 판정·생략 사유가 바뀌어도 이미 통과한 카드의 저장 요청 해시는 바뀌지 않는다.
+    documents = [item.model_dump(mode="json") for item in scope.get("documents", [])]
+    vectors = {
+        item.experience_id: item.model_dump(mode="json") for item in scope.get("embeddings", [])
+    }
+    return {
+        item.experience_id: hashlib.sha256(
+            json.dumps(
+                {
+                    "documents": documents,
+                    "card": item.model_dump(mode="json"),
+                    "embedding": vectors.get(item.experience_id),
+                },
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        for item in scope.get("verified_drafts", [])
+    }
+
+
 def save_payload_hash(scope):
-    # experience_id만으로 멱등성을 판단하지 않는다. 원본·카드·벡터가 같은 저장 요청인지 구분한다.
+    # 집합 해시만으로 부분 승인 후의 중복 저장을 막을 수는 없다. 카드별 멱등성은 C05 계약이다.
     payload = {
-        name: [item.model_dump(mode="json") for item in scope.get(name, [])]
-        for name in (
-            "documents",
-            "verified_drafts",
-            "embeddings",
-            "verification_results",
-            "draft_skips",
-        )
+        "documents": [str(item.document_id) for item in scope.get("documents", [])],
+        "cards": card_payload_hashes(scope),
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
@@ -145,10 +160,7 @@ def make_document_embedder(embed_node):
         document_id = source.document_id
         update = {"active_document_id": str(document_id)}
         scope = document_scope(state, document_id)
-        if (
-            any(item.document_id == document_id for item in state["processing_failures"])
-            or scope["review_drafts"]
-        ):
+        if any(item.document_id == document_id for item in state["processing_failures"]):
             return update
         try:
             embedded = await embed_node(scope)
@@ -178,9 +190,8 @@ def make_document_saver(saver: DocumentSaver | None = None):
             return update
         document_id = UUID(state["active_document_id"])
         scope = document_scope(state, document_id)
-        if (
-            any(item.document_id == document_id for item in state["processing_failures"])
-            or scope["review_drafts"]
+        if any(item.document_id == document_id for item in state["processing_failures"]) or (
+            scope["review_drafts"] and not scope["verified_drafts"]
         ):
             return update
         try:
@@ -199,6 +210,8 @@ def make_document_saver(saver: DocumentSaver | None = None):
                 verification_results=scope["verification_results"],
                 skips=scope["draft_skips"],
                 payload_hash=save_payload_hash(scope),
+                card_payload_hashes=card_payload_hashes(scope),
+                review_pending=bool(scope["review_drafts"]),
             )
             receipt = SaveReceipt.model_validate(await saver(request))
             if (
@@ -252,7 +265,7 @@ def make_document_completer():
             )
         elif scope["review_drafts"]:
             progress.status = "needs_review"
-        else:
+        if not local_failures:
             progress.payload_hash = save_payload_hash(scope)
             receipt = state.get("document_save_receipt")
             if receipt is not None:
@@ -261,9 +274,10 @@ def make_document_completer():
                     or receipt.payload_hash != progress.payload_hash
                 ):
                     raise DocumentSaveError("Save receipt does not match the current state")
-                progress.status = "completed"
                 progress.saved_card_ids = receipt.card_ids
-                update.update(clear_document_work(state, document_id))
+                if not scope["review_drafts"]:
+                    progress.status = "completed"
+                    update.update(clear_document_work(state, document_id))
         return {
             **update,
             "active_document_id": None,

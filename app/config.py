@@ -1,5 +1,6 @@
 # 환경변수를 한 곳에서 읽어서 settings 객체로 제공하는 곳.
 # 다른 파일에서는 os.getenv를 직접 쓰지 말고 여기서 import해서 쓴다.
+from pathlib import Path
 from typing import Literal
 
 from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
@@ -32,6 +33,7 @@ class Settings(BaseSettings):
     DOCUMENT_LLM_TIMEOUT_SECONDS: float = Field(default=60, gt=0)
     DOCUMENT_LLM_MAX_OUTPUT_TOKENS: int = Field(default=4096, gt=0)
     DOCUMENT_LLM_MAX_INPUT_CHARS: int = Field(default=48000, gt=0)
+    DOCUMENT_CHECKPOINT_PATH: Path = Path(".local/document-jobs/checkpoints.sqlite3")
 
     @field_validator("VERIFY_RULES_ENABLED")
     @classmethod

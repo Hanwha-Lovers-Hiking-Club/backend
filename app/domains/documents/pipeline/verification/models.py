@@ -4,6 +4,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.domains.documents.pipeline.execution_budget import MAX_GATE_RETRIES
 from app.domains.documents.pipeline.models import EvidenceId, KnowledgeCardDraft, NonBlankText
 
 RetryNode = Literal["parse", "normalize", "chunk", "extract", "draft_card"]
@@ -17,7 +18,7 @@ class GateModel(BaseModel):
 class VerificationOptions(GateModel):
     rules_enabled: Literal[True] = True
     llm_enabled: bool = True
-    max_retries: int = Field(default=2, ge=0, le=5)
+    max_retries: int = Field(default=2, ge=0, le=MAX_GATE_RETRIES)
     max_input_chars: int = Field(default=48000, gt=0)
 
 

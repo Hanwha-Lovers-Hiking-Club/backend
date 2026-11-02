@@ -3,8 +3,9 @@
 from pydantic import ValidationError
 
 from app.domains.documents.pipeline.document import DocumentIR
-from app.domains.documents.pipeline.llm import StructuredGenerator
+from app.domains.documents.pipeline.llm import RetryingGenerator, StructuredGenerator
 from app.domains.documents.pipeline.models import ExtractionResult
+from app.domains.documents.pipeline.processing import ProcessingOptions
 from app.domains.documents.pipeline.state import IngestionState
 from app.domains.documents.pipeline.verification.consistency_checker import check_consistency
 from app.domains.documents.pipeline.verification.evidence_checker import check_evidence
@@ -19,6 +20,14 @@ async def verify_state(
     options: VerificationOptions | None = None,
     generator: StructuredGenerator | None = None,
 ) -> dict:
+    calls = ProcessingOptions.model_validate(state.get("processing_options", ProcessingOptions()))
+    if generator is not None:
+        generator = RetryingGenerator(
+            generator,
+            max_attempts=calls.max_call_attempts,
+            delay_seconds=calls.retry_delay_seconds,
+            max_wait_seconds=calls.max_retry_wait_seconds,
+        )
     options = VerificationOptions.model_validate((options or VerificationOptions()).model_dump())
     history = [
         RetryRequest.model_validate(item.model_dump())

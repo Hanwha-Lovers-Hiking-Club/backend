@@ -9,6 +9,7 @@ from app.domains.documents.pipeline.embedding_texts import (
 from app.domains.documents.pipeline.embeddings.models import EmbeddingError, EmbeddingSpec
 from app.domains.documents.pipeline.embeddings.service import embed_plans
 from app.domains.documents.pipeline.llm import configured_embedder
+from app.domains.documents.pipeline.processing import ProcessingOptions
 
 
 def make_embed_node(client=None, *, spec=None, batch_size=None):
@@ -38,10 +39,17 @@ def make_embed_node(client=None, *, spec=None, batch_size=None):
             model=settings.EMBEDDING_MODEL, dimensions=settings.EMBEDDING_DIMENSIONS
         )
         size = settings.EMBEDDING_BATCH_SIZE if batch_size is None else batch_size
+        calls = ProcessingOptions.model_validate(
+            state.get("processing_options", ProcessingOptions())
+        )
         if client is not None:
-            return await embed_plans(plans, client, spec=model_spec, batch_size=size)
+            return await embed_plans(
+                plans, client, spec=model_spec, batch_size=size, processing_options=calls
+            )
         async with configured_embedder() as configured:
-            return await embed_plans(plans, configured, spec=model_spec, batch_size=size)
+            return await embed_plans(
+                plans, configured, spec=model_spec, batch_size=size, processing_options=calls
+            )
 
     return embed
 

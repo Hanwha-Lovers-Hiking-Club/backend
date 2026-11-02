@@ -93,7 +93,10 @@ class FakeRepository:
 
 
 @pytest.fixture
-def fake_repository(monkeypatch):
+def fake_repository(monkeypatch, tmp_path):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "DOCUMENT_CHECKPOINT_PATH", tmp_path / "checkpoints.sqlite3")
     fake = FakeRepository()
     for name in (
         "upload_file",
@@ -117,8 +120,9 @@ def test_upload_job_and_late_sse_reconnect(client, fake_repository, monkeypatch)
     runs = []
 
     class Graph:
-        async def astream(self, inputs, stream_mode):
+        async def astream(self, inputs, config=None, stream_mode=None, durability=None):
             assert stream_mode == "updates"
+            assert durability == "sync" and config["configurable"]["thread_id"]
             runs.append(inputs)
             progress = {}
             for source in inputs["sources"]:
@@ -131,7 +135,7 @@ def test_upload_job_and_late_sse_reconnect(client, fake_repository, monkeypatch)
             yield {"parse": {}}
             yield {"complete_document": {"document_progress": progress}}
 
-    monkeypatch.setattr(service, "get_graph", Graph)
+    monkeypatch.setattr(service, "get_graph", lambda **kwargs: Graph())
     response = client.post(
         "/api/upload",
         files=[("files", ("sample.txt", b"sample text", "text/plain"))],
@@ -315,11 +319,11 @@ def test_sse_delivers_expiration_after_initial_event_read(client, fake_repositor
 
 def test_job_failure_is_persisted(fake_repository, monkeypatch):
     class Graph:
-        async def astream(self, inputs, stream_mode):
+        async def astream(self, inputs, config=None, stream_mode=None, durability=None):
             raise RuntimeError("model unavailable")
             yield  # pragma: no cover
 
-    monkeypatch.setattr(service, "get_graph", Graph)
+    monkeypatch.setattr(service, "get_graph", lambda **kwargs: Graph())
     document_id, job_id = uuid4(), uuid4()
     path = f"uploads/{document_id}.txt"
     fake_repository.files[path] = b"content"
@@ -338,7 +342,7 @@ def test_job_failure_is_persisted(fake_repository, monkeypatch):
 
 def test_partial_result_survives_later_graph_failure(fake_repository, monkeypatch):
     class Graph:
-        async def astream(self, inputs, stream_mode):
+        async def astream(self, inputs, config=None, stream_mode=None, durability=None):
             first = inputs["sources"][0].document_id
             yield {
                 "complete_document": {
@@ -349,7 +353,7 @@ def test_partial_result_survives_later_graph_failure(fake_repository, monkeypatc
             }
             raise RuntimeError("later document failed")
 
-    monkeypatch.setattr(service, "get_graph", Graph)
+    monkeypatch.setattr(service, "get_graph", lambda **kwargs: Graph())
     document_ids = [uuid4(), uuid4()]
     job_id = uuid4()
     import asyncio

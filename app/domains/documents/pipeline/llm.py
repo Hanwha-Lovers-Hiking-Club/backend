@@ -11,6 +11,8 @@ from openai import APIError as OpenAIAPIError
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
+from app.domains.documents.pipeline.call_retries import retry_call
+
 OutputT = TypeVar("OutputT", bound=BaseModel)
 GenerationStage = Literal["extract", "draft", "verify"]
 
@@ -25,6 +27,27 @@ class StructuredGenerator(Protocol):
     async def generate(
         self, *, instructions: str, payload: dict, output_type: type[OutputT]
     ) -> OutputT: ...
+
+
+class RetryingGenerator:
+    # Draft·Verify의 호출 하나만 반복한다. 내용 재작성 이력이나 Extract 청크 상태를 변경하지 않는다.
+    def __init__(self, generator, *, max_attempts, delay_seconds, max_wait_seconds):
+        self.generator = generator
+        self.options = {
+            "max_attempts": max_attempts,
+            "delay_seconds": delay_seconds,
+            "max_wait_seconds": max_wait_seconds,
+        }
+
+    async def generate(self, *, instructions, payload, output_type):
+        async def call():
+            return await self.generator.generate(
+                instructions=instructions,
+                payload=payload,
+                output_type=output_type,
+            )
+
+        return await retry_call(call, **self.options)
 
 
 async def generate_structured(

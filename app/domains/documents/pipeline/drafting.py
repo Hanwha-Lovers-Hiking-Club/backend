@@ -1,13 +1,18 @@
 # 카드 생성 요건을 충족하는 독립 경험마다 검증 전 지식카드 초안을 작성한다.
 
 from app.domains.documents.pipeline.extraction import experience_id, prompt_text
-from app.domains.documents.pipeline.llm import StructuredGenerator, generate_structured
+from app.domains.documents.pipeline.llm import (
+    RetryingGenerator,
+    StructuredGenerator,
+    generate_structured,
+)
 from app.domains.documents.pipeline.models import (
     FACT_FIELDS,
     DraftProposal,
     DraftSkip,
     KnowledgeCardDraft,
 )
+from app.domains.documents.pipeline.processing import ProcessingOptions
 from app.domains.documents.pipeline.state import IngestionState
 from app.domains.documents.pipeline.verification.reset import reset_verification
 
@@ -27,6 +32,13 @@ def _skip_reason(source):
 async def draft_state(
     state: IngestionState, generator: StructuredGenerator, *, max_input_chars: int = 48000
 ) -> dict:
+    options = ProcessingOptions.model_validate(state.get("processing_options", ProcessingOptions()))
+    generator = RetryingGenerator(
+        generator,
+        max_attempts=options.max_call_attempts,
+        delay_seconds=options.retry_delay_seconds,
+        max_wait_seconds=options.max_retry_wait_seconds,
+    )
     drafts, skipped, seen = [], [], set()
     for source in state["extraction_result"].experiences:
         key = experience_id(source)

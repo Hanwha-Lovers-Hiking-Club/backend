@@ -2,6 +2,7 @@
 
 from hashlib import sha256
 
+from app.domains.documents.pipeline.call_retries import retry_call
 from app.domains.documents.pipeline.embedding_texts import CardEmbeddingTexts
 from app.domains.documents.pipeline.embeddings.models import (
     CardEmbeddings,
@@ -10,6 +11,7 @@ from app.domains.documents.pipeline.embeddings.models import (
     EmbeddingError,
     EmbeddingSpec,
 )
+from app.domains.documents.pipeline.processing import ProcessingOptions
 
 
 async def embed_plans(
@@ -18,14 +20,25 @@ async def embed_plans(
     *,
     spec: EmbeddingSpec,
     batch_size: int,
+    processing_options: ProcessingOptions | None = None,
 ) -> dict:
     if type(batch_size) is not int or not 1 <= batch_size <= 8:
         raise EmbeddingError("EMBEDDING_INVALID_BATCH_SIZE")
     work = [(plan, view, text) for plan in plans for view, text in plan.texts.items()]
+    options = processing_options or ProcessingOptions()
     cards, usage = {}, []
     for start in range(0, len(work), batch_size):
         batch_work = work[start : start + batch_size]
-        result = await client.embed([text.text for _, _, text in batch_work])
+
+        async def call():
+            return await client.embed([text.text for _, _, text in batch_work])
+
+        result = await retry_call(
+            call,
+            max_attempts=options.max_call_attempts,
+            delay_seconds=options.retry_delay_seconds,
+            max_wait_seconds=options.max_retry_wait_seconds,
+        )
         result = EmbeddingBatch.model_validate(result.model_dump())
         if result.model != spec.model or result.dimensions != spec.dimensions:
             raise EmbeddingError("EMBEDDING_MODEL_MISMATCH")

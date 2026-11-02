@@ -6,6 +6,7 @@ import json
 
 from pydantic import ValidationError
 
+from app.domains.documents.pipeline.call_retries import retry_delay, transient_failure
 from app.domains.documents.pipeline.extraction import experience_id, prompt_text
 from app.domains.documents.pipeline.llm import GenerationError
 from app.domains.documents.pipeline.models import ExtractionResult
@@ -48,15 +49,6 @@ def prepare_extraction(state):
     return {"chunk_progress": records, "active_chunk_keys": keys}
 
 
-def transient_failure(exc):
-    # 공급자 어댑터가 원래 HTTP 오류를 cause로 보존한다. 인증·잘못된 요청은 반복하지 않는다.
-    cause = exc.__cause__
-    status = getattr(cause, "status_code", None)
-    if status is not None:
-        return status in (408, 429) or status >= 500
-    return exc.code in {"LLM_API_ERROR", "LLM_TIMEOUT", "LLM_CONNECTION_ERROR", "LLM_RATE_LIMITED"}
-
-
 def next_chunk(state):
     return (
         "extract"
@@ -81,8 +73,8 @@ def make_chunk_worker(node):
         if record is None:
             return {}
         options = state.get("processing_options", ProcessingOptions())
-        if record.attempts:
-            await asyncio.sleep(min(30, options.retry_delay_seconds * 2 ** (record.attempts - 1)))
+        if record.retry_delay_seconds:
+            await asyncio.sleep(record.retry_delay_seconds)
         chunk = next(item for item in state["chunks"] if item.chunk_id == record.chunk_id)
         record = record.model_copy(deep=True)
         record.attempts += 1
@@ -105,7 +97,17 @@ def make_chunk_worker(node):
                 exc.code if isinstance(exc, GenerationError) else "LLM_INVALID_OUTPUT"
             )
             retry = isinstance(exc, GenerationError) and transient_failure(exc)
-            if not retry or record.attempts >= options.max_chunk_attempts:
+            delay = (
+                retry_delay(
+                    exc,
+                    record.attempts,
+                    delay_seconds=options.retry_delay_seconds,
+                    max_wait_seconds=options.max_retry_wait_seconds,
+                )
+                if retry
+                else None
+            )
+            if delay is None or record.attempts >= options.max_chunk_attempts:
                 record.status = "failed"
                 failures.append(
                     ProcessingFailure(
@@ -115,6 +117,8 @@ def make_chunk_worker(node):
                         code=record.error_code,
                     )
                 )
+            else:
+                record.retry_delay_seconds = delay
         records[record.fingerprint] = record
         return {"chunk_progress": records, "processing_failures": failures}
 

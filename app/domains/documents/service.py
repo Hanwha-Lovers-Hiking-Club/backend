@@ -15,7 +15,9 @@ from fastapi.responses import StreamingResponse
 from pydantic.alias_generators import to_camel
 
 from app.domains.documents import repository
+from app.domains.documents.pipeline.checkpoints import release_job_checkpoints, stream_document_job
 from app.domains.documents.pipeline.document import DocumentSource
+from app.domains.documents.pipeline.execution_budget import JobTooLargeError
 from app.domains.documents.pipeline.graph import get_graph
 from app.domains.documents.pipeline.parsers import SUPPORTED_FORMATS
 from app.domains.documents.pipeline.processing import DocumentProgress
@@ -147,7 +149,7 @@ async def run_job(job_id: UUID, document_ids: list[UUID]) -> None:
                         path=local_path,
                     )
                 )
-            async for update in get_graph().astream({"sources": sources}, stream_mode="updates"):
+            async for update in stream_document_job(job_id, sources, graph_factory=get_graph):
                 for stage, values in update.items():
                     if stage == "finish":
                         draft_count = len(values.get("drafts", []))
@@ -168,10 +170,18 @@ async def run_job(job_id: UUID, document_ids: list[UUID]) -> None:
         else:
             status = "partial"
         await repository.record_event(job_id, status, result, status)
-    except Exception:
+        if status == "completed":
+            try:
+                await release_job_checkpoints(job_id)
+            except Exception:
+                # 정리 실패로 이미 영속 기록된 성공 결과를 실패로 덮어쓰지 않는다.
+                logger.exception("Could not clean completed job checkpoints %s", job_id)
+    except Exception as exc:
         logger.exception("Document job %s failed", job_id)
         result = _result(document_ids, progress, failures, draft_count)
-        result["errorCode"] = "JOB_EXECUTION_FAILED"
+        result["errorCode"] = (
+            exc.code if isinstance(exc, JobTooLargeError) else "JOB_EXECUTION_FAILED"
+        )
         status = (
             "partial"
             if any(item["status"] == "completed" for item in result["documents"])

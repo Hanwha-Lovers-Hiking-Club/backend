@@ -64,8 +64,9 @@
   BackgroundTasks는 프로세스 재시작 시 실행을 자동 복구하지 않는다.
   작업 조회가 없으면 중단 상태가 DB에 남아 있으므로 운영 워커·재시도·취소·시간 초과 정책은
   후속 설계가 필요하다. 인증·호출 제한과 동시 실행 상한도 외부 공개 전에 팀에서 정해야 한다.
-  현재 그래프는 제품 Job에서 영속 체크포인터를 쓰지 않으므로
-  `release_completed_checkpoints` 호출 대상이 없다.
+  2026-11-02부터 제품 Job은 로컬 SQLite 체크포인터를 사용한다. 전체 문서가 completed이고
+  DB의 최종 Job 결과 기록이 성공한 뒤 release_job_checkpoints를 호출한다.
+  실패/보류 자료는 남기며 자동 재개 API와 다중 호스트 저장소는 미정이다.
 
 ## C04. 검증 판정 → 카드 상태·검토 대기 보관
 
@@ -75,6 +76,9 @@
 - 현재 계약: Gate 판정은 pass/retry/reject/needs_review다.
   DB 카드 상태는 draft/active/flagged/archived이며 needs_review를 DB 상태로 추가하지 않았다.
   verified_drafts도 status=draft를 유지하고 실제 저장/활성화하지 않는다.
+- 2026-11-02 내부 정책: 추출이 불완전한 문서는 공개를 보류하지만 개별 의미 보류는 pass
+  카드의 임베딩·저장을 막지 않는다. 문서 상태 needs_review와 saved_card_ids를 함께 기록한다.
+  보류 초안·근거·원본 IR은 SQLite에 남기며 보류 승인/중앙 DB 보관 위치는 확정하지 않았다.
 - 확인할 사항:
   1. pass 카드의 active 공개 시점. 카드·근거·필요한 벡터 저장이 모두 끝나기 전 공개할지 여부.
   2. needs_review 결과를 별도 작업 결과/테이블/flagged 카드 중 어디에 보관할지와 검토 주체.
@@ -89,6 +93,12 @@
   조회·API 응답은 `knowledge_cards/router.py`, `schemas.py`와 호환되어야 한다.
 - 현재 상태: list_cards 조회 함수는 있지만 실제 생성/저장 함수는 없다.
   `pipeline/fake_function.py`는 실제 생성 수 0과 is_fake=True를 반환하는 임시 함수일 뿐이다.
+- 위 항목은 2026-10-30 기록이다. 현재는 실제 save_document_cards 어댑터와 RPC SQL이 있다.
+  DocumentSaveRequest/SaveReceipt는 pipeline과 현재 어댑터의 구현 계약이다. 새 외부 API 계약은 아니다.
+  2026-11-02 payload_hash는 통과 카드/벡터 기준이며 카드별 해시와 review_pending도 제공한다.
+  현재 RPC는 같은 document_id/payload_hash만 재사용하고 다른 해시는 거부한다. 카드별 해시는
+  RPC에서 아직 사용하지 않는다. 보류 카드의 추가 승인 시 카드별 멱등성/추가 저장은 팀 협의가 필요하다.
+  부분 저장 확인을 문서 전체 완료로 처리하거나 보류 자료 정리에 사용하지 않는다.
 - 2026-10-30 내부 후속: nodes/save.py에 선택적 어댑터 경계만 추가했다. 기본값은 미연결이다.
   graph.build_graph(document_saver=...)에 주입하는 호출자는 DocumentSaveRequest를 받아 SaveReceipt를 반환한다.
   카드·근거·필요한 벡터·문서 완료 기록을 저장했다는 확인 전에는 임시 청크/결과를 지우지 않는다.

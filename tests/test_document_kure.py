@@ -289,6 +289,8 @@ def test_empty_or_all_skipped_input_does_not_create_client(monkeypatch, admitted
 
 def test_multiple_cards_batch_mapping_and_no_partial_success_on_failure(admitted_state):
     state = copy.deepcopy(admitted_state)
+    # 한 번만 시도하도록 선택했을 때의 부분 결과 비공개 계약을 유지한다.
+    state["processing_options"] = {"max_call_attempts": 1}
     original = state["verified_drafts"][0]
     verdict = state["verification_results"][0]
     state["verified_drafts"] = [

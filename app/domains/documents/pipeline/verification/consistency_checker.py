@@ -4,6 +4,7 @@ import re
 
 from pydantic import ValidationError
 
+from app.domains.documents.pipeline.call_retries import transient_failure
 from app.domains.documents.pipeline.extraction import prompt_text
 from app.domains.documents.pipeline.llm import GenerationError, generate_structured
 from app.domains.documents.pipeline.models import FACT_FIELDS
@@ -165,12 +166,13 @@ async def check_consistency(draft, records, options, generator):
         )
     except (GenerationError, ValidationError) as exc:
         code = exc.code if isinstance(exc, GenerationError) else "LLM_INVALID_OUTPUT"
+        unavailable = isinstance(exc, GenerationError) and transient_failure(exc)
         return [
             issue(
                 "consistency",
-                code,
+                "VERIFIER_UNAVAILABLE" if unavailable else code,
                 "draft",
-                "Semantic verification did not complete",
+                f"Semantic verification did not complete ({code})",
                 disposition="needs_review",
                 action="Inspect the verifier failure; do not treat it as a pass",
             )

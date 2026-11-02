@@ -646,6 +646,61 @@ OCR/비전 재읽기, PDF 경고 범위 완화, 실제 저장 서비스·마이�
 실패 작업의 TTL 스케줄러, 소진된 재시도 예산을 수동으로 다시 여는 API,
 품질 점수/사후 개선/정기 재평가는 이번 범위에 포함하지 않았다.
 
+## 2026-11-02 — 기본 파이프라인 의도 보완
+
+기준은 HYUNGU의 00beeeb다. evaluation 및 별도 pipeline-tuning 브랜치를 수정하거나 병합하지 않았다.
+이 절은 위 날짜별 기록 중 '저장 서비스 미연결/제품 체크포인트 없음' 등의 과거 설명보다 우선한다.
+
+### 유지한 계약과 수정한 동작
+
+- DocumentIR, 필드별 value/status/evidence_refs, evidence_index, 0~N 경험과 Extract/Draft 분리를 유지한다.
+  새로운 품질 점수·사후 개선·RAG 기능은 추가하지 않았다. 미확인 내용을 채워 넣지 않는다.
+- 의미 판정만 보류인 문서는 pass 카드만 임베딩·저장한다. 문서는 needs_review와 saved_card_ids를
+  함께 기록하며 원본 IR·청크·통과/보류 초안·근거를 정리하지 않는다. 추출이나 Draft 실행이
+  불완전한 문서의 부분 공개 차단 정책은 유지한다. 보류만 있고 pass가 없으면 빈 저장을 하지 않는다.
+- 저장 요청 해시는 통과 카드·벡터 기준이며 보류 판정/설명/생략 사유 변경에 영향받지 않는다.
+  카드별 card_payload_hashes와 review_pending도 제공한다. 실제 Supabase RPC는 여전히 문서 단위
+  동일 해시 재사용만 지원하며 변경된 해시를 거부한다. 따라서 보류 카드의 추가 승인·카드별 멱등성은
+  C04/C05 미정이다. 이번에 실제 테이블/RPC를 바꾸거나 추가 승인을 구현한 것은 아니다.
+- call_retries.py에서 SDK status_code와 Ollama HTTPStatusError의 cause.response.status_code를
+  함께 분류한다. Extract는 청크별 그래프 단계에서 재시도한다. Draft/Verify는 공통 RetryingGenerator,
+  Embed는 embed_plans의 현재 배치 안에서 재시도한다. 앞서 성공한 배치는 같은 실행에서 반복하지 않는다.
+- ProcessingOptions.max_call_attempts는 최초 포함 기본 3회/최대 5회, max_chunk_attempts와 별개다.
+  retry_delay_seconds는 기본 1초이며 max_retry_wait_seconds 기본/최대 30초를 따른다.
+  Retry-After가 상한보다 길면 기다리거나 즉시 다시 호출하지 않고 실패한다. 인증/잘못된 입력은
+  반복하지 않는다. KURE 클라이언트의 단일 호출 정책과 공급자 자동 전환 금지는 유지한다.
+- 호출 재시도는 verification_history/VERIFY_MAX_RETRIES를 소모하지 않는다. 검증 모델의 일시 오류
+  소진은 VERIFIER_UNAVAILABLE로 기록해 내용의 불확실 판정과 구분한다.
+- execution_budget.py의 공통 GRAPH_RECURSION_LIMIT=1000을 사용한다. 청킹 후 유료 호출 전에
+  현재 단계 + 고정 여유 + 청크별 최대 시도 + 문서별 후속 단계 + 남은 Gate 재작성과 대기 큐까지
+  보수적으로 추정한다. 호출에서 더 작은 limit을 주면 그것을 따른다. 초과는 JOB_TOO_LARGE다.
+  Gate 스키마가 허용하는 최대 5회까지 예약하므로 실제보다 조기에 거부될 수 있다.
+  모델 비용/토큰 상한과 업로드 수량 제한을 대체하는 계산은 아니다.
+
+### 제품 실행의 보류 자료 보존
+
+- 제품 run_job은 job ID를 thread ID로 하여 AsyncSqliteSaver와 durability=sync를 사용한다.
+  기본 경로는 .local/document-jobs/checkpoints.sqlite3이며 DOCUMENT_CHECKPOINT_PATH로 바꾼다.
+  키·클라이언트·호출 함수는 State에 넣지 않고 원문·추출/검증·성공 청크·저장 ID를 보존한다.
+- 체크포인트는 새 연결/새 프로세스에서도 checkpoints.load_job_state(job_id)로 읽을 수 있다.
+  이 함수는 내부 진단/검토용이며 외부 API 응답으로 전체 본문을 노출하지 않는다.
+  보류 승인 UI/API, 예산 소진 후 실패 항목을 다시 여는 job 진입점은 이번 범위가 아니다.
+- 모든 문서가 completed이고 Supabase에 최종 Job 결과 기록이 성공한 뒤에만 그 thread 이력을 삭제한다.
+  정리 실패는 저장 성공을 실패로 덮어쓰지 않는다. 실패/보류/다른 Job의 체크포인트는 보존한다.
+  현재 상태에서 완료 문서의 큰 임시 데이터는 먼저 제거한다. 원본 Storage 파일과 영속 카드는 삭제하지 않는다.
+- SQLite의 빈 페이지는 재사용되며 파일 크기가 매번 즉시 줄어든다는 의미가 아니다.
+  보류 작업이 남아 있으면 이력도 남는다. 보관 TTL/정리 스케줄러와 다중 호스트 공용 저장소는 C09 후속이다.
+- FastAPI BackgroundTasks는 프로세스 중단 뒤 자동 재개되지 않는다. 기존 30분 stale 처리 정책은
+  유지하며 저장된 자료를 자동 복구 API로 해석하지 않는다. 임시 원본 경로는 작업 후 사라지므로
+  재개 설계 시 Storage에서 원본을 다시 준비하고 다른 State의 이월 범위도 검증해야 한다.
+- 임베딩 차원은 기존 SQL의 vector(1024)와 맞춘다. 이 컴퓨터의 로컬 일반 설정만 1024로 맞췄고
+  비밀키를 변경하거나 출력하지 않았다. 실제 외부 API·운영 DB 쓰기 없이 가짜 의존성과 로컬 SQLite로 검증한다.
+
+검증 결과: 전체 pytest 371개, Ruff lint와 119개 Python 파일 포맷 검사 통과.
+SQLite 새 프로세스 읽기, 최종 결과 기록 전 보존/기록 후 삭제, 다른 보류 Job 유지,
+후속 노드 오류 시 성공 청크 보존, 유료 호출 전 JOB_TOO_LARGE 보고를 포함한다.
+실제 Supabase RPC의 배포·운영 환경 통합 검증을 수행했다는 의미는 아니다.
+
 ## 형식별 도구 선정 제안 — 채택 전 확인
 
 먼저 각 형식의 파서가 돌려주는 구조와 원문 위치를 비교한다.

@@ -46,6 +46,7 @@ class IngestionState(TypedDict, total=False):
     document_progress: dict[str, DocumentProgress]
     active_document_id: str | None
     document_save_receipt: SaveReceipt | None
+    estimated_graph_steps: int
     processing_failures: list[ProcessingFailure]
     parse_options: ParseOptions
     chunk_options: ChunkOptions

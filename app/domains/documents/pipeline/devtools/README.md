@@ -2,7 +2,7 @@
 
 이 도구는 검증·재처리와 7번 입력 생성/KURE 임베딩까지의 실제 LangGraph 실행을 확인한다.
 실제 그래프에는 DB 저장 어댑터가 연결돼 있다. 운영 DB에 영수증 테이블과 RPC를 적용해야
-저장 완료가 가능하다. 제품 백엔드의 업로드/SSE API는 아직 연결하지 않았다.
+저장 완료가 가능하다. 제품 백엔드의 업로드/Job/SSE 코드는 연결돼 있으며 실제 DB 적용은 별도다.
 DB 적용 후 일회성 실저장 검증은 **스테이징 Supabase 프로젝트**에서 저장소 루트의
 `uv run python -m scripts.smoke_document_save --run --allow-active-test-cards`로 실행한다.
 이 명령은 고유한 임시 문서/카드를 만들고, 재호출·롤백·0건 결과를 확인한 뒤 삭제한다.
@@ -10,19 +10,44 @@ DB 적용 후 일회성 실저장 검증은 **스테이징 Supabase 프로젝트
 팀 연결 계약은 [regulations.md](../regulations.md)를 확인한다.
 
 청크별 호출은 각각 그래프 단계로 기록하며 일시적 호출 오류만 기본 최대 3회(최초 포함) 시도한다.
-입력의 `processing_options`에서 `max_chunk_attempts`(1~5), `retry_delay_seconds`(0~10)를 바꿀 수 있다.
+입력의 `processing_options`에서 `max_chunk_attempts`(1~5), `max_call_attempts`(1~5),
+`retry_delay_seconds`(0~10), `max_retry_wait_seconds`(0~30)를 바꿀 수 있다.
+Draft·Verify는 경험별 호출, Embed는 서비스의 현재 배치만 재시도한다. max_call_attempts 기본은 최초 포함 3회다.
+Retry-After가 상한보다 길면 기다리지 않고 실패시키며, KURE 클라이언트 자체는 1회만 호출한다.
 이 예산은 Gate의 의미 재작성 예산과 별개다. 문서별 결과는 State의 `document_progress`,
 실패는 `processing_failures`, 청크별 결과·호출 시도는 `chunk_progress`에서 확인한다.
 한 문서가 불완전하면 해당 문서는 임베딩·저장하지 않으며 다른 문서는 계속 진행한다.
+의미 판정만 보류인 경우 pass 카드의 임베딩·저장은 허용한다. 문서는 needs_review와 저장 ID를
+기록하고, 보류 초안·근거는 유지한다. 검증 모델 일시 오류 소진은 VERIFIER_UNAVAILABLE로 구분한다.
 
 최종 후보를 모은 뒤 문서별 `embed → save → complete_document`를 실행한다.
 `build_graph()`에 저장 어댑터를 주입하지 않으면 `ready_to_save`로 끝나며 청크 결과를 보관한다.
 `get_graph()`는 실제 저장 어댑터를 사용한다.
 save 노드가 보인다는 이유만으로 DB에 저장됐다고 판단하지 않는다. 실제 어댑터의 확인 후에만
-`completed`가 되고 현재 임시 데이터가 정리된다. 과거 체크포인트 삭제는 별도다.
+보류가 없는 문서만 `completed`가 되고 현재 임시 데이터가 정리된다.
 체크포인터가 있는 같은 thread를 재개할 때는 새 sources를 보내지 말고 입력 `None`으로 재개한다.
 모델/설정·코드가 바뀌었으면 새 thread에서 시작한다. 메모리 체크포인터는 서버 재시작을 견디지 못한다.
 직접 실행에서 단계별 영속 기록을 기다리려면 영속 체크포인터와 `ainvoke(..., durability="sync")`를 사용한다.
+
+## 제품 Job의 보류 자료 보존 — 2026-11-02
+
+제품 실행은 job ID를 thread ID로 하는 SQLite 체크포인터와 sync 기록을 사용한다.
+기본 파일은 `.local/document-jobs/checkpoints.sqlite3`이며 `DOCUMENT_CHECKPOINT_PATH`로 바꾼다.
+경로는 Git에서 제외된 `.local` 아래 또는 별도 영속 볼륨으로 지정한다. 원문·근거가 들어 있으므로
+공용 저장소에 파일을 추가하지 않는다. API 응답에는 전체 체크포인트를 넣지 않는다.
+
+보류/실패 자료는 작업 함수가 끝나도 남는다. 내부 진단에서는 `checkpoints.load_job_state(job_id)`로
+마지막 State를 읽을 수 있다. 보류가 없고 모든 문서가 completed이며 최종 Job 결과의 DB 기록에
+성공했을 때만 과거 체크포인트를 정리한다. 정리 실패가 저장 성공을 실패로 덮어쓰지는 않는다.
+SQLite 파일의 빈 공간은 다음 쓰기에서 재사용되며 파일 크기가 즉시 줄어든다는 뜻은 아니다.
+
+이 기능은 단일 서버/로컬 개발용 영속 보존이다. 여러 호스트가 각자의 로컬 디스크를 쓰는 배포는
+공용 영속 저장소 계약이 필요하다. 자동 재개·보류 승인 API·보관 TTL은 이번에 추가하지 않았다.
+만료된 임시 원본 경로는 재개 전에 Storage에서 다시 준비해야 한다.
+
+청킹 후 예상 단계 수가 호출 recursion_limit(기본 1000)을 넘으면 모델 호출 전에 JOB_TOO_LARGE로
+실패한다. Extract 시도 수와 문서별 후속 단계, 허용 최대 Gate 재작성 5회 및 대기 큐까지 예약한다.
+보수적 상한이므로 조기에 거부될 수 있으며 모델 비용·토큰 예산을 대신하지 않는다.
 
 아래 환경 설정을 준비한 뒤 저장소 루트의 VS Code 터미널에서 실행한다.
 

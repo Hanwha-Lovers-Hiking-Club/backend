@@ -18,7 +18,9 @@ class ProcessingModel(BaseModel):
 class ProcessingOptions(ProcessingModel):
     # 의미 검증 재작성 예산과 별개인 일시적 호출 실패 예산이다.
     max_chunk_attempts: int = Field(default=3, ge=1, le=5)
+    max_call_attempts: int = Field(default=3, ge=1, le=5)
     retry_delay_seconds: float = Field(default=1, ge=0, le=10)
+    max_retry_wait_seconds: float = Field(default=30, ge=0, le=30)
 
 
 class ProcessingFailure(ProcessingModel):
@@ -36,6 +38,7 @@ class ChunkProgress(ProcessingModel):
     status: Literal["pending", "succeeded", "failed"] = "pending"
     attempts: int = 0
     error_code: str | None = None
+    retry_delay_seconds: float = 0
     result: ExtractionResult = Field(default_factory=ExtractionResult)
 
 
@@ -53,7 +56,7 @@ class DocumentProgress(ProcessingModel):
 
 
 class SaveReceipt(ProcessingModel):
-    # 카드·근거·필요한 벡터와 문서 완료 기록을 영속 저장한 어댑터만 반환한다.
+    # 요청한 통과 카드·근거·벡터와 완료/보류 기록을 영속 저장한 어댑터만 반환한다.
     # 일부만 저장했거나 fake 저장인 경우 이 계약을 만족하지 않는다.
     document_id: UUID
     payload_hash: str
@@ -70,3 +73,5 @@ class DocumentSaveRequest(ProcessingModel):
     verification_results: list[VerificationResult]
     skips: list[DraftSkip]
     payload_hash: str
+    card_payload_hashes: dict[str, str] = Field(default_factory=dict)
+    review_pending: bool = False

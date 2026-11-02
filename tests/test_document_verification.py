@@ -316,7 +316,9 @@ def test_verifier_failure_is_held_instead_of_treated_as_validation_success(state
         async def generate(self, **kwargs):
             raise GenerationError("LLM_API_ERROR", "failed")
 
-    assert "LLM_API_ERROR" in codes(run(state, llm=True, model=Failing()))
+    assert "VERIFIER_UNAVAILABLE" in codes(
+        run({**state, "processing_options": {"retry_delay_seconds": 0}}, llm=True, model=Failing())
+    )
 
 
 def test_default_verify_requires_an_explicit_verifier_model_when_enabled(state, monkeypatch):

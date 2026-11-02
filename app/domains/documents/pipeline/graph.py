@@ -7,6 +7,7 @@ from app.domains.documents.pipeline.chunk_execution import make_chunk_worker, ne
 from app.domains.documents.pipeline.document_lifecycle import make_document_embedder, next_document
 from app.domains.documents.pipeline.draft_execution import make_draft_worker
 from app.domains.documents.pipeline.execution import next_step, retry_target
+from app.domains.documents.pipeline.execution_budget import GRAPH_RECURSION_LIMIT
 from app.domains.documents.pipeline.nodes.build_embedding_texts import build_embedding_texts
 from app.domains.documents.pipeline.nodes.chunk import chunk
 from app.domains.documents.pipeline.nodes.complete_document import complete_document
@@ -95,11 +96,11 @@ def build_graph(
     )
     return builder.compile(
         checkpointer=checkpointer, interrupt_before=interrupt_before, name="document_ingestion"
-    ).with_config(recursion_limit=1000)
+    ).with_config(recursion_limit=GRAPH_RECURSION_LIMIT)
 
 
-def get_graph():
+def get_graph(*, checkpointer=None):
     """Agent Server owns checkpointing. Normal Python callers can inject their own saver."""
     from app.domains.knowledge_cards.service import save_document_cards
 
-    return build_graph(document_saver=save_document_cards)
+    return build_graph(document_saver=save_document_cards, checkpointer=checkpointer)
