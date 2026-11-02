@@ -5,6 +5,17 @@
 내용의 적용 범위는 pipeline 하위다.
 외부 파일 경로는 연결 상대를 설명하며, 수정 권한을 넓히지 않는다.
 
+## 2026-11-02 저장 서비스 경계 보완
+
+main의 create_card는 확인했으나 카드·근거 두 번의 DB 요청과 멱등성 부재로 직접 연결하지 않았다.
+기존 문서별 원자 RPC를 유지하면서, 내부 DocumentSaveRequest 변환은 persistence.py로 옮겼다.
+get_graph → persistence.save_document → knowledge_cards.service.save_document_cards(dict)로 연결한다.
+서비스는 자체 contracts.py로 검증하고 dict 영수증을 반환한다. pipeline 내부 타입 의존은 제거했다.
+외부 API와 SQL은 변경하지 않았고 DB 적용/실제 저장 검증은 이번 구현의 완료 항목에 포함하지 않는다.
+상세 필드와 팀 확인 사항은 [저장 연결 계약](../../knowledge_cards/STORAGE_CONTRACT.md)을 따른다.
+연결 보완 후 pytest 406개, Ruff lint와 125개 Python 파일 포맷 검사를 통과했다.
+모의 RPC 기반 회귀 결과이며 실제 PostgreSQL 트랜잭션/실저장을 확인한 결과는 아니다.
+
 ## 2026-10-31 현재 상태
 
 운영 Supabase의 `knowledge_cards`에는 네 벡터 컬럼이 모두 `vector(1024)`로 존재한다.

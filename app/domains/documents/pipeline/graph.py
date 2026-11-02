@@ -106,6 +106,6 @@ def build_graph(
 
 def get_graph(*, checkpointer=None):
     """Agent Server owns checkpointing. Normal Python callers can inject their own saver."""
-    from app.domains.knowledge_cards.service import save_document_cards
+    from app.domains.documents.pipeline.persistence import save_document
 
-    return build_graph(document_saver=save_document_cards, checkpointer=checkpointer)
+    return build_graph(document_saver=save_document, checkpointer=checkpointer)

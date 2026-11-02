@@ -1,14 +1,18 @@
 # 지식카드 조회와 검증된 문서의 원자적 저장을 담당한다.
 import asyncio
-import math
 
 import httpx
 from fastapi import HTTPException
 from postgrest.exceptions import APIError
+from pydantic import ValidationError
 
 from app.db import supabase
-from app.domains.documents.pipeline.document_lifecycle import DocumentSaveError
-from app.domains.documents.pipeline.processing import DocumentSaveRequest, SaveReceipt
+from app.domains.knowledge_cards.contracts import (
+    VECTOR_COLUMNS,
+    CardPersistenceError,
+    DocumentCardsReceipt,
+    DocumentCardsWrite,
+)
 from app.domains.knowledge_cards.schemas import CardSort
 
 # 근거(card_documents)와 근거 문서(documents)를 한 번에 가져온다
@@ -31,73 +35,36 @@ RANGE_NOT_SATISFIABLE = "PGRST103"
 
 LIST_FAILED_DETAIL = "지식카드 목록을 조회하지 못했습니다."
 
-EMBEDDING_COLUMNS = {
-    "content": "content_embedding",
-    "situation": "situation_embedding",
-    "solution": "solution_embedding",
-    "lesson": "lesson_embedding",
-}
 
+async def save_document_cards(request: dict) -> dict:
+    """일반 dict로 문서별 pass 카드·근거·벡터를 받아 RPC 한 번으로 저장한다.
 
-async def save_document_cards(request: DocumentSaveRequest) -> SaveReceipt:
-    """Persist one document's passed cards, evidence and vectors in one DB transaction.
-
-    The database RPC owns the transaction and the document-scoped idempotency key.
-    Its receipt confirms the requested passed cards, not resolution of review drafts.
-    Changed card sets for the same document remain unsupported by this RPC.
+    같은 문서 ID와 해시는 기존 결과를 반환하며 다른 카드 집합은 아직 지원하지 않는다.
+    main의 단건 create_card는 두 DB 호출이라 이 트랜잭션을 대신해 반복 호출하지 않는다.
     """
     from app.config import settings
 
-    request = DocumentSaveRequest.model_validate(request)
-    document_id = request.document.document_id
-    if len({card.experience_id for card in request.cards}) != len(request.cards):
-        raise DocumentSaveError("Duplicate card experiences")
-    vectors_by_experience = {item.experience_id: item for item in request.embeddings}
-    if len(vectors_by_experience) != len(request.embeddings):
-        raise DocumentSaveError("Duplicate card embeddings")
-    if set(vectors_by_experience) - {card.experience_id for card in request.cards}:
-        raise DocumentSaveError("Embedding has no matching card")
+    try:
+        payload = DocumentCardsWrite.model_validate(request)
+        for card in payload.cards:
+            for column in VECTOR_COLUMNS:
+                vector = getattr(card, column)
+                if vector is not None and (
+                    len(vector) != settings.EMBEDDING_DIMENSIONS
+                    or not any(value != 0 for value in vector)
+                ):
+                    raise ValueError("Embedding does not match configured dimensions")
+    except (ValidationError, ValueError) as exc:
+        raise CardPersistenceError("Invalid document save request") from exc
 
     rows = []
-    for card in request.cards:
-        if any(
-            ref.document_id != document_id for ref in card.source_extraction.evidence_index.values()
-        ):
-            raise DocumentSaveError("Card references a different document")
-        evidence_ids = dict.fromkeys(
-            evidence_id for refs in card.field_evidence_refs.values() for evidence_id in refs
-        )
-        if not evidence_ids:
-            raise DocumentSaveError("Card has no source evidence")
-        embedding = vectors_by_experience.get(card.experience_id)
-        if embedding is not None and (
-            embedding.model != settings.EMBEDDING_MODEL
-            or embedding.dimensions != settings.EMBEDDING_DIMENSIONS
-            or set(embedding.vectors) != set(embedding.input_hashes)
-            or any(
-                len(vector) != settings.EMBEDDING_DIMENSIONS
-                or not all(type(value) in (int, float) and math.isfinite(value) for value in vector)
-                or not any(value != 0 for value in vector)
-                for vector in embedding.vectors.values()
-            )
-        ):
-            raise DocumentSaveError("Embedding does not match configured model")
-        row = card.to_card_fields()
-        row["status"] = "active"
-        row["evidences"] = [
-            {
-                "location": card.source_extraction.evidence_index[evidence_id].location,
-                "excerpt": card.source_extraction.evidence_index[evidence_id].excerpt,
-            }
-            for evidence_id in evidence_ids
-        ]
-        for view, column in EMBEDDING_COLUMNS.items():
-            row[column] = embedding.vectors.get(view) if embedding is not None else None
+    for card in payload.cards:
+        row = card.model_dump(mode="json")
+        row["evidences"] = [ref.model_dump(exclude={"document_id"}) for ref in card.evidences]
         rows.append(row)
-
     params = {
-        "p_document_id": str(document_id),
-        "p_payload_hash": request.payload_hash,
+        "p_document_id": str(payload.document_id),
+        "p_payload_hash": payload.payload_hash,
         "p_cards": rows,
     }
     try:
@@ -105,11 +72,19 @@ async def save_document_cards(request: DocumentSaveRequest) -> SaveReceipt:
             lambda: supabase.rpc("save_document_cards", params).execute()
         )
     except (APIError, httpx.RequestError) as exc:
-        raise DocumentSaveError("Database did not confirm document save") from exc
+        raise CardPersistenceError("Database did not confirm document save") from exc
     try:
-        return SaveReceipt.model_validate(result.data)
-    except (ValueError, TypeError) as exc:
-        raise DocumentSaveError("Database returned an invalid save receipt") from exc
+        receipt = DocumentCardsReceipt.model_validate(result.data)
+        if (
+            receipt.document_id != payload.document_id
+            or receipt.payload_hash != payload.payload_hash
+            or len(receipt.card_ids) != len(payload.cards)
+            or len(set(receipt.card_ids)) != len(receipt.card_ids)
+        ):
+            raise ValueError("Save receipt does not match the requested cards")
+        return receipt.model_dump(mode="json")
+    except (ValidationError, ValueError, TypeError) as exc:
+        raise CardPersistenceError("Database returned an invalid save receipt") from exc
 
 
 def _quote(value: str) -> str:

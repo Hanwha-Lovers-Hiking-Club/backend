@@ -5,6 +5,18 @@
 아래 제안 이름/예시는 팀 공용 API·DB·서비스의 확정 계약으로 사용하지 않는다.
 모든 경로는 저장소 루트 기준이다. 설계 배경은 [memo.md](memo.md), 진행은 [checklist.md](checklist.md)를 본다.
 
+## 2026-11-02 저장 서비스 계약 정리
+
+- origin/main @27b2198의 `create_card(card: dict, evidences: list[dict]) -> str`를 확인했다.
+  카드와 근거를 별도 요청으로 쓰므로 현재 문서 원자 저장의 대체 호출로 연결하지 않는다.
+- 일반 dict로 도메인 내부 타입을 분리한다는 팀 의도를 반영했다. get_graph는
+  `pipeline/persistence.py`의 어댑터를 통해 knowledge_cards의 공개 dict 서비스를 호출한다.
+  knowledge_cards는 더 이상 pipeline의 모델/예외를 import하지 않는다.
+- 필드·반환·예외·원자성·멱등성·단건 함수와의 차이는
+  [저장 연결 계약](../../knowledge_cards/STORAGE_CONTRACT.md)에 정리했다.
+- 현재 구현 계약과 팀 승인, DB 실제 적용을 구분한다. C05의 단건/배치 진입점 통합,
+  C04/C06의 보류 승인·중앙 근거 보관, 실제 RPC 적용은 여전히 팀 확인 대상이다.
+
 ## 2026-10-31 저장 연결 v1 정책과 팀 확인 사항
 
 - 업로드/Job 담당: Storage 원본과 `documents` 행을 먼저 만든 뒤 그 ID로 그래프를 시작한다.

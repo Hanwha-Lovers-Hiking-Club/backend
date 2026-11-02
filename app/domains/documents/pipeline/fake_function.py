@@ -2,6 +2,7 @@
 # DB/Storage에 접근하지 않으며 향후 knowledge_cards.service의 실제 저장 함수로 교체한다.
 # 입력 필드, 근거 전달 방식, 실제 반환값과 원자성은 아직 합의 전이다.
 # 현재 임시 입력·반환 타입을 도메인 공통 계약으로 사용하지 않는다.
+# 현재 실제 그래프는 persistence.save_document를 사용한다. 이 함수는 연결되지 않은 개발용 대역이다.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
