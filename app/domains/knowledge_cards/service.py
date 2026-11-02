@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from postgrest.exceptions import APIError
 
 from app.core.technology import display_name, find_technologies, is_valid_id, normalize_technology
+from app.core.text import strip_nul
 from app.db import supabase
 from app.domains.knowledge_cards.schemas import CardSort
 
@@ -96,6 +97,7 @@ def create_card(card: dict, evidences: list[dict]) -> str:
     # documents 도메인(save 노드)이 이 함수를 거쳐서만 knowledge_cards/card_documents에 쓴다.
     # card/evidences는 다른 도메인의 pydantic 모델이 아니라 plain dict로 받는다 — 두 도메인이
     # 서로의 내부 타입을 몰라도 되게 하기 위함
+    card, evidences = strip_nul(card), strip_nul(evidences)
     result = supabase.table("knowledge_cards").insert(card).execute()
     card_id = result.data[0]["id"]
     if evidences:
