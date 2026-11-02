@@ -24,6 +24,22 @@ class ExtractedElementsBatch(BaseModel):
     elements: list[ExtractedElements]
 
 
+# outcome_gate가 LLM에게 "결과·효과 문장마다 상태 라벨"을 달게 할 때 쓰는 타입.
+# quote가 실제 원문에 있는지, confirmed만 outcome에 쓰는 것은 outcome_gate가 코드로 처리한다
+class OutcomeStatement(BaseModel):
+    quote: str
+    status: Literal["confirmed", "expected", "planned", "decision", "unknown"]
+
+
+class OutcomeStatements(BaseModel):
+    statements: list[OutcomeStatement]
+
+
+# outcome_gate가 확인된 문장들로 outcome을 쓰게 할 때의 structured output 타입
+class OutcomeText(BaseModel):
+    outcome: str
+
+
 # draft_card 노드가 LLM에게 "이 청크에서 어떤 문장을 근거 발췌문으로 쓸지" 고르게 할 때 쓰는 타입.
 # chunk_id가 실제로 존재하는지, excerpt가 그 청크 원문의 부분 문자열인지는 draft_card가 코드로
 # 검증한다

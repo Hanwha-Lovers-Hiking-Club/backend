@@ -20,6 +20,7 @@ from app.domains.documents.pipeline.models import (
     CardEvidenceDraft,
     ExtractedElements,
 )
+from app.domains.documents.pipeline.outcome_gate import append_expected, gate_outcome
 from app.domains.documents.pipeline.stage import finish_stage
 from app.domains.documents.pipeline.state import Chunk, IngestionState
 
@@ -105,7 +106,8 @@ def _label(element: ExtractedElements) -> str:
 
 def draft_card(state: IngestionState) -> dict:
     chunks_by_id = {c["id"]: c for c in state["chunks"]}
-    llm = get_llm().with_structured_output(CardDraftContent)
+    plain_llm = get_llm()
+    llm = plain_llm.with_structured_output(CardDraftContent)
 
     card_drafts: list[CardDraft] = []
     failures: list[str] = []
@@ -116,6 +118,21 @@ def draft_card(state: IngestionState) -> dict:
         ]
         if not source_chunks:
             continue  # source_chunk_ids가 전부 무효하면(흔치 않음) 이 경험은 건너뛴다
+
+        if element.outcome and element.outcome.strip():
+            # extract의 outcome은 예상·계획이 섞여 있을 수 있어서 확인된 결과만 남긴다
+            try:
+                outcome, expected = gate_outcome(plain_llm, source_chunks)
+            except Exception as e:
+                # 믿을 수 없는 outcome을 그대로 쓰느니 비운다
+                logger.warning("draft_card: outcome 검사 실패, 비움 (%s): %s", _label(element), e)
+                outcome, expected = None, []
+            element = element.model_copy(
+                update={
+                    "outcome": outcome,
+                    "rationale": append_expected(element.rationale, expected),
+                }
+            )
 
         # 지시문은 시스템 메시지, 경험/원본 청크는 사용자 메시지로 분리해서
         # 본문 속 문장이 지시문과 섞이지 않게 한다
