@@ -25,7 +25,7 @@ class ProcessingOptions(ProcessingModel):
 
 class ProcessingFailure(ProcessingModel):
     document_id: UUID
-    stage: Literal["parse", "extract", "draft_card", "embed", "save"]
+    stage: Literal["parse", "budget", "extract", "draft_card", "embed", "save"]
     code: str
     chunk_id: str | None = None
     experience_id: str | None = None

@@ -261,7 +261,9 @@ def make_document_completer():
         update = {}
         if local_failures:
             progress.status = (
-                "failed" if any(item.stage == "parse" for item in local_failures) else "incomplete"
+                "failed"
+                if any(item.stage in {"parse", "budget"} for item in local_failures)
+                else "incomplete"
             )
         elif scope["review_drafts"]:
             progress.status = "needs_review"

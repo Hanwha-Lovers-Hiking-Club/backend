@@ -1,20 +1,24 @@
 import asyncio
 import json
 import os
+import sqlite3
 import subprocess
 import sys
+from types import SimpleNamespace
 from uuid import uuid4
+
+import pytest
 
 from app.config import settings
 from app.domains.documents import service
-from app.domains.documents.pipeline.checkpoints import load_job_state
+from app.domains.documents.pipeline.checkpoints import load_job_state, setup_checkpointer
 from app.domains.documents.pipeline.execution import initialize
 from tests.test_document_jobs import fake_repository as fake_repository
 from tests.test_document_processing import Saver, graph
 from tests.test_document_review_retries import ReviewOne
 
 
-def install_graph(monkeypatch, *, model=None, saver=None):
+def install_graph(monkeypatch, *, model=None, saver=None, recursion_limit=None):
     saver = saver or Saver()
 
     def begin(state):
@@ -27,7 +31,10 @@ def install_graph(monkeypatch, *, model=None, saver=None):
         )
 
     def factory(**kwargs):
-        return graph(model or ReviewOne(), saver=saver, initialize_node=begin, **kwargs)
+        compiled = graph(model or ReviewOne(), saver=saver, initialize_node=begin, **kwargs)
+        return (
+            compiled.with_config(recursion_limit=recursion_limit) if recursion_limit else compiled
+        )
 
     monkeypatch.setattr(service, "get_graph", factory)
     return saver
@@ -173,7 +180,7 @@ def test_completed_job_cleanup_keeps_other_review_jobs(fake_repository, monkeypa
 
 def test_budget_failure_is_reported_before_paid_calls(fake_repository, monkeypatch):
     model = ReviewOne()
-    install_graph(monkeypatch, model=model)
+    install_graph(monkeypatch, model=model, recursion_limit=100)
 
     async def run():
         document_id, job_id = await register(
@@ -182,7 +189,97 @@ def test_budget_failure_is_reported_before_paid_calls(fake_repository, monkeypat
         )
         await service.run_job(job_id, [document_id])
         job = fake_repository.jobs[str(job_id)]
-        assert job["status"] == "failed" and job["result"]["errorCode"] == "JOB_TOO_LARGE"
+        assert job["status"] == "failed"
+        assert job["result"]["failures"][0]["code"] == "JOB_TOO_LARGE"
         assert not model.calls
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("run_number", range(3))
+def test_concurrent_jobs_preserve_separate_sqlite_state(fake_repository, monkeypatch, run_number):
+    async def run():
+        ready = asyncio.Event()
+        entered = set()
+
+        class Overlapping(ReviewOne):
+            async def generate(self, **kwargs):
+                payload = kwargs["payload"]
+                if "blocks" in payload:
+                    entered.add(payload["document_id"])
+                    if len(entered) == 2:
+                        ready.set()
+                    await asyncio.wait_for(ready.wait(), timeout=10)
+                return await super().generate(**kwargs)
+
+        install_graph(monkeypatch, model=Overlapping())
+        review_document, review_job = await register(
+            fake_repository, f"REVIEW experience {run_number}."
+        )
+        completed_document, completed_job = await register(
+            fake_repository, f"Stable experience {run_number}."
+        )
+        await asyncio.wait_for(
+            asyncio.gather(
+                service.run_job(review_job, [review_document]),
+                service.run_job(completed_job, [completed_document]),
+            ),
+            timeout=20,
+        )
+        assert len(entered) == 2
+        assert fake_repository.jobs[str(completed_job)]["status"] == "completed"
+        assert await load_job_state(completed_job) is None
+        review = await load_job_state(review_job)
+        assert len(review["review_drafts"]) == 1
+        assert review["sources"][0].document_id == review_document
+        assert fake_repository.jobs[str(review_job)]["status"] == "partial"
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "code,retries",
+    [(sqlite3.SQLITE_BUSY, 5), (sqlite3.SQLITE_LOCKED, 5), (sqlite3.SQLITE_CORRUPT, 1)],
+)
+def test_sqlite_setup_retries_only_busy_errors_with_a_bound(monkeypatch, code, retries):
+    calls, sleeps = [], []
+
+    async def setup():
+        calls.append(True)
+        error = sqlite3.OperationalError("Synthetic initialization failure")
+        error.sqlite_errorcode = code
+        raise error
+
+    async def rollback():
+        return None
+
+    async def sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr("app.domains.documents.pipeline.checkpoints.asyncio.sleep", sleep)
+    saver = SimpleNamespace(setup=setup, conn=SimpleNamespace(rollback=rollback))
+    with pytest.raises(sqlite3.OperationalError):
+        asyncio.run(setup_checkpointer(saver))
+    assert len(calls) == retries and len(sleeps) == retries - 1
+
+
+def test_sqlite_setup_continues_after_temporary_initialization_lock(monkeypatch):
+    calls, sleeps = [], []
+
+    async def setup():
+        calls.append(True)
+        if len(calls) == 1:
+            error = sqlite3.OperationalError("Synthetic initialization lock")
+            error.sqlite_errorcode = sqlite3.SQLITE_BUSY
+            raise error
+
+    async def rollback():
+        return None
+
+    async def sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr("app.domains.documents.pipeline.checkpoints.asyncio.sleep", sleep)
+    saver = SimpleNamespace(setup=setup, conn=SimpleNamespace(rollback=rollback))
+    asyncio.run(setup_checkpointer(saver))
+    assert len(calls) == 2 and sleeps == [0.05]

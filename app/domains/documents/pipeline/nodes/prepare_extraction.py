@@ -5,14 +5,14 @@ from langchain_core.runnables import RunnableConfig
 from app.domains.documents.pipeline.chunk_execution import prepare_extraction as prepare
 from app.domains.documents.pipeline.execution_budget import (
     GRAPH_RECURSION_LIMIT,
-    check_execution_budget,
+    admit_extraction,
 )
 
 
 def prepare_extraction(state, config: RunnableConfig):
-    estimate = check_execution_budget(
+    update = admit_extraction(
         state,
         limit=config.get("recursion_limit", GRAPH_RECURSION_LIMIT),
         used_steps=config.get("metadata", {}).get("langgraph_step", 0),
     )
-    return {**prepare(state), "estimated_graph_steps": estimate}
+    return {**update, **prepare({**state, **update})}

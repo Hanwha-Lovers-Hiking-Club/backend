@@ -8,6 +8,7 @@ from app.domains.documents.pipeline.embedding_texts import EmbeddingTextOptions
 from app.domains.documents.pipeline.extraction import experience_id
 from app.domains.documents.pipeline.models import ExtractionResult
 from app.domains.documents.pipeline.processing import ProcessingOptions
+from app.domains.documents.pipeline.retry_scope import retry_chunks, retry_document_ids
 from app.domains.documents.pipeline.verification.models import RetryWork, VerificationResult
 from app.domains.documents.pipeline.verification.retry import TARGET_ORDER
 from app.domains.documents.pipeline.verification.structure_checker import issue
@@ -201,17 +202,12 @@ def next_step(state) -> Literal["prepare_retry", "finish"]:
 
 def prepare_retry(state):
     work, *queue = state["pending_retries"]
-    ids = {ref.document_id for ref in work.draft.source_extraction.evidence_index.values()}
+    ids = retry_document_ids(work)
     sources = [item for item in state["all_sources"] if item.document_id in ids]
     parsed = [item for item in state["all_parsed_documents"] if item.document_id in ids]
     docs = [item for item in state["all_documents"] if item.document_id in ids]
-    chunks = [item for item in state["all_chunks"] if item.document_id in ids]
+    chunks = retry_chunks(work, state["all_chunks"])
     target = work.request.target_node
-    if target == "extract":
-        refs = set(work.draft.source_extraction.evidence_index)
-        chunks = [
-            item for item in chunks if any(block.evidence_id in refs for block in item.blocks)
-        ]
     required = {
         "parse": sources,
         "normalize": parsed,
@@ -241,7 +237,11 @@ def prepare_retry(state):
         "retry_requests": [],
         "retry_feedback": [work.request],
     }
-    if not required:
+    blocked = any(
+        item.stage == "budget" and item.document_id in ids
+        for item in state.get("processing_failures", [])
+    )
+    if not required or blocked:
         update.update(
             retry_route="settle",
             drafts=[work.draft],
@@ -252,9 +252,11 @@ def prepare_retry(state):
                     issues=[
                         issue(
                             "retry",
-                            "RETRY_CONTEXT_MISSING",
+                            "RETRY_BUDGET_EXCEEDED" if blocked else "RETRY_CONTEXT_MISSING",
                             target,
-                            "Required input for the requested node is missing",
+                            "Document excluded by execution budget"
+                            if blocked
+                            else "Required input for the requested node is missing",
                             disposition="needs_review",
                             action="Restore the source input before retrying",
                         )

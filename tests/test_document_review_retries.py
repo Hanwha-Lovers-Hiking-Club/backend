@@ -202,23 +202,23 @@ def test_embedding_service_retries_only_failed_batch_and_respects_retry_after(
     assert len(result["embedding_usage"]) == 2 and len(result["embeddings"]) == 1
 
 
-def test_graph_budget_rejects_oversized_work_before_model_calls(tmp_path):
+def test_graph_budget_accepts_formerly_rejected_sixty_chunks(tmp_path):
     model = Model()
     item = source(
         tmp_path, 1, "\n\n".join(f"Independent development experience {i}." for i in range(60))
     )
-    with pytest.raises(JobTooLargeError, match="JOB_TOO_LARGE") as error:
-        asyncio.run(graph(model).ainvoke(inputs([item])))
-    assert error.value.estimated_steps >= GRAPH_RECURSION_LIMIT
-    assert not model.calls
+    state = asyncio.run(graph(model).ainvoke(inputs([item])))
+    assert len(model.calls) == 60
+    assert not state["processing_failures"]
+    assert state["estimated_graph_steps"] < GRAPH_RECURSION_LIMIT
 
 
 def test_graph_budget_respects_smaller_invocation_limit(tmp_path):
     model = Model()
     item = source(tmp_path, 1, "One complete experience.")
-    with pytest.raises(JobTooLargeError) as error:
-        asyncio.run(graph(model).ainvoke(inputs([item]), {"recursion_limit": 60}))
-    assert error.value.limit == 60 and not model.calls
+    state = asyncio.run(graph(model).ainvoke(inputs([item]), {"recursion_limit": 30}))
+    assert state["document_progress"][str(UUID(int=1))].status == "failed"
+    assert state["processing_failures"][0].code == "JOB_TOO_LARGE" and not model.calls
 
 
 def test_exhausted_embedding_retry_does_not_repeat_successful_batch(tmp_path):

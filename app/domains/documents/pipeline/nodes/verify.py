@@ -9,9 +9,12 @@ from app.domains.documents.pipeline.verification.models import VerificationOptio
 def make_verify_node(
     *, options: VerificationOptions | None = None, generator: StructuredGenerator | None = None
 ):
-    async def node(state: IngestionState) -> dict:
-        return await verify_state(state, options=options, generator=generator)
+    configured = VerificationOptions.model_validate((options or VerificationOptions()).model_dump())
 
+    async def node(state: IngestionState) -> dict:
+        return await verify_state(state, options=configured, generator=generator)
+
+    node.gate_retry_budget = configured.max_retries
     return node
 
 
@@ -21,7 +24,7 @@ async def verify(state: IngestionState) -> dict:
     options = VerificationOptions(
         rules_enabled=settings.VERIFY_RULES_ENABLED,
         llm_enabled=settings.VERIFY_LLM_ENABLED,
-        max_retries=settings.VERIFY_MAX_RETRIES,
+        max_retries=state.get("gate_retry_budget", settings.VERIFY_MAX_RETRIES),
         max_input_chars=settings.DOCUMENT_LLM_MAX_INPUT_CHARS,
     )
     generator = ConfiguredGenerator("verify") if options.llm_enabled else None

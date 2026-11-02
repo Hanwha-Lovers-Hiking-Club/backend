@@ -83,6 +83,7 @@ def make_chunk_worker(node):
             update = await node({**state, "chunks": [chunk]})
             record.result = ExtractionResult.model_validate(update["extraction_result"])
             record.status, record.error_code = "succeeded", None
+            record.retry_delay_seconds = 0
             failures = [
                 item
                 for item in failures
@@ -109,6 +110,7 @@ def make_chunk_worker(node):
             )
             if delay is None or record.attempts >= options.max_chunk_attempts:
                 record.status = "failed"
+                record.retry_delay_seconds = 0
                 failures.append(
                     ProcessingFailure(
                         document_id=record.document_id,

@@ -469,3 +469,27 @@ def test_fake_or_partial_save_response_cannot_trigger_cleanup(tmp_path):
     state = asyncio.run(graph(Model(), saver=uncommitted).ainvoke(inputs([item])))
     assert state["document_progress"][str(UUID(int=1))].status == "incomplete"
     assert state["chunk_progress"] and state["drafts"]
+
+
+@pytest.mark.parametrize(
+    "failures,expected_status,waits",
+    [
+        (1, "succeeded", [1]),
+        (99, "failed", [1, 2]),
+    ],
+)
+def test_terminal_chunk_record_clears_pending_delay(
+    tmp_path, monkeypatch, failures, expected_status, waits
+):
+    observed = []
+
+    async def sleep(delay):
+        observed.append(delay)
+
+    monkeypatch.setattr("app.domains.documents.pipeline.chunk_execution.asyncio.sleep", sleep)
+    data = inputs([source(tmp_path, 1, "FAIL a development experience.")])
+    data["processing_options"]["retry_delay_seconds"] = 1
+    state = asyncio.run(graph(Model(failures=failures)).ainvoke(data))
+    record = next(iter(state["chunk_progress"].values()))
+    assert record.status == expected_status and record.retry_delay_seconds == 0
+    assert observed == waits

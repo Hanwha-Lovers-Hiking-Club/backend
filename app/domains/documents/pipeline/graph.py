@@ -7,7 +7,7 @@ from app.domains.documents.pipeline.chunk_execution import make_chunk_worker, ne
 from app.domains.documents.pipeline.document_lifecycle import make_document_embedder, next_document
 from app.domains.documents.pipeline.draft_execution import make_draft_worker
 from app.domains.documents.pipeline.execution import next_step, retry_target
-from app.domains.documents.pipeline.execution_budget import GRAPH_RECURSION_LIMIT
+from app.domains.documents.pipeline.execution_budget import GRAPH_RECURSION_LIMIT, MAX_GATE_RETRIES
 from app.domains.documents.pipeline.nodes.build_embedding_texts import build_embedding_texts
 from app.domains.documents.pipeline.nodes.chunk import chunk
 from app.domains.documents.pipeline.nodes.complete_document import complete_document
@@ -15,7 +15,7 @@ from app.domains.documents.pipeline.nodes.draft_card import draft_card
 from app.domains.documents.pipeline.nodes.embed import embed
 from app.domains.documents.pipeline.nodes.extract import extract
 from app.domains.documents.pipeline.nodes.finish import finish
-from app.domains.documents.pipeline.nodes.initialize import initialize
+from app.domains.documents.pipeline.nodes.initialize import initialize, make_initialize_node
 from app.domains.documents.pipeline.nodes.merge_extraction import merge_extraction
 from app.domains.documents.pipeline.nodes.normalize import normalize
 from app.domains.documents.pipeline.nodes.parse import parse
@@ -41,7 +41,12 @@ def build_graph(
 ):
     builder = StateGraph(IngestionState, input_schema=IngestionInput)
     for name, node in {
-        "initialize": initialize_node,
+        "initialize": make_initialize_node(
+            initialize_node,
+            None
+            if verify_node is verify
+            else getattr(verify_node, "gate_retry_budget", MAX_GATE_RETRIES),
+        ),
         "parse": parse,
         "normalize": normalize,
         "chunk": chunk,

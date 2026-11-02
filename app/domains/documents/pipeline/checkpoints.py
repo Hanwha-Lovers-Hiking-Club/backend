@@ -1,12 +1,33 @@
 # 제품 문서 작업의 SQLite 체크포인트를 관리하고 보류 카드·근거를 실행 종료 후에도 보존한다.
 
 import asyncio
+import sqlite3
+import time
 from contextlib import asynccontextmanager
 
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.domains.documents.pipeline.document_lifecycle import release_completed_checkpoints
 from app.domains.documents.pipeline.state import IngestionState
+
+
+async def setup_checkpointer(saver):
+    # 동시 첫 연결의 journal_mode=WAL 전환은 busy_timeout을 기다리지 않고 실패할 수 있다.
+    started = time.monotonic()
+    for attempt in range(5):
+        try:
+            await saver.setup()
+            return
+        except sqlite3.OperationalError as exc:
+            code = getattr(exc, "sqlite_errorcode", 0) & 0xFF
+            if (
+                code not in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
+                or attempt == 4
+                or time.monotonic() - started >= 30
+            ):
+                raise
+            await saver.conn.rollback()
+            await asyncio.sleep(min(0.05 * 2**attempt, 0.5))
 
 
 @asynccontextmanager
@@ -16,7 +37,8 @@ async def job_checkpointer():
     path = settings.DOCUMENT_CHECKPOINT_PATH.resolve()
     await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
     async with AsyncSqliteSaver.from_conn_string(str(path)) as saver:
-        await saver.setup()
+        await saver.conn.execute("PRAGMA busy_timeout = 30000")
+        await setup_checkpointer(saver)
         yield saver
 
 
