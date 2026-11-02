@@ -57,3 +57,15 @@ def test_prompt_and_chunks_are_separate_messages(monkeypatch):
 def test_no_chunks_skips_llm(monkeypatch):
     monkeypatch.setattr(E, "get_llm", lambda: (_ for _ in ()).throw(AssertionError("LLM 호출됨")))
     assert E.extract({"chunks": []}) == {"extracted_elements": []}
+
+
+def test_re_extract_one_gives_feedback_and_picks_the_closest_experience():
+    fake = _FakeLLM([_element(["d:1"]), _element(["d:0", "d:1"]), _element(["nope"])])
+    result = E.re_extract_one(CHUNKS, "outcome: 근거 없음", ["d:0", "d:1"], fake)
+    assert result.source_chunk_ids == ["d:0", "d:1"]  # 원래 경험과 가장 많이 겹치는 것
+    system, human = fake.messages
+    assert "재추출 안내" in system.content and "outcome: 근거 없음" in human.content
+
+
+def test_re_extract_one_returns_none_when_nothing_usable():
+    assert E.re_extract_one(CHUNKS, "x", ["d:0"], _FakeLLM([_element(["nope"])])) is None

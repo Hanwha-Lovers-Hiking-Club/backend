@@ -4,14 +4,12 @@
 # embed_chunks/save_chunks(청크 검색 인덱싱)는 카드 저장 뒤에 붙고,
 # 실패해도 error가 아니라 warnings만 남긴다.
 #
-# ponytail: verify에서 rewrite 판정이 나와도 draft_card로 돌아가는 재시도 루프는 안 만든다.
-# rewrite는 지금 discard와 동일하게 "저장 안 함"으로 취급한다(embed/save가 verdict == "pass"만
-# 거르므로 자연히 그렇게 됨). 이유: 통과한 카드까지 같이 재생성되는 문제, 리스트 길이가 안 맞을 수
-# 있는 문제(draft_card가 source_chunk_ids 못 찾으면 skip) 때문에 "rewrite 난 것만 선택적으로
-# 재시도"하려면 state 구조를 더 바꿔야 해서, 지금은 범위 밖으로 미룬다(카드 품질 사후관리는
-# CLAUDE.md 기준 MVP 이후 범위). 업그레이드 경로: CardDraft에 원본 ExtractedElements 역추적용
-# 필드를 추가하고, card_drafts/verified_cards를 라운드마다 누적하는 reducer로 바꾸고, graph에
-# draft_card로 돌아가는 조건부 엣지 + 재시도 횟수 제한을 추가한다.
+# rewrite 재시도: 그래프에 되돌아가는 엣지는 두지 않고 verify 노드 안에서 1회 처리한다
+# (nodes/verify.py의 _redo_rewrites). rewrite 카드의 소스 청크(CardDraft.source_chunk_ids)만 검증
+# 지적과 함께 extract로 다시 추출하고, 카드를 새로 만들어 다시 검증한다. 그래서 NODE_ORDER,
+# 진행 단계, state는 그대로다. 재시도 후에도 rewrite면 지금처럼 discard와 동일하게 "저장 안 함"이다
+# (embed/save가 verdict == "pass"만 거른다).
+# ponytail: 1회만, verify 노드 안. 그래프 조건부 엣지 + 라운드별 누적 reducer는 필요해지면 올린다.
 #
 # 에러 분기: 어느 노드든 state["error"]를 설정하면, 남은 노드를 건너뛰고 즉시 끝낸다.
 # 노드 안에서 처리하지 못한 예외는 _safe가 error로 바꿔준다.

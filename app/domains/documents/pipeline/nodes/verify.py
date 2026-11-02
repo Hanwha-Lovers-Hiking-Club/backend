@@ -8,8 +8,7 @@
 #
 # 코드로 구조적 필수 조건을 먼저 검사한다 — 결정론적이고 LLM보다 싸고 확실해서, 비싼 LLM 호출
 # 전에 먼저 거른다(extract의 토큰 안전장치와 같은 패턴). 통과한 초안만 LLM에게 맥락상 타당한지
-# 묻는다. rewrite일 때 draft_card로 돌아가는 재시도 루프는 이 노드의 일이 아니라 graph.py가
-# 처리한다.
+# 묻는다. rewrite 카드는 이 노드 안에서 1회 다시 만든다(_redo_rewrites).
 import logging
 import re
 from collections import Counter
@@ -22,6 +21,8 @@ from pydantic import BaseModel
 from app.core.logging import summarize_error
 from app.domains.documents.pipeline.llm import get_llm, invoke_with_retry
 from app.domains.documents.pipeline.models import CardDraft, VerificationResult, VerifiedCard
+from app.domains.documents.pipeline.nodes.draft_card import draft_one
+from app.domains.documents.pipeline.nodes.extract import re_extract_one
 from app.domains.documents.pipeline.stage import finish_stage
 from app.domains.documents.pipeline.state import IngestionState
 
@@ -258,44 +259,93 @@ def _log_verdicts(verified_cards: list[VerifiedCard]) -> None:
             )
 
 
+def _verify_one(draft: CardDraft, chunks: list, llm) -> tuple[VerifiedCard, bool]:
+    """카드 하나를 검증한다. (결과, LLM을 불렀는지)를 돌려준다. LLM 호출 실패는 예외로 던진다."""
+    structural_failure = _check_structural(draft)
+    if structural_failure:
+        verification = VerificationResult(verdict="discard", reason=structural_failure)
+        return VerifiedCard(draft=draft, verification=verification), False
+
+    # 지시문은 시스템 메시지, 카드 초안(원문 근거 포함)은 사용자 메시지로 분리해서
+    # 근거 속 문장이 지시문이나 판정과 섞이지 않게 한다
+    source = _source_text(draft, chunks)
+    ungrounded = _ungrounded_numbers(draft, source)
+    judgement = invoke_with_retry(
+        llm, [SystemMessage(_PROMPT), HumanMessage(_format_message(draft, chunks, ungrounded))]
+    )
+    return VerifiedCard(draft=draft, verification=_finalize(judgement, ungrounded, source)), True
+
+
+def _redo_rewrites(verified_cards: list[VerifiedCard], chunks: list, plain_llm, llm):
+    # rewrite 카드를 1회만 다시 만든다: 그 경험의 청크만 검증 지적과 함께 다시 추출하고, 카드를 새로
+    # 만들어 다시 검증한다. 통과하면 그 카드로 바꾸고, 아니면 원래 판정을 유지한다(실패해도 같다).
+    # 사실 필드(problem~outcome)는 draft_card가 extract 결과를 그대로 복사하므로, 카드 초안만 다시
+    # 쓰면 지적된 사실 필드가 안 고쳐진다 — 그래서 draft_card가 아니라 extract로 돌아간다.
+    # ponytail: 1회만. 오탐(원문에 있는데 근거 없음)은 다시 해도 같은 이유로 떨어진다
+    chunks_by_id = {c["id"]: c for c in chunks if "id" in c}
+    result: list[VerifiedCard] = []
+    tried = saved = 0
+    for v in verified_cards:
+        source_chunks = [
+            chunks_by_id[cid] for cid in v.draft.source_chunk_ids if cid in chunks_by_id
+        ]
+        if v.verification.verdict != "rewrite" or not source_chunks:
+            result.append(v)
+            continue
+        tried += 1
+        try:
+            element = re_extract_one(
+                source_chunks, v.verification.reason, v.draft.source_chunk_ids, plain_llm
+            )
+            if element is None:
+                result.append(v)
+                continue
+            draft, _, _ = draft_one(element, source_chunks, plain_llm)
+            redone, _ = _verify_one(draft, chunks, llm)
+        except Exception as e:
+            logger.warning("verify: 재시도 실패, 원래 판정 유지 %r: %s", v.draft.title, e)
+            result.append(v)
+            continue
+        if redone.verification.verdict == "pass":
+            saved += 1
+            # 어떤 지적이 어떻게 풀렸는지 남긴다(필드를 비워서 통과한 건 아닌지 볼 수 있게)
+            dropped = [
+                f for f in _CONDITIONAL_FIELDS if getattr(v.draft, f) and not getattr(draft, f)
+            ]
+            logger.info(
+                "verify: 재작성 통과 %r (비워진 필드 %s) 지적: %s",
+                redone.draft.title,
+                dropped or "없음",
+                v.verification.reason[:300],
+            )
+            result.append(redone)
+        else:
+            result.append(v)
+    if tried:
+        logger.info("verify: rewrite 재시도 %d건 중 %d건 통과", tried, saved)
+    return result
+
+
 def verify(state: IngestionState) -> dict:
-    llm = get_llm().with_structured_output(_Judgement)
+    plain_llm = get_llm()
+    llm = plain_llm.with_structured_output(_Judgement)
     chunks = state.get("chunks", [])
 
     verified_cards: list[VerifiedCard] = []
     failures: list[str] = []
     llm_verified = 0  # LLM 검증에 성공한 카드 수(구조 검사에서 탈락한 카드는 호출이 없어 제외)
     for draft in state["card_drafts"]:
-        structural_failure = _check_structural(draft)
-        if structural_failure:
-            verified_cards.append(
-                VerifiedCard(
-                    draft=draft,
-                    verification=VerificationResult(verdict="discard", reason=structural_failure),
-                )
-            )
-            continue
-
-        # 지시문은 시스템 메시지, 카드 초안(원문 근거 포함)은 사용자 메시지로 분리해서
-        # 근거 속 문장이 지시문이나 판정과 섞이지 않게 한다
-        source = _source_text(draft, chunks)
-        ungrounded = _ungrounded_numbers(draft, source)
         try:
-            judgement = invoke_with_retry(
-                llm,
-                [SystemMessage(_PROMPT), HumanMessage(_format_message(draft, chunks, ungrounded))],
-            )
+            verified, used_llm = _verify_one(draft, chunks, llm)
         except Exception as e:
             # 검증하지 못한 카드는 통과시키지 않고 건너뛴다(검증 안 된 카드가 저장되면 안 된다).
             # 나머지 카드는 계속 검증한다(stage.finish_stage 참고)
             logger.warning("verify: 카드 건너뜀 %r: %s", draft.title, summarize_error(e))
             failures.append(f"카드 검증 실패 '{draft.title}': {summarize_error(e)}")
             continue
+        llm_verified += used_llm
+        verified_cards.append(verified)
 
-        llm_verified += 1
-        verified_cards.append(
-            VerifiedCard(draft=draft, verification=_finalize(judgement, ungrounded, source))
-        )
-
+    verified_cards = _redo_rewrites(verified_cards, chunks, plain_llm, llm)
     _log_verdicts(verified_cards)
     return finish_stage(state, "verified_cards", verified_cards, failures, succeeded=llm_verified)

@@ -91,6 +91,9 @@ class CardDraft(BaseModel):
     project_date: date | None
     # 카드당 근거 1개 이상 (docs/schema.md 제약). DB가 아니라 draft_card가 여기서 보장한다
     evidences: list[CardEvidenceDraft]
+    # 이 카드를 만든 경험의 소스 청크 id(state.Chunk.id). verify가 rewrite 판정 카드를 그 청크만으로
+    # 다시 추출할 때 쓴다. 기본값이 있어서 이 필드를 모르는 코드와도 호환된다
+    source_chunk_ids: list[str] = []
 
 
 # verify 노드의 판정 결과 타입. VerifiedCard 안에 담겨서 쓰인다

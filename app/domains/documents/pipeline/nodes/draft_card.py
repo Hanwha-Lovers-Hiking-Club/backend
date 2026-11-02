@@ -104,10 +104,63 @@ def _label(element: ExtractedElements) -> str:
     return text.strip()[:40] or "내용 없음"
 
 
+def draft_one(
+    element: ExtractedElements, source_chunks: list[Chunk], plain_llm
+) -> tuple[CardDraft, int, bool]:
+    """경험 하나로 카드 초안을 만든다. (초안, excerpt 폴백 수, 근거 전체 폴백 여부)를 돌려준다.
+
+    카드 초안 LLM 호출이 실패하면 예외를 그대로 던진다(호출하는 쪽이 건너뛰기를 정한다).
+    draft_card 노드와, verify가 rewrite 카드를 다시 만들 때 함께 쓴다.
+    """
+    if element.outcome and element.outcome.strip():
+        # extract의 outcome은 예상·계획이 섞여 있을 수 있어서 확인된 결과만 남긴다
+        try:
+            outcome, expected = gate_outcome(plain_llm, source_chunks)
+        except Exception as e:
+            # 믿을 수 없는 outcome을 그대로 쓰느니 비운다
+            logger.warning("draft_card: outcome 검사 실패, 비움 (%s): %s", _label(element), e)
+            outcome, expected = None, []
+        element = element.model_copy(
+            update={
+                "outcome": outcome,
+                "rationale": append_expected(element.rationale, expected),
+            }
+        )
+
+    # 지시문은 시스템 메시지, 경험/원본 청크는 사용자 메시지로 분리해서
+    # 본문 속 문장이 지시문과 섞이지 않게 한다
+    user_message = (
+        f"## 경험\n\n{_experience_text(element)}\n\n## 원본 청크\n\n{format_chunks(source_chunks)}"
+    )
+    llm = plain_llm.with_structured_output(CardDraftContent)
+    content = invoke_with_retry(llm, [SystemMessage(_PROMPT), HumanMessage(user_message)])
+    evidences, fallbacks, used_all_chunks = _build_evidences(content, source_chunks)
+    draft = CardDraft(
+        title=content.title,
+        summary=content.summary,
+        context=content.context,
+        problem=element.problem,
+        cause=element.cause,
+        approach=element.approach,
+        rationale=element.rationale,
+        outcome=element.outcome,
+        lesson=content.lesson,
+        technologies=normalize_technologies(content.technologies),
+        keywords=content.keywords,
+        project_name=content.project_name,
+        department=content.department,
+        project_date=_parse_full_date(
+            content.project_date, "\n".join(c["text"] for c in source_chunks)
+        ),
+        evidences=evidences,
+        source_chunk_ids=[c["id"] for c in source_chunks],
+    )
+    return draft, fallbacks, used_all_chunks
+
+
 def draft_card(state: IngestionState) -> dict:
     chunks_by_id = {c["id"]: c for c in state["chunks"]}
     plain_llm = get_llm()
-    llm = plain_llm.with_structured_output(CardDraftContent)
 
     card_drafts: list[CardDraft] = []
     failures: list[str] = []
@@ -119,60 +172,16 @@ def draft_card(state: IngestionState) -> dict:
         if not source_chunks:
             continue  # source_chunk_ids가 전부 무효하면(흔치 않음) 이 경험은 건너뛴다
 
-        if element.outcome and element.outcome.strip():
-            # extract의 outcome은 예상·계획이 섞여 있을 수 있어서 확인된 결과만 남긴다
-            try:
-                outcome, expected = gate_outcome(plain_llm, source_chunks)
-            except Exception as e:
-                # 믿을 수 없는 outcome을 그대로 쓰느니 비운다
-                logger.warning("draft_card: outcome 검사 실패, 비움 (%s): %s", _label(element), e)
-                outcome, expected = None, []
-            element = element.model_copy(
-                update={
-                    "outcome": outcome,
-                    "rationale": append_expected(element.rationale, expected),
-                }
-            )
-
-        # 지시문은 시스템 메시지, 경험/원본 청크는 사용자 메시지로 분리해서
-        # 본문 속 문장이 지시문과 섞이지 않게 한다
-        user_message = (
-            f"## 경험\n\n{_experience_text(element)}\n\n"
-            f"## 원본 청크\n\n{format_chunks(source_chunks)}"
-        )
         try:
-            content = invoke_with_retry(llm, [SystemMessage(_PROMPT), HumanMessage(user_message)])
+            draft, fallbacks, used_all_chunks = draft_one(element, source_chunks, plain_llm)
         except Exception as e:
             # 경험 하나가 실패해도 나머지는 계속 처리한다(stage.finish_stage 참고)
             logger.warning("draft_card: 경험 건너뜀 (%s): %s", _label(element), summarize_error(e))
             failures.append(f"카드 초안 생성 실패 ({_label(element)}): {summarize_error(e)}")
             continue
-
-        evidences, fallbacks, used_all_chunks = _build_evidences(content, source_chunks)
         excerpt_fallbacks += fallbacks
         evidence_fallback_cards += used_all_chunks
-
-        card_drafts.append(
-            CardDraft(
-                title=content.title,
-                summary=content.summary,
-                context=content.context,
-                problem=element.problem,
-                cause=element.cause,
-                approach=element.approach,
-                rationale=element.rationale,
-                outcome=element.outcome,
-                lesson=content.lesson,
-                technologies=normalize_technologies(content.technologies),
-                keywords=content.keywords,
-                project_name=content.project_name,
-                department=content.department,
-                project_date=_parse_full_date(
-                    content.project_date, "\n".join(c["text"] for c in source_chunks)
-                ),
-                evidences=evidences,
-            )
-        )
+        card_drafts.append(draft)
 
     logger.info(
         "draft_card: 경험 %d개 -> 카드 %d개 (excerpt 폴백 %d건, 근거 전체 폴백 카드 %d개)",

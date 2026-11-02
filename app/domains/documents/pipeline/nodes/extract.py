@@ -16,7 +16,11 @@ from app.domains.documents.pipeline.state import Chunk, IngestionState
 
 logger = logging.getLogger(__name__)
 
-_PROMPT = (Path(__file__).parent.parent / "prompts" / "extract.md").read_text(encoding="utf-8")
+_PROMPTS = Path(__file__).parent.parent / "prompts"
+_PROMPT = (_PROMPTS / "extract.md").read_text(encoding="utf-8")
+_RETRY_PROMPT = _PROMPT + (_PROMPTS / "extract_retry.md").read_text(encoding="utf-8")
+# 검증 지적문이 아주 길어도 재추출 호출이 커지지 않게 자른다
+_MAX_FEEDBACK_CHARS = 2_000
 _tokenizer = tiktoken.get_encoding("cl100k_base")
 
 # ponytail: 보수적으로 잡은 임시값(gpt-4.1-mini 컨텍스트 윈도우 ~1.05M 토큰 대비 넉넉한 여유).
@@ -69,3 +73,23 @@ def extract(state: IngestionState) -> dict:
         len(result.elements),
     )
     return {"extracted_elements": elements}
+
+
+def re_extract_one(
+    source_chunks: list[Chunk], feedback: str, original_ids: list[str], plain_llm
+) -> ExtractedElements | None:
+    """verify가 rewrite로 판정한 경험 하나를, 그 경험의 청크만으로 다시 추출한다.
+
+    돌려주는 것은 원래 경험과 청크가 가장 많이 겹치는 경험 하나다. 쓸 만한 결과가 없으면 None.
+    호출이 실패하면 예외를 그대로 던진다(호출하는 쪽이 원래 판정을 유지한다).
+    """
+    message = (
+        f"{format_chunks(source_chunks)}\n\n## 이전 검증 지적\n{feedback[:_MAX_FEEDBACK_CHARS]}"
+    )
+    llm = plain_llm.with_structured_output(ExtractedElementsBatch)
+    result = invoke_with_retry(llm, [SystemMessage(_RETRY_PROMPT), HumanMessage(message)])
+    elements = _keep_valid_chunk_ids(result.elements, source_chunks)
+    if not elements:
+        return None
+    wanted = set(original_ids)
+    return max(elements, key=lambda e: len(wanted & set(e.source_chunk_ids)))
