@@ -84,6 +84,7 @@ def render(state: dict, summary: str) -> str:
         lines += [
             f"### {n}. [{r.verdict}] {d.title}",
             f"- context: {d.context}",
+            f"- rationale: {d.rationale}",
             f"- outcome: {d.outcome}",
             f"- project_date: {d.project_date}",
             f"- 검증 사유: {r.reason}",
