@@ -14,7 +14,7 @@
 | parse | 1차 튜닝 완료 | 인코딩, 다운로드 재시도 |
 | chunk | 1차 튜닝 완료 | 작은 섹션 병합, 표/코드블록 보호 |
 | extract | 1차 튜닝 완료 | 프롬프트(환각 억제), chunk id 검증 |
-| draft_card | 1차 튜닝 완료 | 프롬프트(환각 억제), 근거(excerpt) 처리, 날짜 환각 차단 |
+| draft_card | 1차 튜닝 완료 | 프롬프트(환각 억제), 근거(excerpt) 처리, 날짜 환각 차단, **outcome 상태 라벨 게이트(1.4)** |
 | verify | 1차 튜닝 완료 | 프롬프트(인젝션/환각 기준), reason 선행, 판정 로그 |
 | embed_chunks / save_chunks | 구현 완료 | 청크 검색 인덱싱 (1.6) |
 | embed (카드 4종) | 1차 튜닝 완료 | 벡터 검증, 재시도 정책 정리, 로그 |
@@ -149,6 +149,24 @@
 - 로그: 경험 N개 → 카드 M개, excerpt 청크 전체 폴백 건수, 근거 전체 폴백 카드 수.
 - 확인: `tests/test_draft_card.py`(가짜 LLM 6개) + 실제 gpt-4.1-mini 호출(장애 회고 1건, 인젝션 문장 포함):
   인젝션 무시, `lesson`/`context`에 지어낸 사실 없음 확인. **샘플 1건이라 품질/환각률 측정은 아님.**
+- **outcome 상태 라벨 게이트** (`outcome_gate.py`, `prompts/outcome_labels.md`, `outcome_write.md`): 실제 문서
+  (결정 문서/ADR)에서 "장점·예상·구현 후순위"를 `outcome`에 확정형으로 쓰는 문제(ADR 카드 19장 중 10장,
+  명백 4장)를 막는다. extract가 `outcome`을 채운 경험마다 (1) 소스 청크에서 결과·효과 문장을 인용과
+  함께 `confirmed/expected/planned/decision/unknown`으로 라벨링(LLM, 좁은 질문), (2) **코드가** 원문에 있는
+  인용만 믿고 `confirmed`만 골라 (3) 그 문장들로만 `outcome`을 다시 쓴다(없으면 `null`). `expected`/`planned`
+  인용은 버리지 않고 `rationale` 끝에 "문서가 기대한 효과: …"(최대 3개)로 붙인다. 게이트가 실패하면
+  `outcome`을 비운다. 경험당 LLM 호출 +2회(약 +40%), `extract` 출력이 `null`이면 게이트를 안 돈다.
+  - 효과(같은 ADR 22개 전후, 제가 원문과 대조): `outcome` 명백 왜곡 4→0, 경미 6→0. 계획서·트레이드오프·
+    트러블슈팅·사례 연구 28장에서 퇴보 없음.
+  - **실패한 시도(같은 길 다시 가지 않기)**: (a) extract/draft_card 프롬프트에 규칙 추가 → 무시됨, (b) extract
+    출력에 `expected_effects` 칸을 나눔 → 모델이 칸을 안 지키고, 계획서에서는 `outcome`이 비던 것이 전부
+    채워지는 퇴보. 둘 다 되돌렸다. 모델에게 부탁하는 것보다 **라벨만 달게 하고 코드가 거르는** 방식이 통했다.
+  - **알려진 한계**: ① 검증(verify)이 `rationale` 끝의 "문서가 기대한 효과" 줄을 원문에 없는 주장으로 보고
+    rewrite하는 경우가 있다(rewrite는 저장 안 됨 → 카드가 줄 수 있음. 다만 verify의 rewrite 수는 실행마다
+    흔들려 이 변경의 영향 크기는 확인 안 됨). ② 라벨이 실행마다 달라질 수 있다(같은 문장이 confirmed/
+    expected로). ③ `context` 왜곡은 이 게이트로 못 막고 체계적으로 재측정하지도 않았다. ④ `confirmed`에
+    원인 분석·발견 같은 "확인된 사실"이 섞여 `outcome`이 결과보다 분석이 되기도 한다(사실이라 왜곡은 아님).
+  - 시험 도구: `scripts/doc_test_labels.py`(라벨 눈으로 확인), `scripts/doc_test_dry.py`(`rationale`도 출력).
 
 **나중에** (실제 문서로 테스트한 뒤 결정)
 - excerpt 일치 판정: 지금은 정확한 부분문자열이어야 함. LLM이 줄바꿈/공백을 바꾸면 거의 매번 청크 전체
@@ -457,6 +475,7 @@
 
 ## 4. 알려진 이슈와 미결정 사항
 
+- **outcome 게이트의 한계**: 1.4 "알려진 한계" 참고(verify가 "기대한 효과" 줄을 오해, 라벨 변동, `context` 미측정).
 - ~~**낡은 테스트**~~(해결함, 미지원 확장자를 `.exe`로 바꿈): `tests/test_documents_upload.py::test_upload_rejects_unsupported_type`가 실패했었다. 원인은 코드가 아니라
   테스트다 — `sheet.xlsx`를 "지원하지 않는 형식"으로 기대하는데 xlsx는 이미 지원 형식이다. 미지원 확장자를 `.exe` 같은 것으로
   바꾸면 된다(아직 안 고침).
