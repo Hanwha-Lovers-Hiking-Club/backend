@@ -25,6 +25,7 @@ from app.domains.documents.pipeline.verification.models import (
     RetryRequest,
     RetryWork,
     VerificationResult,
+    VerificationTrace,
 )
 
 
@@ -67,6 +68,7 @@ class IngestionState(TypedDict, total=False):
     retry_requests: list[RetryRequest]
     retry_feedback: list[RetryRequest]
     verification_history: list[RetryRequest]
+    verification_traces: list[VerificationTrace]
     all_sources: list[DocumentSource]
     all_parsed_documents: list[ParsedDocument]
     all_documents: list[DocumentIR]

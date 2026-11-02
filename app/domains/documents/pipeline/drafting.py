@@ -23,9 +23,13 @@ def _skip_reason(source):
     if not any(getattr(source, name).status == "confirmed" for name in FACT_FIELDS[1:-1]):
         return "NO_EXPERIENCE_FACTS", "No confirmed problem-solving information"
     if source.lesson.status not in {"confirmed", "inferred"} and not (
-        source.approach.status == "confirmed" and source.outcome.status == "confirmed"
+        source.approach.status == "confirmed"
+        and (source.outcome.status == "confirmed" or source.rationale.status == "confirmed")
     ):
-        return "NO_SUPPORTED_LESSON", "Need a supported lesson or confirmed approach and outcome"
+        return (
+            "NO_SUPPORTED_LESSON",
+            "Need a supported lesson or confirmed approach with rationale or observed outcome",
+        )
     return None
 
 

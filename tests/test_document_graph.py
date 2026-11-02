@@ -125,8 +125,8 @@ def test_other_candidate_decisions_survive_scoped_repair(sources, second_decisio
 )
 def test_conditionally_requested_upstream_node_actually_executes(sources, kind, target):
     visited, result = invoke(graph_for(Model(fail_kind=kind)), sources[:1])
-    assert visited.count(target) == 2
-    assert len(result["verification_history"]) == 1
+    assert visited.count(target) == (1 if kind == "context_missing" else 2)
+    assert len(result["verification_history"]) == (0 if kind == "context_missing" else 1)
     assert result["verification_results"][0].decision == "needs_review"
     assert not result["verified_drafts"]
 

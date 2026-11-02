@@ -443,11 +443,14 @@ def test_literal_matching_does_not_detach_uncertainty_from_adjacent_text(state):
 
 
 @pytest.mark.parametrize(
-    "failure_kind,target", [("context_missing", "chunk"), ("source_unreadable", "parse")]
+    "failure_kind,target", [("context_missing", None), ("source_unreadable", "parse")]
 )
 def test_semantic_failure_kind_selects_the_repair_boundary(state, failure_kind, target):
     result = run(state, llm=True, model=Verifier("uncertain", failure_kind=failure_kind))
     assert result["verification_results"][0].retry_node == target
+    if failure_kind == "context_missing":
+        assert result["verification_results"][0].decision == "needs_review"
+        assert not result["retry_requests"]
 
 
 def test_same_experience_can_be_rewritten_then_pass_after_source_based_semantic_check(state):

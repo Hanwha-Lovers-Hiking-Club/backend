@@ -20,6 +20,8 @@ class VerificationOptions(GateModel):
     llm_enabled: bool = True
     max_retries: int = Field(default=2, ge=0, le=MAX_GATE_RETRIES)
     max_input_chars: int = Field(default=48000, gt=0)
+    # 추가 원문 문맥의 직렬화 문자 상한이다. 전체 요청 상한도 별도로 지킨다.
+    context_max_chars: int = Field(default=12000, ge=0)
 
 
 class VerificationIssue(GateModel):
@@ -79,13 +81,32 @@ class ClaimAssessment(GateModel):
     evidence_refs: list[EvidenceId] = Field(min_length=1)
     reason: NonBlankText
     failure_kind: Literal["claim", "context_missing", "source_unreadable"] | None = None
+    requires_document_scope: bool = Field(default=False, strict=True)
+    counter_evidence_refs: list[EvidenceId] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_support(self) -> Self:
-        if self.verdict == "supported" and self.failure_kind is not None:
+        if self.verdict == "supported" and (
+            self.failure_kind is not None or self.counter_evidence_refs
+        ):
             raise ValueError("supported claims cannot also report a failure")
         return self
 
 
 class SemanticReport(GateModel):
     assessments: list[ClaimAssessment]
+
+
+class VerificationTrace(GateModel):
+    """의미 검증의 성공 판정까지 보존한다. 원문 사본이나 클라이언트는 넣지 않는다."""
+
+    experience_id: NonBlankText
+    input_fingerprint: NonBlankText
+    supporting_evidence_ids: list[EvidenceId]
+    context_block_ids: list[NonBlankText]
+    document_coverage: dict[str, Literal["complete", "partial", "unavailable"]]
+    input_chars: int
+    input_sha256: NonBlankText
+    assessments: list[ClaimAssessment] = Field(default_factory=list)
+    report_valid: bool = False
+    error_code: str | None = None

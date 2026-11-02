@@ -5,6 +5,36 @@
 내용의 적용 범위는 pipeline 하위다.
 외부 파일 경로는 연결 상대를 설명하며, 수정 권한을 넓히지 않는다.
 
+## 2026-11-02 청크 범위와 문서 범위 주장 보완
+
+작은 ADR 진단에서 Extract가 청크에 없는 검증 결과를 문서 전체에도 없다고 confirmed로 썼고,
+Gate가 그 카드의 인용 근거만 본 상태에서 pass했다. 청킹이 단독 원인이라는 결론은 아직 가설이다.
+이번 수정은 청킹을 바꾸지 않고 추출/작성의 부재 주장과 승인 상태 규칙, Gate 문맥과 진단을 보완한다.
+
+- Accepted는 결정 상태이며 실행·검증 결과를 대신하지 않는다. 선택·이유는 보존한다.
+  outcome이 없어도 확인된 접근과 선택 이유로 교훈을 도출할 수 있어 ADR을 일괄 제외하지 않는다.
+- Gate의 review_context는 같은 문서의 추가 원문이며 원래 지지 근거와 구분한다.
+  전체 블록이 들어온 경우만 complete다. 기본 직렬화 문자 예산은 12000자이고 전체 입력 상한도 지킨다.
+- ClaimAssessment는 requires_document_scope와 counter_evidence_refs를 추가한다.
+  보충 문맥을 지지 근거에 넣는 응답과 존재하지 않는 반박 ID는 INVALID_VERIFIER_REPORT다.
+  문서 전체가 필요한 supported 판정인데 부분 범위만 있으면 DOCUMENT_SCOPE_NOT_VERIFIED로 보류한다.
+- context_missing은 실효성 있는 확장 없이 같은 청킹으로 돌리지 않고 needs_review로 남긴다.
+  source_unreadable과 실제 작성/추출 오류의 기존 제한적 재처리는 유지한다.
+- verification_traces는 Gate의 supported/unsupported 이유와 입력/문맥 범위 해시를 보존한다.
+  새 작업에서 초기화하고 재작성 중에는 누적한다. 사전 규칙 실패는 기존 issues에 남긴다.
+  클라이언트·비밀키·추가 원문 사본을 trace에 넣지 않는다. 제품 API/DB에 새 진단 필드를 추가하지 않는다.
+
+Token Glance ADR 0001과 release v0.1.1은 사용자 요청에 따라 수정 확인용 조정 자료로 사용한다.
+독립 평가의 holdout으로 쓰지 않는다. 실제 실행 기록은 `.local/pipeline-calibration-20261102/`에 둔다.
+구체적 선택과 대안은 design_decisions.md의 추가 표를 본다.
+회귀 테스트 419개와 Ruff 검사를 통과했다. 조정용 실제 실행은 ADR 5개 pass(후보 1개 생략,
+Draft 재처리 1회), release v0.1.1 7개 pass였다. 기존 문제 초안은 인용만/보충 문맥 두 조건에서
+모두 unsupported였고, 보충 문맥 조건은 반박 근거 ID를 별도 기록했다. 첫 실행의 잘못된 부재
+주장 후보는 새 실행에서 outcome=unknown으로 생략됐다. 승인 상태만으로 결과를 만들지 않되
+선택 이유가 있는 ADR은 outcome 없이 교훈을 작성했다. 모델 판정만으로 품질을 확정하지 않는다.
+새 부재 단정이 Draft에서 재발했으나 Gate가 잡아 재작성한 사례도 있어 생성 단계의 완전 해결은 아니다.
+문맥과 재작성 등으로 ADR 입력 토큰은 36728에서 55835로 늘었다. 이번 문서들은 독립 평가에서 제외한다.
+
 ## 2026-11-02 저장 서비스 경계 보완
 
 main의 create_card는 확인했으나 카드·근거 두 번의 DB 요청과 멱등성 부재로 직접 연결하지 않았다.

@@ -239,6 +239,28 @@ def test_lesson_can_be_derived_from_confirmed_approach_and_outcome(source_state)
     )
 
 
+def test_adr_with_choice_and_rationale_can_generate_lesson_without_observed_outcome(source_state):
+    reference = source_state["documents"][0].blocks[0].evidence_id
+    item = bound(
+        source_state,
+        lesson={},
+        outcome={},
+        rationale={
+            "value": "The selected approach permits explicit control.",
+            "status": "confirmed",
+            "evidence_refs": [reference],
+        },
+    )
+    result = asyncio.run(
+        make_draft_node(FakeGenerator(written()))(
+            {"extraction_result": ExtractionResult(experiences=[item])}
+        )
+    )
+    draft = result["drafts"][0]
+    assert draft.outcome is None and draft.lesson_status == "inferred"
+    assert draft.source_extraction.outcome.status == "unknown"
+
+
 def test_model_can_decline_a_draft_with_reason(source_state):
     result = asyncio.run(
         make_draft_node(FakeGenerator({"draft": None, "skip_reason": "Insufficient detail"}))(

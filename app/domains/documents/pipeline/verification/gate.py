@@ -9,7 +9,11 @@ from app.domains.documents.pipeline.processing import ProcessingOptions
 from app.domains.documents.pipeline.state import IngestionState
 from app.domains.documents.pipeline.verification.consistency_checker import check_consistency
 from app.domains.documents.pipeline.verification.evidence_checker import check_evidence
-from app.domains.documents.pipeline.verification.models import RetryRequest, VerificationOptions
+from app.domains.documents.pipeline.verification.models import (
+    RetryRequest,
+    VerificationOptions,
+    VerificationTrace,
+)
 from app.domains.documents.pipeline.verification.retry import decide, fingerprint
 from app.domains.documents.pipeline.verification.structure_checker import check_structure, issue
 
@@ -34,6 +38,10 @@ async def verify_state(
         for item in state.get("verification_history", [])
     ]
     results, admitted, review, requests = [], [], [], []
+    traces = [
+        VerificationTrace.model_validate(item.model_dump())
+        for item in state.get("verification_traces", [])
+    ]
     source_issues = []
     try:
         documents = [
@@ -105,7 +113,17 @@ async def verify_state(
             evidence_issues, records = check_evidence(draft, documents, extraction)
             issues.extend(evidence_issues)
             if not issues:
-                issues.extend(await check_consistency(draft, records, options, generator))
+                issues.extend(
+                    await check_consistency(
+                        draft,
+                        records,
+                        options,
+                        generator,
+                        documents=documents,
+                        traces=traces,
+                        input_fingerprint=input_key,
+                    )
+                )
         result, request = decide(key, issues, input_key, history, options)
         results.append(result)
         if request:
@@ -125,4 +143,5 @@ async def verify_state(
         "retry_requests": requests,
         "retry_feedback": requests,
         "verification_history": history,
+        "verification_traces": traces,
     }

@@ -73,6 +73,20 @@ uv run python scripts/start_langgraph.py
 
 ## 환경 설정
 
+### 의미 검증의 추가 문맥과 진단
+
+Gate는 원래 카드의 지지 근거와 별도로 같은 문서의 추가 블록을 review_context로 제공한다.
+VerificationOptions.context_max_chars의 기본은 12000자이며 전체 max_input_chars도 함께 지킨다.
+0은 인용만 제공하는 비교 조건이다. 큰 블록을 임의로 자르지 않으며 부분 문맥은 partial로 표시한다.
+반박 블록은 counter_evidence_refs이고 배정된 지지 evidence_refs를 대신하지 않는다.
+문서 전체를 확인해야 하는 판정은 complete 범위가 아니면 검토 대기다.
+
+State의 verification_traces에는 의미 판정별 이유, 검증 입력 해시·크기, 지지 ID와 문맥 블록 ID,
+전체/부분 범위, 응답 유효성과 오류 코드가 남는다. 사전 규칙 검사는 기존 verification_results.issues에
+남는다. 재작성 중에도 trace를 유지하며 모델이 supported를 반환한 이유를 진단할 때 사용한다.
+실제 원문·trace·노드 이벤트는 공개 저장소에 추가하지 않는다.
+context_missing은 같은 설정으로 재청킹해 유료 호출을 반복하지 않고 needs_review로 남긴다.
+
 설정은 `app/config.py`의 Settings가 읽는다. 비밀키는 Windows 사용자 환경변수로,
 일반 설정은 저장소 루트의 로컬 `.env`로 제공한다. 같은 이름이면 프로세스 환경변수가 `.env`보다 우선한다.
 `.env`는 Git에서 제외되며 새 clone에는 없으므로 직접 준비한다. 아래 예시의 프로젝트 URL은 실제 값으로 바꾼다.

@@ -49,6 +49,7 @@ def initialize(state):
         "active_retry": None,
         "retry_route": "settle",
         "verification_history": [],
+        "verification_traces": [],
         "retry_feedback": [],
         "retry_requests": [],
         "verification_results": [],
