@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.sse import EventSourceResponse
 
 from app.domains.documents import service
-from app.domains.documents.schemas import UploadResponse
+from app.domains.documents.schemas import DocumentUrlResponse, UploadResponse
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -38,3 +38,17 @@ async def upload_documents(
 async def job_events(job_id: UUID, _job: dict = Depends(service.get_job)):
     async for event in service.job_events(job_id):
         yield event
+
+
+@router.get(
+    "/{document_id}/url",
+    response_model=DocumentUrlResponse,
+    summary="원본 문서 열람 URL 발급",
+    description=(
+        "원본 파일의 서명 URL(expiresIn초 뒤 만료)을 반환한다. "
+        "pdf/txt는 브라우저에서 열리고, 나머지 형식은 원래 파일명으로 내려받아진다. "
+        "없는 문서 ID는 404."
+    ),
+)
+async def get_document_url(document_id: UUID):
+    return service.get_document_url(document_id)

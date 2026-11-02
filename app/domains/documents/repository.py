@@ -23,3 +23,23 @@ def insert_documents(rows: list[dict]) -> list[str]:
     # 넣은 순서대로 생성된 documents.id를 돌려준다
     result = supabase.table("documents").insert(rows).execute()
     return [row["id"] for row in result.data]
+
+
+def get_document(document_id: str) -> dict | None:
+    # 없는 id일 수 있어서 .single() 대신 리스트로 받아 직접 확인한다
+    result = (
+        supabase.table("documents")
+        .select("storage_path, original_filename")
+        .eq("id", document_id)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def create_signed_url(path: str, expires_in: int, download: str | None = None) -> str:
+    # download에 파일명을 주면 브라우저가 열지 않고 그 이름으로 내려받는다
+    options = {"download": download} if download else None
+    result = supabase.storage.from_(settings.SUPABASE_STORAGE_BUCKET).create_signed_url(
+        path, expires_in, options
+    )
+    return result["signedURL"]

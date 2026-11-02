@@ -28,3 +28,9 @@ class JobCompletedEvent(CamelModel):
 class JobFailedEvent(CamelModel):
     job_id: UUID
     message: str
+
+
+# 원본 문서 열람 URL 응답. url은 expires_in초 뒤 만료되는 Storage 서명 URL
+class DocumentUrlResponse(CamelModel):
+    url: str
+    expires_in: int
