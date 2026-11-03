@@ -88,7 +88,7 @@ def test_upload_returns_job(client, storage, started):
         "document_count": 3,
         "documents": documents,
         "active_step": 0,
-        "progress": 11,
+        "progress": service.STEP_PROGRESS[0],
     }
     # 그래프에 넘길 문서 정보와 함께 파이프라인 시작이 요청된다
     assert started == [(job_id, documents)]

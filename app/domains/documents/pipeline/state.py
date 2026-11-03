@@ -3,15 +3,13 @@
 #
 # 그래프는 job(업로드 요청) 1개당 1번 invoke한다. 문서 1건당 1번이 아닌 이유:
 # 문서 여러 개가 합쳐져 카드 1개가 되거나, 문서 1건에서 카드가 여러 개 나올 수 있어서(M:N)
-# extract/draft_card가 job에 속한 모든 문서의 청크를 한꺼번에 봐야 한다.
+# 카드를 만드는 단계가 job에 속한 모든 문서의 근거를 한꺼번에 봐야 한다.
 from typing import TypedDict
 from uuid import UUID
 
 from app.domains.documents.pipeline.models import (
-    CardDraft,
     EmbeddedCard,
     EmbeddedChunk,
-    ExtractedElements,
     VerifiedCard,
 )
 
@@ -32,7 +30,7 @@ class ParsedDocument(TypedDict):
 
 # chunk 노드의 출력 타입. state.IngestionState.chunks에 쌓인다
 class Chunk(TypedDict):
-    id: str  # f"{document_id}:{index}" 형태. extract 결과가 어떤 청크에서 왔는지 역추적용
+    id: str  # f"{document_id}:{index}" 형태. 카드 근거가 어떤 청크에서 왔는지 역추적용
     document_id: UUID
     index: int  # 문서 안에서의 순서(0부터). document_chunks.chunk_index로 저장된다
     text: str
@@ -49,8 +47,7 @@ class IngestionState(TypedDict):
     documents: list[DocumentInput]
     parsed_documents: list[ParsedDocument]
     chunks: list[Chunk]
-    extracted_elements: list[ExtractedElements]
-    card_drafts: list[CardDraft]
+    # 카드 생성 노드(재설계 중)의 출력. 그 노드가 들어오기 전까지는 state에 없다
     verified_cards: list[VerifiedCard]
     # verified_cards 중 verdict == "pass"만 꺼내 임베딩까지 붙인 카드. save 노드가 이것만 저장한다
     embedded_cards: list[EmbeddedCard]

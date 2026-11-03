@@ -61,7 +61,7 @@ def _run(job_id):
 
 
 def test_step_progress_matches_node_order():
-    assert len(service.STEP_PROGRESS) == len(G.NODE_ORDER) == 9
+    assert len(service.STEP_PROGRESS) == len(G.NODE_ORDER) == 6
     assert service.STEP_PROGRESS == sorted(set(service.STEP_PROGRESS))
     assert service.STEP_PROGRESS[-1] == 100
 
@@ -103,13 +103,13 @@ def test_warnings_are_kept_on_job(monkeypatch):
 
 def test_node_error_fails_job_and_skips_remaining_nodes(monkeypatch):
     job_id = _new_job()
-    seen = _patch_nodes(monkeypatch, job_id, {"extract": {"error": "요소 추출 실패: boom"}})
+    seen = _patch_nodes(monkeypatch, job_id, {"embed": {"error": "임베딩 실패: boom"}})
 
     job = _run(job_id)
 
-    assert [name for name, *_ in seen] == ["parse", "chunk", "extract"]
+    assert [name for name, *_ in seen] == ["parse", "chunk", "embed"]
     assert job["status"] == "failed"
-    assert job["message"] == "요소 추출 실패: boom"
+    assert job["message"] == "임베딩 실패: boom"
 
 
 def test_node_exception_fails_job_with_short_message(monkeypatch):
@@ -119,12 +119,12 @@ def test_node_exception_fails_job_with_short_message(monkeypatch):
         raise ValueError("문서 내용 " * 200)
 
     _patch_nodes(monkeypatch, job_id)
-    G._NODES["verify"] = boom
+    G._NODES["embed"] = boom
 
     job = _run(job_id)
 
     assert job["status"] == "failed"
-    assert job["message"].startswith("verify 단계에서 예기치 못한 오류")
+    assert job["message"].startswith("embed 단계에서 예기치 못한 오류")
     assert len(job["message"]) < 300
 
 

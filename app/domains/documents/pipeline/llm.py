@@ -12,7 +12,7 @@ from app.domains.documents.pipeline.retry import retry_sync
 
 MODEL_NAME = "gpt-4.1-mini"
 # 한 호출이 멈춘 채 응답이 없으면 job 전체가 멈춘다. SDK 기본값(10분)은 너무 길어서 줄인다.
-# ponytail: SDK가 타임아웃도 2회 재시도하므로 한 호출의 최악은 이 값의 3배. 입력이 아주 큰 extract가
+# ponytail: SDK가 타임아웃도 2회 재시도하므로 한 호출의 최악은 이 값의 3배. 입력이 큰 호출이
 # 이 값을 넘기면 늘린다
 LLM_TIMEOUT_SECONDS = 120
 

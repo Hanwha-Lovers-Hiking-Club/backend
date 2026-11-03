@@ -1,4 +1,4 @@
-# 노드: verify를 통과한 카드만 kure-v3로 4종 임베딩(전체/상황/해결/교훈)을 만든다.
+# 노드: 검증을 통과한(verdict == "pass") 카드만 kure-v3로 4종 임베딩(전체/상황/해결/교훈)을 만든다.
 #
 # 카드 1개당 kure 호출은 1번만 한다 — 4개 텍스트가 서로 다른 추론이 필요한 게 아니라 독립적인
 # 문자열일 뿐이라, kure의 배치 입력(input=list)으로 왕복을 줄인다. 빈 필드(None)는 조합 텍스트에서
@@ -55,7 +55,8 @@ def _build_texts(draft: CardDraft) -> list[str]:
 def embed(state: IngestionState) -> dict:
     embedded_cards: list[EmbeddedCard] = []
     failures: list[str] = []
-    for verified in state["verified_cards"]:
+    # 카드 생성 노드(재설계 중)가 들어오기 전까지 verified_cards는 state에 없다
+    for verified in state.get("verified_cards", []):
         if verified.verification.verdict != "pass":
             continue
 
