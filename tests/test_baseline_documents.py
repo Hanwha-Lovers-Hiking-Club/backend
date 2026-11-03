@@ -1,10 +1,11 @@
-# 기본 RAG 문서 인덱싱 파이프라인 테스트 (청크 분할, 문맥 보강, 임베딩, 저장, 그래프 연결).
+# 기본 RAG 문서 인덱싱 테스트 (청크 분할, 문맥 보강, 임베딩, 저장, 그래프 연결, 엔드포인트).
 # 실제 OpenAI, KURE, Supabase는 호출하지 않고 가짜 함수로 바꾼다.
 import asyncio
 from uuid import uuid4
 
 from langchain_core.messages import AIMessage
 
+from app.domains.baseline_documents import service as service_module
 from app.domains.baseline_documents.pipeline.graph import build_graph
 from app.domains.baseline_documents.pipeline.nodes import contextualize as contextualize_module
 from app.domains.baseline_documents.pipeline.nodes import embed as embed_module
@@ -264,3 +265,99 @@ def test_graph_runs_all_nodes(monkeypatch):
     assert not result.get("error")
     assert result["chunk_counts"] == {str(document_id): 1}
     assert saved[0]["search_text"].startswith("결제 회고 · 장애 대응\n")
+
+
+# ---------------------------------------------------------------
+# 인덱싱 엔드포인트 (POST /api/baseline/documents/index)
+# ---------------------------------------------------------------
+
+INDEX_URL = "/api/baseline/documents/index"
+
+
+class _FakeGraph:
+    def __init__(self, result: dict):
+        self.result = result
+        self.inputs: list[dict] = []
+
+    async def ainvoke(self, state):
+        self.inputs.append(state)
+        return self.result
+
+
+def _document_row(document_id) -> dict:
+    return {
+        "id": str(document_id),
+        "title": "문서",
+        "storage_path": f"job/{document_id}.txt",
+        "original_filename": "file.txt",
+    }
+
+
+def _patch_index(monkeypatch, rows: list[dict], graph: _FakeGraph) -> None:
+    monkeypatch.setattr(service_module.repository, "get_documents", lambda ids: rows)
+    monkeypatch.setattr(service_module, "get_graph", lambda: graph)
+
+
+def test_index_returns_chunk_counts_in_request_order(client, monkeypatch):
+    first, second = uuid4(), uuid4()
+    graph = _FakeGraph({"chunk_counts": {str(first): 3, str(second): 0}})
+    # DB는 요청과 다른 순서로 돌려줄 수 있다
+    _patch_index(monkeypatch, [_document_row(second), _document_row(first)], graph)
+
+    response = client.post(INDEX_URL, json={"documentIds": [str(first), str(second)]})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [
+            {"documentId": str(first), "chunkCount": 3},
+            {"documentId": str(second), "chunkCount": 0},
+        ]
+    }
+    assert [d["title"] for d in graph.inputs[0]["documents"]] == ["문서", "문서"]
+
+
+def test_index_processes_duplicate_ids_once(client, monkeypatch):
+    document_id = uuid4()
+    graph = _FakeGraph({"chunk_counts": {str(document_id): 1}})
+    _patch_index(monkeypatch, [_document_row(document_id)], graph)
+
+    response = client.post(INDEX_URL, json={"documentIds": [str(document_id)] * 2})
+
+    assert response.status_code == 200
+    assert len(graph.inputs[0]["documents"]) == 1
+    assert len(response.json()["items"]) == 1
+
+
+def test_index_missing_document_returns_404_without_running_graph(client, monkeypatch):
+    existing, missing = uuid4(), uuid4()
+    graph = _FakeGraph({"chunk_counts": {}})
+    _patch_index(monkeypatch, [_document_row(existing)], graph)
+
+    response = client.post(INDEX_URL, json={"documentIds": [str(existing), str(missing)]})
+
+    assert response.status_code == 404
+    assert str(missing) in response.json()["detail"]
+    assert graph.inputs == []
+
+
+def test_index_graph_error_returns_500(client, monkeypatch):
+    document_id = uuid4()
+    graph = _FakeGraph({"error": "'file.txt' 파싱 실패: not found"})
+    _patch_index(monkeypatch, [_document_row(document_id)], graph)
+
+    response = client.post(INDEX_URL, json={"documentIds": [str(document_id)]})
+
+    assert response.status_code == 500
+    assert "파싱 실패" in response.json()["detail"]
+
+
+def test_index_empty_list_returns_422(client):
+    response = client.post(INDEX_URL, json={"documentIds": []})
+
+    assert response.status_code == 422
+
+
+def test_index_route_is_registered(client):
+    paths = client.get("/openapi.json").json()["paths"]
+
+    assert INDEX_URL in paths
