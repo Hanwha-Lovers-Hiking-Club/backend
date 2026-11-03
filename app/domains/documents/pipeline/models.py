@@ -119,6 +119,7 @@ ClaimJudgement = Literal[
     "condition_dropped",
     "overstated",
     "not_a_result",
+    "result_unconfirmed",
     "rejected_as_adopted",
     "not_in_evidence",
     "lesson_within_scope",
@@ -141,7 +142,8 @@ class ClaimChecks(BaseModel):
 
 # 카드 검증 결과. 검증 판정(verdict)과 공개 상태(status)는 따로 기록한다
 # (결과 없는 결정 카드는 내용이 정확하면 passed지만 공개 정책상 draft다).
-#   passed: 모든 주장이 근거로 지지됨(문제 있던 조건부·선택 필드는 비운 뒤)
+#   passed: 모든 주장이 근거로 지지됨(문제 있던 조건부·선택 필드는 비운 뒤). outcome이 결과 미확정
+#           (result_unconfirmed)이면 내용은 맞으므로 passed지만 공개 상태는 draft다
 #   held: 필수 필드(title/summary/context/lesson)에 근거를 벗어난 주장이 있음 -> 사람 검토
 #   excluded: 문제 필드를 비우고 나니 카드 구조 조건이 깨짐 -> 저장 안 함
 #   incomplete: 호출 실패, 응답 파싱 실패, 값이 있는 필드의 판정 누락 -> 저장 안 함

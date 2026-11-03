@@ -227,3 +227,15 @@ def test_all_cards_incomplete_fails_the_job(monkeypatch):
 def test_no_drafts_skips_the_llm(monkeypatch):
     monkeypatch.setattr(V, "get_llm", lambda: (_ for _ in ()).throw(AssertionError("호출 금지")))
     assert V.verify(_state()) == {"verified_cards": []}
+
+
+def test_unconfirmed_result_keeps_the_outcome_but_is_published_as_draft(monkeypatch):
+    # 원문이 효과 판단을 보류한 관찰은 사실이라 outcome을 남기지만 공개(active)하지 않는다
+    draft = _draft()
+    result, _ = _run(
+        monkeypatch, {draft.title: _checks(draft, outcome="result_unconfirmed")}, draft
+    )
+    card = result["verified_cards"][0]
+    assert (card.verification.verdict, card.verification.status) == ("passed", "draft")
+    assert card.draft.outcome and card.verification.cleared_fields == []
+    assert "결과 미확정" in card.verification.reasons[0]

@@ -14,7 +14,8 @@
 #   조건부·선택 필드에 문제 -> 그 필드를 비운다. 비운 뒤 조건부 필드가 모두 비면 excluded
 #   필수 필드에 문제 -> held(자동 재작성 없이 사람 검토. 오탐이면 다시 써도 같은 이유로 떨어진다)
 #   호출 실패·판정 누락 -> incomplete(저장 안 함, job 경고)
-# 공개 상태: passed이고 outcome이 있으면 active, 결과 없는 passed와 held는 draft.
+# 공개 상태: passed이고 효과가 확인된 outcome이 있으면 active. 결과 없는 passed, 결과 미확정
+# (원문이 효과 판단을 보류한 관찰)인 passed, held는 draft.
 import contextvars
 import logging
 import re
@@ -48,6 +49,9 @@ _CONDITIONAL = ("problem", "cause", "approach", "rationale", "outcome")
 _OPTIONAL = ("technologies", "project_name", "department", "project_date")
 _FIELDS = (*_REQUIRED[:3], *_CONDITIONAL, "lesson", *_OPTIONAL)
 _OK = {"supported", "lesson_within_scope"}
+# 내용 오류는 아니지만 공개하지 않을 판정: 원문이 효과 판단을 보류한 결과(outcome을 남기고 draft로
+# 둔다)
+_UNCONFIRMED = "result_unconfirmed"
 _NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 
@@ -160,7 +164,8 @@ def _decide(draft: CardDraft, checks: list[ClaimCheck]) -> VerifiedCard:
         )
         return VerifiedCard(draft=draft, verification=result)
 
-    problems = [c for c in checks if c.field in present and c.judgement not in _OK]
+    problems = [c for c in checks if c.field in present and c.judgement not in _OK | {_UNCONFIRMED}]
+    unconfirmed = [c for c in checks if c.field == "outcome" and c.judgement == _UNCONFIRMED]
     reasons = [f"{c.field}: {c.judgement} — {c.claim} ({c.note})" for c in problems]
     cleared = list(dict.fromkeys(c.field for c in problems if c.field not in _REQUIRED))
     held = any(c.field in _REQUIRED for c in problems)
@@ -172,9 +177,12 @@ def _decide(draft: CardDraft, checks: list[ClaimCheck]) -> VerifiedCard:
     elif held:
         verdict, status = "held", "draft"
     else:
-        verdict, status = "passed", "active" if pruned.outcome else "draft"
+        confirmed = pruned.outcome and not unconfirmed
+        verdict, status = "passed", "active" if confirmed else "draft"
         if not pruned.outcome:
             reasons.append("결과(outcome) 없음: 내용은 통과, 공개 정책상 draft")
+        elif unconfirmed:
+            reasons.append(f"결과 미확정: {unconfirmed[0].note} — 내용은 통과, 공개 정책상 draft")
     result = VerificationResult(
         verdict=verdict, reasons=reasons, cleared_fields=cleared, status=status
     )
