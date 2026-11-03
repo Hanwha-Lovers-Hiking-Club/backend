@@ -14,5 +14,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str
     KURE_API_KEY: str
 
+    # 기본 RAG(baseline_chat) 재순위 모델 API 키. 없으면 재순위 없이 RRF 순위를 그대로 쓴다
+    RERANK_API_KEY: str | None = None
+
 
 settings = Settings()
