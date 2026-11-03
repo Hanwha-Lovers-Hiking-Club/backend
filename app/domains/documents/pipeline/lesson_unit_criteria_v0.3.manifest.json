@@ -1,0 +1,40 @@
+{
+  "version": "0.3",
+  "parent_version": "0.2",
+  "created_at": "2026-11-03T02:01:27.645773+00:00",
+  "reference_code_commit": "952b64a0b63cb581d86a3185e71a79aac5843619",
+  "status": "evaluation_method_draft_pending_real_document_pilot",
+  "writer": "separate Codex task lesson_matching_method, no conversation history inherited",
+  "method_inputs": "Requirements and methodological gaps only, including follow-up logical consistency checks; see lesson_evaluation_method_brief.md.",
+  "not_provided": [
+    "source documents",
+    "generated cards",
+    "experiment reports",
+    "measurements",
+    "implementation"
+  ],
+  "integration": "Result-exposed root integrated the method into v0.3 and added the matched-card-with-extra-lesson application clarification. Whole v0.3 is not claimed output-blind.",
+  "provenance_limit": "Brief constraints were selected by a result-exposed root; no fully independent policy origin or third-party validation claimed.",
+  "change_reasons": [
+    "valid cards absent from initial reference must not automatically be false positives",
+    "explicit card-to-lesson mappings, metrics and uncertainty handling",
+    "inter-rater pilot and synthetic examples"
+  ],
+  "policy_changes": "None to the user decisions and sections 1-7 from v0.2.",
+  "pilot_status": "not_run; document selection and two independent labelers pending",
+  "not_changed": [
+    "pipeline code",
+    "prompts",
+    "environment",
+    "reference labels",
+    "evaluation implementation",
+    "publication logic"
+  ],
+  "hash_encoding": "SHA256 of UTF-8 text with LF line endings, including terminal newline",
+  "sha256": {
+    "lesson_unit_criteria_v0.3.md": "cba0ac13954b346de62935f2d3d0b924c214cdf6eb44f620af95df4d8a1d9c18",
+    "lesson_evaluation_protocol_v0.1.md": "6ab6b1f274a073ccc0f2c3ba76d9aa604e3534b28e76be7656bbf13a7652b1af",
+    "lesson_evaluation_method_brief.md": "e623a1dfbdd7ce41964e2a64dbfcd019194915785baaa34d007ed8d7e2ae6cbf"
+  },
+  "parent_manifest_sha256": "6bf3c43b7992ab43cef9a2b115fedd679e4f0f7c5a472e74e380c310284246b6"
+}
