@@ -1,1 +1,2 @@
-# 노드: 질문을 KURE-v3로 임베딩(input_type=query)하고, 유사한 청크 top-k를 찾는다.
+# 노드: 질문마다 벡터 검색(KURE-v3, input_type=query)과 BM25 키워드 검색을 실행하고,
+# 결과 목록들을 RRF(k=60)로 합쳐 상위 20개를 고른다.

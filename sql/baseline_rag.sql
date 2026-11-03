@@ -1,2 +1,2 @@
--- 기본 RAG(비교 기준선) 전용 SQL. main에 머지하지 않는다.
--- baseline_chunks 테이블과 match_baseline_chunks 검색 함수를 정의한다.
+-- 기본 RAG(지식카드 효과 검증용) 전용 SQL. main에 머지하지 않는다.
+-- baseline_chunks 테이블(본문, 검색용 텍스트, 임베딩)과 match_baseline_chunks 벡터 검색 함수를 정의한다.
