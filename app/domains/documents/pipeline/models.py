@@ -49,9 +49,46 @@ class CardEvidenceDraft(BaseModel):
     document_id: UUID
     location: str | None
     excerpt: str | None
+    # 검증 노드가 원문(표의 조건 등)을 다시 보려고 쓰는 값. DB에는 저장하지 않는다.
+    # kind는 extract의 근거 종류이고, 문서 머리말에서 온 근거(프로젝트명 등)는 None이다
+    chunk_id: str | None = None
+    kind: str | None = None
 
 
-# 카드 초안. 카드 생성 노드(재설계 중)가 만든다
+# draft_card 노드의 LLM 구조화 출력 타입들. 필드마다 근거 id(E1, H1 ...)를 먼저 고르고
+# 문장을 나중에 쓰게 한다(구조화 출력은 필드 순서대로 생성된다)
+class SourcedText(BaseModel):
+    source_ids: list[str]
+    text: str
+
+
+class OptionalSourcedText(BaseModel):
+    source_ids: list[str]
+    text: str | None
+
+
+class CardComposition(BaseModel):
+    # lesson을 근거로 쓸 수 있는지 먼저 판단하게 한다. false면 후보를 만들지 않는다
+    lesson_supportable: bool
+    lesson_reason: str
+    title: SourcedText
+    summary: SourcedText
+    context: SourcedText
+    problem: OptionalSourcedText
+    cause: OptionalSourcedText
+    approach: OptionalSourcedText
+    rationale: OptionalSourcedText
+    outcome: OptionalSourcedText
+    lesson: SourcedText
+    technologies: list[str]
+    keywords: list[str]
+    project_name: OptionalSourcedText
+    department: OptionalSourcedText
+    # 원문의 날짜 표현 그대로. 연-월-일이 모두 있고 원문에 있을 때만 draft_card가 date로 바꾼다
+    project_date: OptionalSourcedText
+
+
+# 카드 초안. draft_card 노드가 만들고, 검증 노드가 판정한다
 class CardDraft(BaseModel):
     title: str
     summary: str
@@ -69,6 +106,9 @@ class CardDraft(BaseModel):
     project_date: date | None
     # 카드당 근거 1개 이상 (docs/schema.md 제약). DB가 아니라 파이프라인이 보장한다
     evidences: list[CardEvidenceDraft]
+    # 필드 이름 -> 그 필드를 뒷받침하는 evidences의 인덱스. 검증 노드가 필드별로 원문을 대조한다.
+    # DB에는 저장하지 않는다
+    field_sources: dict[str, list[int]] = {}
 
 
 # 카드 검증 판정 결과 타입. VerifiedCard 안에 담겨서 쓰인다

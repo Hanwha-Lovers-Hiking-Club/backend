@@ -7,8 +7,9 @@
 #
 # LLM 출력은 그대로 믿지 않고 코드로 두 번 거른다.
 # (1) 인용 검사: 근거의 인용이 그 문서 원문에 실제로 있는지 본다. 없으면 그 근거만 버린다.
-# (2) 근거 종류 필터: 원인·결정·조치·결과 근거가 하나도 없는 경험(계획·관찰만 있는 후보)은 버린다.
-#     실험에서 모델이 낸 잘못된 경험(승인 안 된 후보 과제 등)은 전부 이 규칙으로 걸러졌다.
+# (2) 근거 종류 필터: 원인·결정·조치·결과·기각한 가설 근거가 하나도 없는 경험(계획·관찰만 있는
+#     후보)은 버린다. 실험에서 모델이 낸 잘못된 경험(승인 안 된 후보 과제 등)은 전부 계획·관찰뿐이라
+#     이 규칙으로 걸러졌다. 기각한 가설은 원인을 못 찾은 조사에서도 진단 교훈의 근거가 되어 남긴다.
 import logging
 import re
 from pathlib import Path
@@ -30,8 +31,8 @@ _tokenizer = tiktoken.get_encoding("cl100k_base")
 # 실험의 가장 큰 프로젝트(문서 5개)가 약 2.5만 토큰이었다
 MAX_INPUT_TOKENS = 200_000
 
-# 이 중 하나도 없으면 실제로 일어난 일(원인 확인, 결정, 조치, 결과)이 없는 경험이다
-_FACT_KINDS = {"cause", "decision", "action", "result"}
+# 이 중 하나도 없으면 실제로 일어난 일(원인 확인, 결정, 조치, 결과, 가설 기각)이 없는 경험이다
+_FACT_KINDS = {"cause", "decision", "action", "result", "rejected_hypothesis"}
 
 # 인용 비교는 글자와 숫자만 본다. PDF 변환문은 줄바꿈 자리에 공백이 끼고("대 사"),
 # 모델은 기호를 빼고 인용하는 일이 흔하다
@@ -93,7 +94,7 @@ def _keep(experience: Experience, chunks: dict[str, Chunk]) -> Experience | None
     if dropped:
         logger.warning("extract: 원문에 없는 인용 %d개 제거 (%s)", dropped, experience.title)
     if not {e.kind for e in evidences} & _FACT_KINDS:
-        logger.info("extract: 원인·결정·조치·결과 근거가 없어 경험 제외 (%s)", experience.title)
+        logger.info("extract: 계획·관찰 근거뿐이라 경험 제외 (%s)", experience.title)
         return None
     return experience.model_copy(update={"evidences": evidences})
 

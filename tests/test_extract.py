@@ -126,3 +126,15 @@ def test_no_chunks_skips_the_llm(monkeypatch):
         EX, "get_llm", lambda: (_ for _ in ()).throw(AssertionError("호출하면 안 됨"))
     )
     assert EX.extract({**_state(), "chunks": []}) == {"experiences": []}
+
+
+def test_investigation_with_only_a_rejected_hypothesis_is_kept(monkeypatch):
+    # 원인을 못 찾은 조사라도 가설을 기각한 근거가 있으면 진단 교훈의 후보로 남긴다
+    result, _ = _run(
+        monkeypatch,
+        _exp(
+            _ev("observation", "D1:0", "주문 두 건이 동시에 할당됐다."),
+            _ev("rejected_hypothesis", "D1:0", "처음에는 메시지 중복을 의심했다."),
+        ),
+    )
+    assert len(result["experiences"]) == 1
