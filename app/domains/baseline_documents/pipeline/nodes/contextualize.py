@@ -13,6 +13,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.domains.baseline_documents.pipeline.state import (
     Chunk,
     ContextualizedChunk,
+    IngestionState,
     ParsedDocument,
 )
 from app.domains.documents.pipeline.llm import get_llm
@@ -55,7 +56,7 @@ async def _describe(
     return {**chunk, "search_text": build_search_text(header, context, chunk["content"])}
 
 
-async def contextualize(state: dict) -> dict:
+async def contextualize(state: IngestionState) -> dict:
     documents: dict = {document["document_id"]: document for document in state["parsed_documents"]}
 
     for document in documents.values():

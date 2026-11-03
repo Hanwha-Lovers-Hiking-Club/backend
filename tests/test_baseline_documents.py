@@ -1,11 +1,15 @@
-# 기본 RAG 문서 인덱싱 파이프라인 테스트 (청크 분할, 문맥 보강).
-# 실제 OpenAI는 호출하지 않고 get_llm을 가짜 객체로 바꾼다.
+# 기본 RAG 문서 인덱싱 파이프라인 테스트 (청크 분할, 문맥 보강, 임베딩, 저장, 그래프 연결).
+# 실제 OpenAI, KURE, Supabase는 호출하지 않고 가짜 함수로 바꾼다.
 import asyncio
 from uuid import uuid4
 
 from langchain_core.messages import AIMessage
 
+from app.domains.baseline_documents.pipeline.graph import build_graph
 from app.domains.baseline_documents.pipeline.nodes import contextualize as contextualize_module
+from app.domains.baseline_documents.pipeline.nodes import embed as embed_module
+from app.domains.baseline_documents.pipeline.nodes import parse as parse_module
+from app.domains.baseline_documents.pipeline.nodes import save as save_module
 from app.domains.baseline_documents.pipeline.nodes.chunk import (
     CHUNK_SIZE_TOKENS,
     chunk,
@@ -15,6 +19,8 @@ from app.domains.baseline_documents.pipeline.nodes.contextualize import (
     build_header,
     contextualize,
 )
+from app.domains.baseline_documents.pipeline.nodes.embed import embed
+from app.domains.baseline_documents.pipeline.nodes.save import save
 from app.domains.documents.pipeline.nodes.chunk import _tokenizer
 
 
@@ -128,3 +134,133 @@ def test_llm_failure_returns_error(monkeypatch):
 
     assert "error" in result
     assert "contextualized_chunks" not in result
+
+
+# ---------------------------------------------------------------
+# embed
+# ---------------------------------------------------------------
+
+
+def _contextualized(document_id, count: int) -> list[dict]:
+    return [
+        {
+            "document_id": document_id,
+            "chunk_index": i,
+            "location": "",
+            "content": f"본문 {i}",
+            "search_text": f"검색용 {i}",
+        }
+        for i in range(count)
+    ]
+
+
+def test_embed_calls_kure_in_batches_of_eight(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_embed_documents(texts):
+        calls.append(texts)
+        return [[float(len(calls))] for _ in texts]
+
+    monkeypatch.setattr(embed_module, "embed_documents", fake_embed_documents)
+    chunks = _contextualized(uuid4(), 19)
+
+    result = asyncio.run(embed({"contextualized_chunks": chunks}))
+
+    assert [len(texts) for texts in calls] == [8, 8, 3]
+    assert calls[0][0] == "검색용 0"
+    assert [c["embedding"] for c in result["embedded_chunks"]][:9] == [[1.0]] * 8 + [[2.0]]
+
+
+def test_embed_failure_returns_error(monkeypatch):
+    def fail(texts):
+        raise RuntimeError("kure down")
+
+    monkeypatch.setattr(embed_module, "embed_documents", fail)
+
+    result = asyncio.run(embed({"contextualized_chunks": _contextualized(uuid4(), 3)}))
+
+    assert "error" in result
+
+
+# ---------------------------------------------------------------
+# save
+# ---------------------------------------------------------------
+
+
+def test_save_replaces_chunks_per_document(monkeypatch):
+    calls: list[tuple[str, list[dict]]] = []
+    monkeypatch.setattr(
+        save_module.repository, "replace_chunks", lambda doc_id, rows: calls.append((doc_id, rows))
+    )
+    with_chunks, without_chunks = uuid4(), uuid4()
+    embedded = [{**c, "embedding": [0.1]} for c in _contextualized(with_chunks, 2)]
+
+    result = asyncio.run(
+        save(
+            {
+                "documents": [{"id": with_chunks}, {"id": without_chunks}],
+                "embedded_chunks": embedded,
+            }
+        )
+    )
+
+    assert result["chunk_counts"] == {str(with_chunks): 2, str(without_chunks): 0}
+    # 청크가 0개인 문서도 호출해서 이전 청크를 지운다
+    assert [doc_id for doc_id, _ in calls] == [str(with_chunks), str(without_chunks)]
+    row = calls[0][1][0]
+    assert row["document_id"] == str(with_chunks)
+    assert row["location"] is None
+    assert row["search_text"] == "검색용 0"
+    assert row["embedding"] == [0.1]
+
+
+# ---------------------------------------------------------------
+# graph
+# ---------------------------------------------------------------
+
+
+def test_graph_stops_after_error(monkeypatch):
+    def fail_download(path):
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(parse_module.documents_repository, "download_file", fail_download)
+    called = []
+    monkeypatch.setattr(save_module.repository, "replace_chunks", lambda *a: called.append(a))
+    document = {
+        "id": uuid4(),
+        "title": "문서",
+        "storage_path": "job/file.txt",
+        "original_filename": "file.txt",
+    }
+
+    result = asyncio.run(build_graph().ainvoke({"documents": [document]}))
+
+    assert "file.txt" in result["error"]
+    assert called == []
+
+
+def test_graph_runs_all_nodes(monkeypatch):
+    monkeypatch.setattr(
+        parse_module.documents_repository,
+        "download_file",
+        lambda path: "# 장애 대응\n결제 API 타임아웃이 발생했다.".encode(),
+    )
+    monkeypatch.setattr(contextualize_module, "get_llm", lambda: _FakeLLM())
+    monkeypatch.setattr(embed_module, "embed_documents", lambda texts: [[0.0] for _ in texts])
+    saved = []
+    monkeypatch.setattr(
+        save_module.repository, "replace_chunks", lambda doc_id, rows: saved.extend(rows)
+    )
+    document_id = uuid4()
+    document = {
+        "id": document_id,
+        "title": "결제 회고",
+        "storage_path": "job/file.txt",
+        "original_filename": "file.txt",
+    }
+
+    result = asyncio.run(build_graph().ainvoke({"documents": [document]}))
+
+    assert not result.get("error")
+    assert result["chunk_counts"] == {str(document_id): 1}
+    assert saved[0]["search_text"].startswith("결제 회고 · 장애 대응\n")

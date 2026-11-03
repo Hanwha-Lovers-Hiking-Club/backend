@@ -7,7 +7,7 @@
 # 바뀌었는지 확인한다.
 import semchunk
 
-from app.domains.baseline_documents.pipeline.state import Chunk, ParsedDocument
+from app.domains.baseline_documents.pipeline.state import Chunk, IngestionState, ParsedDocument
 from app.domains.documents.pipeline.nodes.chunk import _split_sections, _tokenizer
 
 CHUNK_SIZE_TOKENS = 500
@@ -34,7 +34,7 @@ def split_document(document: ParsedDocument) -> list[Chunk]:
     return chunks
 
 
-def chunk(state: dict) -> dict:
+def chunk(state: IngestionState) -> dict:
     chunks: list[Chunk] = []
     for document in state["parsed_documents"]:
         chunks.extend(split_document(document))
