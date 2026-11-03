@@ -1,7 +1,7 @@
 # 파이프라인 전체 연결:
-# parse -> chunk -> extract -> draft_card -> embed -> save -> embed_chunks -> save_chunks.
-# draft_card 다음의 검증 노드는 아직 없다. 검증 안 된 카드가 저장되지 않도록 그 노드가 들어오기
-# 전까지 verified_cards가 비어 있고, 카드는 0개로 끝난다(경험 추출, 카드 후보, 청크 인덱싱까지만).
+# parse -> chunk -> extract -> draft_card -> verify -> embed -> save -> embed_chunks -> save_chunks.
+# verify가 정한 공개 상태(active/draft)가 있는 카드만 embed/save로 간다
+# (excluded/incomplete는 저장 안 함).
 # embed_chunks/save_chunks(청크 검색 인덱싱)는 카드 저장 뒤에 붙고,
 # 실패해도 error가 아니라 warnings만 남긴다.
 #
@@ -11,7 +11,7 @@
 # 실패 정책(노드별):
 #   fail-fast(error): parse(문서 하나라도 실패하면 중단 — 같은 job의 문서들을 함께 보고 경험을
 #     묶으므로 문서가 빠지면 반쪽짜리 카드가 만들어질 수 있다), extract(호출 1번)
-#   항목 단위 soft-fail(stage.finish_stage): draft_card, embed, save —
+#   항목 단위 soft-fail(stage.finish_stage): draft_card, verify, embed, save —
 #     실패한 항목은 건너뛰고 warnings에 남기며, 처리하려던 항목이 전부 실패했을 때만 error
 #   soft-fail(warnings만): embed_chunks, save_chunks —
 #     청크 인덱싱은 보조 기능이라 job을 실패시키지 않는다
@@ -31,6 +31,7 @@ from app.domains.documents.pipeline.nodes.extract import extract
 from app.domains.documents.pipeline.nodes.parse import parse
 from app.domains.documents.pipeline.nodes.save import save
 from app.domains.documents.pipeline.nodes.save_chunks import save_chunks
+from app.domains.documents.pipeline.nodes.verify import verify
 from app.domains.documents.pipeline.observe import NodeRun
 from app.domains.documents.pipeline.state import IngestionState
 
@@ -41,6 +42,7 @@ NODE_ORDER = [
     "chunk",
     "extract",
     "draft_card",
+    "verify",
     "embed",
     "save",
     "embed_chunks",
@@ -51,6 +53,7 @@ _NODES = {
     "chunk": chunk,
     "extract": extract,
     "draft_card": draft_card,
+    "verify": verify,
     "embed": embed,
     "save": save,
     "embed_chunks": embed_chunks,

@@ -61,7 +61,7 @@ def _run(job_id):
 
 
 def test_step_progress_matches_node_order():
-    assert len(service.STEP_PROGRESS) == len(G.NODE_ORDER) == 8
+    assert len(service.STEP_PROGRESS) == len(G.NODE_ORDER) == 9
     assert service.STEP_PROGRESS == sorted(set(service.STEP_PROGRESS))
     assert service.STEP_PROGRESS[-1] == 100
 

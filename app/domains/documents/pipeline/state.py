@@ -55,7 +55,7 @@ class IngestionState(TypedDict):
     card_drafts: list[CardDraft]
     # draft_card가 후보를 만들지 않은 경험과 그 사유. 잘못 버린 게 없는지 사람이 확인하는 용도
     draft_skips: list[str]
-    # 검증 노드(재설계 중)의 출력. 그 노드가 들어오기 전까지는 state에 없다
+    # verify 노드의 출력. excluded/incomplete를 포함한 모든 판정(측정용). 저장은 status가 있는 것만
     verified_cards: list[VerifiedCard]
     # verified_cards 중 verdict == "pass"만 꺼내 임베딩까지 붙인 카드. save 노드가 이것만 저장한다
     embedded_cards: list[EmbeddedCard]

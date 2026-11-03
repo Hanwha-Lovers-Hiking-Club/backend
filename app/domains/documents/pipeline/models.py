@@ -109,18 +109,52 @@ class CardDraft(BaseModel):
     # 필드 이름 -> 그 필드를 뒷받침하는 evidences의 인덱스. 검증 노드가 필드별로 원문을 대조한다.
     # DB에는 저장하지 않는다
     field_sources: dict[str, list[int]] = {}
+    # 이 카드를 만든 경험의 state.experiences 인덱스. 검증 노드가 경험의 근거 전체를 보려고 쓴다
+    experience_index: int | None = None
 
 
-# 카드 검증 판정 결과 타입. VerifiedCard 안에 담겨서 쓰인다
+# verify 노드의 LLM 구조화 출력 타입. 카드의 주장 하나와 그 판정
+ClaimJudgement = Literal[
+    "supported",
+    "condition_dropped",
+    "overstated",
+    "not_a_result",
+    "rejected_as_adopted",
+    "not_in_evidence",
+    "lesson_within_scope",
+    "lesson_overreach",
+]
+
+
+class ClaimCheck(BaseModel):
+    # 주장 -> 대조한 근거 -> 이유 -> 판정 순으로 쓰게 해서 결론부터 정하는 걸 줄인다
+    field: str
+    claim: str
+    evidence_ids: list[str]
+    note: str
+    judgement: ClaimJudgement
+
+
+class ClaimChecks(BaseModel):
+    checks: list[ClaimCheck]
+
+
+# 카드 검증 결과. 검증 판정(verdict)과 공개 상태(status)는 따로 기록한다
+# (결과 없는 결정 카드는 내용이 정확하면 passed지만 공개 정책상 draft다).
+#   passed: 모든 주장이 근거로 지지됨(문제 있던 조건부·선택 필드는 비운 뒤)
+#   held: 필수 필드(title/summary/context/lesson)에 근거를 벗어난 주장이 있음 -> 사람 검토
+#   excluded: 문제 필드를 비우고 나니 카드 구조 조건이 깨짐 -> 저장 안 함
+#   incomplete: 호출 실패, 응답 파싱 실패, 값이 있는 필드의 판정 누락 -> 저장 안 함
 class VerificationResult(BaseModel):
-    # 구조화 출력은 필드 순서대로 생성되므로, 이유를 먼저 쓰고 판정하게 해서 결론을 정한 뒤
-    # 이유를 끼워 맞추는 걸 줄인다
-    reason: str
-    verdict: Literal["pass", "rewrite", "discard"]
+    verdict: Literal["passed", "held", "excluded", "incomplete"]
+    reasons: list[str]
+    cleared_fields: list[str] = []
+    # 저장할 때의 knowledge_cards.status. excluded/incomplete는 저장하지 않으므로 None
+    status: Literal["active", "draft"] | None = None
 
 
-# 카드 검증의 출력 타입. state.IngestionState.verified_cards에 쌓인다
-# (embed 노드가 pass만 꺼내 씀)
+# verify 노드의 출력 타입. state.IngestionState.verified_cards에 쌓인다
+# (embed 노드가 status가 있는 것만 꺼내 씀). draft는 문제 필드를 비운 뒤의 카드다
 class VerifiedCard(BaseModel):
     draft: CardDraft
     verification: VerificationResult
@@ -135,11 +169,13 @@ class CardEmbeddings(BaseModel):
 
 
 # embed 노드의 출력 타입. state.IngestionState.embedded_cards에 쌓인다 (save 노드가 그대로 저장)
-# "이 리스트에 들어있다 = verify를 통과하고 임베딩까지 끝난 카드"라는 뜻이라, verdict나 embeddings의
-# 존재 여부를 다시 확인할 필요가 없다
+# "이 리스트에 들어있다 = 저장 대상이고 임베딩까지 끝난 카드"라는 뜻이라, verdict나 embeddings의
+# 존재 여부를 다시 확인할 필요가 없다. status는 verify가 정한 공개 상태다
 class EmbeddedCard(BaseModel):
     draft: CardDraft
-    embeddings: CardEmbeddings
+    # draft 카드는 임베딩하지 않는다(None으로 저장 -> 벡터 검색에 안 잡힘)
+    embeddings: CardEmbeddings | None
+    status: Literal["active", "draft"] = "draft"
 
 
 # embed_chunks 노드의 출력 타입. state.IngestionState.embedded_chunks에 쌓인다

@@ -41,12 +41,12 @@ MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
 STORE_FAILED_DETAIL = "문서를 저장하지 못했습니다."
 JOB_NOT_FOUND_DETAIL = "작업을 찾을 수 없습니다."
 
-# 진행 단계(activeStep 0~7)별 progress 값. 단계 하나가 그래프 노드 하나(pipeline.graph.NODE_ORDER와
+# 진행 단계(activeStep 0~8)별 progress 값. 단계 하나가 그래프 노드 하나(pipeline.graph.NODE_ORDER와
 # 같은 순서, 같은 개수)다. activeStep=k는 "k번째 노드가 지금 실행 중"이라는 뜻.
 # 단계 문구는 프론트 processingSteps가 가지고, 백엔드는 번호만 보낸다.
 # ponytail: 값은 균등 분할이다. LLM 노드가 들어오면 훨씬 오래 걸리므로
 # 실제 문서 테스트의 노드별 소요 시간 로그를 보고 조정한다
-STEP_PROGRESS = [13, 25, 38, 50, 63, 75, 88, 100]
+STEP_PROGRESS = [11, 22, 33, 44, 56, 67, 78, 89, 100]
 # 진행 상태 SSE가 작업 상태를 확인하는 간격(초)
 POLL_INTERVAL = 0.5
 

@@ -1,15 +1,16 @@
 # ruff: noqa: E501 — 리포트 줄을 만드는 f-string이 길다(개발용 스크립트)
-"""파이프라인 dry-run: 로컬 프로젝트 폴더마다 parse -> chunk -> extract -> draft_card를 실제로 돌린다.
+"""파이프라인 dry-run: 로컬 프로젝트 폴더마다 parse -> chunk -> extract -> draft_card -> verify를 실제로 돌린다.
 
 DB/Storage에 쓰지 않고(임베딩, 저장 노드도 안 돈다) OpenAI만 호출한다. 폴더 하나 = 업로드 묶음 하나다.
 evaluation/ 폴더는 읽지 않는다. 결과를 정답과 비교하는 건 사람이 report.md를 보고 한다.
 
 사용법 (레포 루트에서):
     uv run python scripts/doc_dry_run.py "<프로젝트 폴더>" ["<프로젝트 폴더>" ...]
-결과: --out 폴더(기본 runs/dry/<시각>)의 <폴더명>.md, summary.md
+결과: --out 폴더(기본 runs/dry/<시각>)의 <폴더명>.md, <폴더명>.pkl(state, 평가 스크립트용), summary.md
 """
 
 import argparse
+import pickle
 import sys
 import time
 from datetime import datetime
@@ -23,6 +24,7 @@ from app.domains.documents.pipeline.nodes.chunk import chunk  # noqa: E402
 from app.domains.documents.pipeline.nodes.draft_card import draft_card  # noqa: E402
 from app.domains.documents.pipeline.nodes.extract import extract  # noqa: E402
 from app.domains.documents.pipeline.nodes.parse import _extract_text  # noqa: E402
+from app.domains.documents.pipeline.nodes.verify import verify  # noqa: E402
 from app.domains.documents.pipeline.observe import finish_job_usage, start_job_usage  # noqa: E402
 
 CARD_FIELDS = (
@@ -56,7 +58,7 @@ def run(folder: Path) -> tuple[dict, dict, float]:
     started = time.perf_counter()
     start_job_usage(str(state["job_id"]))
     with job_log_context(state["job_id"]):
-        for node in (extract, draft_card):
+        for node in (extract, draft_card, verify):
             update = node(state)
             state |= update
             if update.get("error"):
@@ -91,6 +93,15 @@ def render(folder: Path, state: dict, usage: dict, seconds: float) -> list[str]:
         for v in e.evidences:
             lines.append(f"   - [{v.kind}] {v.statement}")
 
+    verified = state.get("verified_cards", [])
+    lines += ["", "## 검증 결과", ""]
+    for n, c in enumerate(verified, 1):
+        v = c.verification
+        lines.append(
+            f"{n}. **{v.verdict} / {v.status}** {c.draft.title} (비운 필드: {v.cleared_fields or '없음'})"
+        )
+        lines += [f"   - {r}" for r in v.reasons]
+
     for n, d in enumerate(drafts, 1):
         lines += ["", f"## 카드 후보 {n}. {d.title}", ""]
         for field in CARD_FIELDS:
@@ -115,6 +126,11 @@ def render(folder: Path, state: dict, usage: dict, seconds: float) -> list[str]:
     return lines + [""]
 
 
+def _verdicts(state: dict) -> str:
+    verdicts = [c.verification.verdict for c in state.get("verified_cards", [])]
+    return "/".join(str(verdicts.count(k)) for k in ("passed", "held", "excluded", "incomplete"))
+
+
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(
@@ -128,19 +144,20 @@ def main() -> None:
     out = Path(args.out or f"runs/dry/{datetime.now():%Y%m%d-%H%M%S}")
     out.mkdir(parents=True, exist_ok=True)
     summary = [
-        "| 프로젝트 | 경험 | 후보 | 미생성 | 입력 토큰 | 출력 토큰 | 초 |",
-        "|---|---|---|---|---|---|---|",
+        "| 프로젝트 | 경험 | 후보 | 미생성 | 검증(통과/보류/제외/미완료) | 입력 토큰 | 출력 토큰 | 초 |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for project in args.projects:
         folder = Path(project).expanduser()
         name = f"{folder.parent.parent.name}-{folder.name}".replace(" ", "")
         state, usage, seconds = run(folder)
+        (out / f"{name}.pkl").write_bytes(pickle.dumps(state))
         (out / f"{name}.md").write_text(
             "\n".join(render(folder, state, usage, seconds)), encoding="utf-8"
         )
         summary.append(
             f"| {name} | {len(state.get('experiences', []))} | {len(state.get('card_drafts', []))} | "
-            f"{len(state.get('draft_skips', []))} | {usage['input']:,} | {usage['output']:,} | {seconds:.0f} |"
+            f"{len(state.get('draft_skips', []))} | {_verdicts(state)} | {usage['input']:,} | {usage['output']:,} | {seconds:.0f} |"
         )
         print(summary[-1], flush=True)
     (out / "summary.md").write_text("\n".join(summary), encoding="utf-8")

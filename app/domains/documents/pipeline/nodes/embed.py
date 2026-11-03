@@ -1,4 +1,7 @@
-# 노드: 검증을 통과한(verdict == "pass") 카드만 kure-v3로 4종 임베딩(전체/상황/해결/교훈)을 만든다.
+# 노드: 검증 후 공개(active) 카드만 kure-v3로 4종 임베딩(전체/상황/해결/교훈)을 만든다.
+# draft 카드는 임베딩 없이 저장만 한다. 챗봇은 임베딩으로 카드를 찾으므로, 검색 쿼리의 status 필터를
+# 빠뜨려도 검토 전 카드가 답변에 섞이지 않게 하는 이중 방어다. draft를 active로 올릴 때 임베딩을
+# 만드는 일은 카드 관리 단계(MVP 이후)에서 한다.
 #
 # 카드 1개당 kure 호출은 1번만 한다 — 4개 텍스트가 서로 다른 추론이 필요한 게 아니라 독립적인
 # 문자열일 뿐이라, kure의 배치 입력(input=list)으로 왕복을 줄인다. 빈 필드(None)는 조합 텍스트에서
@@ -55,9 +58,14 @@ def _build_texts(draft: CardDraft) -> list[str]:
 def embed(state: IngestionState) -> dict:
     embedded_cards: list[EmbeddedCard] = []
     failures: list[str] = []
-    # 카드 생성 노드(재설계 중)가 들어오기 전까지 verified_cards는 state에 없다
     for verified in state.get("verified_cards", []):
-        if verified.verification.verdict != "pass":
+        # excluded/incomplete는 status가 없다(저장하지 않음)
+        if verified.verification.status is None:
+            continue
+        if verified.verification.status == "draft":
+            embedded_cards.append(
+                EmbeddedCard(draft=verified.draft, embeddings=None, status="draft")
+            )
             continue
 
         try:
@@ -79,8 +87,13 @@ def embed(state: IngestionState) -> dict:
                     solution_embedding=solution_vec,
                     lesson_embedding=lesson_vec,
                 ),
+                status=verified.verification.status,
             )
         )
 
-    logger.info("embed: 통과 카드 %d개 임베딩 완료", len(embedded_cards))
+    logger.info(
+        "embed: active 카드 %d개 임베딩, draft 카드 %d개는 임베딩 없이 저장",
+        sum(c.embeddings is not None for c in embedded_cards),
+        sum(c.embeddings is None for c in embedded_cards),
+    )
     return finish_stage(state, "embedded_cards", embedded_cards, failures)

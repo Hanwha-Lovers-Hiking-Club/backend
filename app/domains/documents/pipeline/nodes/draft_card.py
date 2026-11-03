@@ -65,7 +65,9 @@ class _Sources:
                 chunk_id=c["id"],
                 kind=ev.kind,
             )
-        documents = dict.fromkeys(e.document_id for e in self.evidences.values())
+        # 문서 id는 문자열(DB 값)로 맞춰 찾는다.
+        # CardEvidenceDraft.document_id는 pydantic이 UUID로 바꾼다
+        documents = dict.fromkeys(str(e.document_id) for e in self.evidences.values())
         self.headers: dict[str, Chunk] = {
             f"H{j}": heads[d] for j, d in enumerate(documents, 1) if d in heads
         }
@@ -76,7 +78,7 @@ class _Sources:
         e = self.experience
         lines = ["## 경험", f"제목: {e.title}", f"요약: {e.summary}", "", "## 근거"]
         for sid, ev in self.evidences.items():
-            where = f"{self.names[ev.document_id]} · {ev.location or '위치 없음'}"
+            where = f"{self.names[str(ev.document_id)]} · {ev.location or '위치 없음'}"
             lines += [
                 f"{sid} [{ev.kind}] ({where})",
                 f"  내용: {self.statements[sid]}",
@@ -84,7 +86,8 @@ class _Sources:
             ]
         lines += ["", "## 문서 머리말"]
         for hid, c in self.headers.items():
-            lines += [f"{hid} ({self.names[c['document_id']]})", c["text"][:_HEADER_CHARS], ""]
+            name = self.names[str(c["document_id"])]
+            lines += [f"{hid} ({name})", c["text"][:_HEADER_CHARS], ""]
         return "\n".join(lines)
 
     def is_result(self, sid: str) -> bool:
@@ -128,7 +131,7 @@ def _full_date(value: str) -> date | None:
 
 
 def compose_one(
-    experience: Experience, chunks: dict[str, Chunk], heads: dict, names: dict, llm
+    experience: Experience, chunks: dict[str, Chunk], heads: dict, names: dict, llm, index=None
 ) -> tuple[CardDraft | None, str | None]:
     """경험 하나로 카드 후보를 만든다. (후보, None) 또는 (None, 후보를 만들지 않은 사유)를 돌려준다.
 
@@ -203,6 +206,7 @@ def compose_one(
         project_date=project_date,
         evidences=evidences,
         field_sources=field_sources,
+        experience_index=index,
     )
     return draft, None
 
@@ -212,15 +216,17 @@ def draft_card(state: IngestionState) -> dict:
     if not experiences:
         return {"card_drafts": [], "draft_skips": []}
     chunks = {c["id"]: c for c in state["chunks"]}
-    heads = {c["document_id"]: c for c in state["chunks"] if c["index"] == 0}
-    names = {d["id"]: d["original_filename"] for d in state["documents"]}
+    heads = {str(c["document_id"]): c for c in state["chunks"] if c["index"] == 0}
+    names = {str(d["id"]): d["original_filename"] for d in state["documents"]}
     llm = get_llm().with_structured_output(CardComposition)
 
     # 스레드에는 contextvar(job_id 로그·사용량 집계)가 넘어가지 않아서 호출마다 복사해 넘긴다
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         futures = [
-            pool.submit(contextvars.copy_context().run, compose_one, e, chunks, heads, names, llm)
-            for e in experiences
+            pool.submit(
+                contextvars.copy_context().run, compose_one, e, chunks, heads, names, llm, i
+            )
+            for i, e in enumerate(experiences)
         ]
 
     drafts: list[CardDraft] = []

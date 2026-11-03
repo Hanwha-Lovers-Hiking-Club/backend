@@ -13,7 +13,7 @@ from app.domains.knowledge_cards import service as knowledge_cards_service
 logger = logging.getLogger(__name__)
 
 
-def _to_card_dict(draft: CardDraft, embeddings: CardEmbeddings) -> dict:
+def _to_card_dict(draft: CardDraft, embeddings: CardEmbeddings | None, status: str) -> dict:
     return {
         "title": draft.title,
         "summary": draft.summary,
@@ -29,12 +29,19 @@ def _to_card_dict(draft: CardDraft, embeddings: CardEmbeddings) -> dict:
         "project_name": draft.project_name,
         "department": draft.department,
         "project_date": draft.project_date.isoformat() if draft.project_date else None,
-        # MVP 범위에서는 저장되는 즉시 active로 둔다 (카드 품질 사후관리는 MVP 이후 범위)
-        "status": "active",
-        "content_embedding": embeddings.content_embedding,
-        "situation_embedding": embeddings.situation_embedding,
-        "solution_embedding": embeddings.solution_embedding,
-        "lesson_embedding": embeddings.lesson_embedding,
+        # verify가 정한 공개 상태. 결과가 확인된 통과 카드만 active이고, 결과 없는 결정 카드와
+        # 사람 검토가 필요한 카드는 draft(RAG 검색 제외)다
+        "status": status,
+        # draft 카드는 임베딩이 없다(NULL 허용 컬럼)
+        **{
+            name: getattr(embeddings, name) if embeddings else None
+            for name in (
+                "content_embedding",
+                "situation_embedding",
+                "solution_embedding",
+                "lesson_embedding",
+            )
+        },
     }
 
 
@@ -58,7 +65,7 @@ def save(state: IngestionState) -> dict:
     saved = 0
     failures: list[str] = []
     for embedded in state["embedded_cards"]:
-        card = _to_card_dict(embedded.draft, embedded.embeddings)
+        card = _to_card_dict(embedded.draft, embedded.embeddings, embedded.status)
         evidences = _to_evidence_dicts(embedded.draft)
         try:
             knowledge_cards_service.create_card(card, evidences)

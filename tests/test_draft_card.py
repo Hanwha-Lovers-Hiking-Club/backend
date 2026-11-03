@@ -201,3 +201,16 @@ def test_one_failed_call_is_skipped_and_all_failed_is_an_error(monkeypatch):
 def test_no_experiences_skips_the_llm(monkeypatch):
     monkeypatch.setattr(DC, "get_llm", lambda: (_ for _ in ()).throw(AssertionError("호출 금지")))
     assert DC.draft_card(_state()) == {"card_drafts": [], "draft_skips": []}
+
+
+def test_string_document_ids_from_the_database_work(monkeypatch):
+    # 실제 업로드 경로에서는 문서 id가 DB가 돌려준 문자열이다(CardEvidenceDraft는 UUID로 바꾼다)
+    llm = _LLM({"중복 지급": _composition()})
+    monkeypatch.setattr(DC, "get_llm", lambda: llm)
+    state = _state(_experience())
+    for d in state["documents"]:
+        d["id"] = str(d["id"])
+    for c in state["chunks"]:
+        c["document_id"] = str(c["document_id"])
+    result = DC.draft_card(state)
+    assert len(result["card_drafts"]) == 1 and "H1 (대응.txt)" in llm.messages[0]
