@@ -10,6 +10,7 @@ from uuid import UUID
 from app.domains.documents.pipeline.models import (
     EmbeddedCard,
     EmbeddedChunk,
+    Experience,
     VerifiedCard,
 )
 
@@ -47,6 +48,8 @@ class IngestionState(TypedDict):
     documents: list[DocumentInput]
     parsed_documents: list[ParsedDocument]
     chunks: list[Chunk]
+    # extract 노드의 출력. 인용 검사와 근거 종류 필터를 통과한 경험만 들어 있다
+    experiences: list[Experience]
     # 카드 생성 노드(재설계 중)의 출력. 그 노드가 들어오기 전까지는 state에 없다
     verified_cards: list[VerifiedCard]
     # verified_cards 중 verdict == "pass"만 꺼내 임베딩까지 붙인 카드. save 노드가 이것만 저장한다

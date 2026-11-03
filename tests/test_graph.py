@@ -5,8 +5,10 @@ import pytest
 
 from app.domains.documents.pipeline import graph as G
 from app.domains.documents.pipeline import retry as R
+from app.domains.documents.pipeline.models import Experiences
 from app.domains.documents.pipeline.nodes import embed as EM
 from app.domains.documents.pipeline.nodes import embed_chunks as EC
+from app.domains.documents.pipeline.nodes import extract as EX
 from app.domains.documents.pipeline.nodes import parse as P
 from app.domains.documents.pipeline.nodes import save as S
 from app.domains.documents.pipeline.nodes import save_chunks as SC
@@ -29,6 +31,15 @@ def env(monkeypatch):
 
     monkeypatch.setattr(R.asyncio, "sleep", instant)
     monkeypatch.setattr(P.repository, "download_file", lambda _path: TEXT.encode())
+    llm = type(
+        "NoExperiences",
+        (),
+        {
+            "with_structured_output": lambda self, _s: self,
+            "invoke": lambda self, _m: Experiences(experiences=[]),
+        },
+    )()
+    monkeypatch.setattr(EX, "get_llm", lambda: llm)
     monkeypatch.setattr(EM, "embed_documents", lambda texts: [[0.1] * 3] * len(texts))
     monkeypatch.setattr(EC, "embed_documents", lambda texts: [[0.1] * 3] * len(texts))
     monkeypatch.setattr(
@@ -55,7 +66,7 @@ def _run() -> dict:
 
 
 def test_without_card_nodes_job_ends_with_zero_cards_and_indexes_chunks(env):
-    # 카드 생성 노드가 재설계 중이라 verified_cards가 없다. 카드 0개는 정상이고 청크 인덱싱은 된다
+    # 카드 구성 노드가 재설계 중이라 verified_cards가 없다. 카드 0개는 정상이고 청크 인덱싱은 된다
     final = _run()
     assert final.get("error") is None and not final.get("warnings")
     assert final["saved_card_count"] == 0 and env["cards"] == []

@@ -61,7 +61,7 @@ def _run(job_id):
 
 
 def test_step_progress_matches_node_order():
-    assert len(service.STEP_PROGRESS) == len(G.NODE_ORDER) == 6
+    assert len(service.STEP_PROGRESS) == len(G.NODE_ORDER) == 7
     assert service.STEP_PROGRESS == sorted(set(service.STEP_PROGRESS))
     assert service.STEP_PROGRESS[-1] == 100
 
@@ -103,13 +103,13 @@ def test_warnings_are_kept_on_job(monkeypatch):
 
 def test_node_error_fails_job_and_skips_remaining_nodes(monkeypatch):
     job_id = _new_job()
-    seen = _patch_nodes(monkeypatch, job_id, {"embed": {"error": "임베딩 실패: boom"}})
+    seen = _patch_nodes(monkeypatch, job_id, {"extract": {"error": "경험 추출 실패: boom"}})
 
     job = _run(job_id)
 
-    assert [name for name, *_ in seen] == ["parse", "chunk", "embed"]
+    assert [name for name, *_ in seen] == ["parse", "chunk", "extract"]
     assert job["status"] == "failed"
-    assert job["message"] == "임베딩 실패: boom"
+    assert job["message"] == "경험 추출 실패: boom"
 
 
 def test_node_exception_fails_job_with_short_message(monkeypatch):

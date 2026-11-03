@@ -1,10 +1,47 @@
-# 노드 사이에서 오가는 카드/임베딩 모델 (CardDraft, VerifiedCard, EmbeddedCard 등).
+# 노드 사이에서 오가는 모델 (Experience, CardDraft, VerifiedCard, EmbeddedCard 등).
 # 노드 간 경계에서 오가는 데이터 모양이므로 state.py와 함께 팀이 합의한 계약이다.
 from datetime import date
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
+
+# extract 노드의 LLM 구조화 출력 타입들. 필드 이름과 순서는 비교 실험
+# (scripts/compare_extraction.py)에서 검증한 그대로다. 구조화 출력은 필드 순서대로 생성되므로
+# 바꾸면 결과가 달라질 수 있다
+EvidenceKind = Literal[
+    "observation",
+    "hypothesis",
+    "rejected_hypothesis",
+    "cause",
+    "decision",
+    "action",
+    "result",
+    "plan",
+]
+
+
+# 경험의 근거 하나. chunk_id는 LLM 응답에서는 프롬프트용 별칭("D1:3")이고,
+# extract 노드가 검사한 뒤 state.Chunk.id로 바꿔서 state에 넣는다
+class Evidence(BaseModel):
+    kind: EvidenceKind
+    statement: str
+    chunk_id: str
+    quote: str
+
+
+# extract 노드의 출력 타입. state.IngestionState.experiences에 쌓인다
+class Experience(BaseModel):
+    title: str
+    summary: str
+    # 지금은 쓰는 곳이 없다. 검증한 스키마를 바꾸지 않으려고 남겨 둔다
+    link_hints: list[str]
+    evidences: list[Evidence]
+
+
+# extract 노드의 LLM structured output 루트 타입. 리스트를 바로 루트로 못 받아서 감싸는 래퍼
+class Experiences(BaseModel):
+    experiences: list[Experience]
 
 
 # CardDraft.evidences의 원소 타입

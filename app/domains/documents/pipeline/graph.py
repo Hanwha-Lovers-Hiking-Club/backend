@@ -1,7 +1,7 @@
 # 파이프라인 전체 연결:
-# parse -> chunk -> embed -> save -> embed_chunks -> save_chunks.
-# 카드를 만드는 노드(경험 단서 추출 -> 근거 연결 -> 카드 구성 -> 검증)는 재설계 중이라 비어 있다.
-# 그 노드들이 들어오기 전까지 verified_cards가 비어 있어서 카드는 0개로 끝나고, 청크 인덱싱만 된다.
+# parse -> chunk -> extract -> embed -> save -> embed_chunks -> save_chunks.
+# extract 다음의 카드 구성 -> 검증 노드는 재설계 중이라 비어 있다. 그 노드들이 들어오기 전까지
+# verified_cards가 비어 있어서 카드는 0개로 끝나고, 경험 추출과 청크 인덱싱만 된다.
 # embed_chunks/save_chunks(청크 검색 인덱싱)는 카드 저장 뒤에 붙고,
 # 실패해도 error가 아니라 warnings만 남긴다.
 #
@@ -10,7 +10,7 @@
 #
 # 실패 정책(노드별):
 #   fail-fast(error): parse(문서 하나라도 실패하면 중단 — 같은 job의 문서들을 함께 보고 경험을
-#     묶으므로 문서가 빠지면 반쪽짜리 카드가 만들어질 수 있다)
+#     묶으므로 문서가 빠지면 반쪽짜리 카드가 만들어질 수 있다), extract(호출 1번)
 #   항목 단위 soft-fail(stage.finish_stage): embed, save —
 #     실패한 항목은 건너뛰고 warnings에 남기며, 처리하려던 항목이 전부 실패했을 때만 error
 #   soft-fail(warnings만): embed_chunks, save_chunks —
@@ -26,6 +26,7 @@ from app.core.logging import summarize_error
 from app.domains.documents.pipeline.nodes.chunk import chunk
 from app.domains.documents.pipeline.nodes.embed import embed
 from app.domains.documents.pipeline.nodes.embed_chunks import embed_chunks
+from app.domains.documents.pipeline.nodes.extract import extract
 from app.domains.documents.pipeline.nodes.parse import parse
 from app.domains.documents.pipeline.nodes.save import save
 from app.domains.documents.pipeline.nodes.save_chunks import save_chunks
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 NODE_ORDER = [
     "parse",
     "chunk",
+    "extract",
     "embed",
     "save",
     "embed_chunks",
@@ -45,6 +47,7 @@ NODE_ORDER = [
 _NODES = {
     "parse": parse,
     "chunk": chunk,
+    "extract": extract,
     "embed": embed,
     "save": save,
     "embed_chunks": embed_chunks,
