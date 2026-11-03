@@ -1,0 +1,2 @@
+-- 기본 RAG(비교 기준선) 전용 SQL. main에 머지하지 않는다.
+-- baseline_chunks 테이블과 match_baseline_chunks 검색 함수를 정의한다.
