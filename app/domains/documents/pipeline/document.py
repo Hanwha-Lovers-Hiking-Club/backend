@@ -33,6 +33,8 @@ class ParseOptions(DocumentModel):
 class ChunkOptions(DocumentModel):
     # Soft character target. Atomic blocks can exceed it and are marked oversized.
     target_chars: int = Field(default=6000, gt=0)
+    # 정규화된 블록을 연결한 문자 수가 이 값 이하면 한 청크로 처리한다. 0은 기존 분할이다.
+    whole_document_chars: int = Field(default=0, ge=0, strict=True)
 
 
 class ParsedBlock(DocumentModel):

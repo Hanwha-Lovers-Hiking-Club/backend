@@ -210,3 +210,26 @@ settled_*와 all_*는 재처리 중 다른 경험의 결과·원본을 잃지 �
 공식 참고: [로컬 서버](https://docs.langchain.com/oss/python/langgraph/local-server),
 [Graph API](https://docs.langchain.com/oss/python/langgraph/graph-api),
 [개발용 HTTP 앱](https://docs.langchain.com/langsmith/custom-routes).
+
+## 소문서 통합 청킹 비교 옵션 — 2026-11-03
+
+Graph 입력에 아래 옵션을 추가하면 정규화한 블록 텍스트를 빈 줄로 연결한 길이가
+12,000자 이하인 문서를 한 청크로 Extract에 전달한다.
+
+```json
+{
+  "chunk_options": {"target_chars": 6000, "whole_document_chars": 12000}
+}
+```
+
+`whole_document_chars`의 기본값은 `0`으로, 기존 섹션별 분할을 유지한다.
+지정한 한도를 넘는 문서도 기존 방식으로 분할한다. 문서 크기를 바이트나 토큰으로 측정하는
+옵션이 아니며 블록의 순서·본문·근거 ID·위치·개별 제목 경로를 바꾸지 않는다.
+통합 청크의 제목 경로는 모든 블록에 공통인 경로만 사용한다.
+`target_chars`는 여전히 소프트 목표이며, 이를 넘는 통합 청크에는 `oversized=true`가 붙는다.
+
+이 옵션은 비교 실험용이다. JSON 메타데이터와 프롬프트가 추가되므로 12,000자 이하라도
+직렬화한 요청의 `DOCUMENT_LLM_MAX_INPUT_CHARS`를 넘을 수 있다. 기존 입력 검사를 유지하며
+유료 호출 전에 실패한다. 통합된 여러 경험의 출력도 `DOCUMENT_LLM_MAX_OUTPUT_TOKENS`를
+넘을 수 있다. 한도 초과를 숨겨 자동 분할하거나 출력 한도를 올리지 않는다.
+API 업로드 기본값·모델·프롬프트·Gate·임베딩·저장 계약을 바꾸는 옵션은 아니다.
