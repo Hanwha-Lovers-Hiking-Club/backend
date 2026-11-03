@@ -30,6 +30,7 @@ from app.domains.documents.pipeline.models import (
     OptionalSourcedText,
     SourcedText,
 )
+from app.domains.documents.pipeline.positions import locate
 from app.domains.documents.pipeline.stage import finish_stage
 from app.domains.documents.pipeline.state import Chunk, IngestionState
 
@@ -52,7 +53,19 @@ def _plain(text: str) -> str:
 
 class _Sources:
     # 프롬프트에 넣은 근거(E)와 머리말(H). 카드가 인용한 것만 CardDraft.evidences로 만든다
-    def __init__(self, experience: Experience, chunks: dict[str, Chunk], heads: dict, names: dict):
+    def __init__(
+        self,
+        experience: Experience,
+        chunks: dict[str, Chunk],
+        heads: dict,
+        names: dict,
+        positions: dict | None = None,
+    ):
+        # positions: 문서 id(문자열) -> 원문 위치 목록. 근거 location을 청크 헤딩 경로 대신 인용이
+        # 있는
+        # 정밀 위치(PDF 페이지, XLSX 셀 등)로 채운다. 못 찾으면 청크 location을 쓴다
+        self.positions = positions or {}
+        self.chunks = chunks
         self.evidences: dict[str, CardEvidenceDraft] = {}
         self.statements: dict[str, str] = {}
         for i, ev in enumerate((e for e in experience.evidences if e.chunk_id in chunks), 1):
@@ -60,7 +73,7 @@ class _Sources:
             self.statements[f"E{i}"] = ev.statement
             self.evidences[f"E{i}"] = CardEvidenceDraft(
                 document_id=c["document_id"],
-                location=c["location"] or None,
+                location=self._locate(ev.quote, c),
                 excerpt=ev.quote,
                 chunk_id=c["id"],
                 kind=ev.kind,
@@ -74,11 +87,17 @@ class _Sources:
         self.names = names
         self.experience = experience
 
+    def _locate(self, quote: str, chunk: Chunk) -> str | None:
+        found = locate(quote, self.positions.get(str(chunk["document_id"]), []), chunk["location"])
+        return found or chunk["location"] or None
+
     def message(self) -> str:
         e = self.experience
         lines = ["## 경험", f"제목: {e.title}", f"요약: {e.summary}", "", "## 근거"]
         for sid, ev in self.evidences.items():
-            where = f"{self.names[str(ev.document_id)]} · {ev.location or '위치 없음'}"
+            # 프롬프트에는 검증한 입력 그대로 청크 location을 보여 준다(정밀 위치는 저장용)
+            chunk_location = self.chunks[ev.chunk_id]["location"] or "위치 없음"
+            where = f"{self.names[str(ev.document_id)]} · {chunk_location}"
             lines += [
                 f"{sid} [{ev.kind}] ({where})",
                 f"  내용: {self.statements[sid]}",
@@ -110,7 +129,7 @@ class _Sources:
         line = next((ln for ln in text.splitlines() if value and value in ln), None)
         return CardEvidenceDraft(
             document_id=c["document_id"],
-            location=c["location"] or None,
+            location=self._locate(line, c) if line else c["location"] or None,
             excerpt=(line or text).strip(),
             chunk_id=c["id"],
         )
@@ -131,14 +150,20 @@ def _full_date(value: str) -> date | None:
 
 
 def compose_one(
-    experience: Experience, chunks: dict[str, Chunk], heads: dict, names: dict, llm, index=None
+    experience: Experience,
+    chunks: dict[str, Chunk],
+    heads: dict,
+    names: dict,
+    llm,
+    index=None,
+    positions: dict | None = None,
 ) -> tuple[CardDraft | None, str | None]:
     """경험 하나로 카드 후보를 만든다. (후보, None) 또는 (None, 후보를 만들지 않은 사유)를 돌려준다.
 
     LLM 호출이 실패하면 예외를 그대로 던진다(호출하는 쪽이 건너뛰기를 정한다).
     """
     label = experience.title.strip()[:40] or "제목 없음"
-    sources = _Sources(experience, chunks, heads, names)
+    sources = _Sources(experience, chunks, heads, names, positions)
     if not sources.evidences:
         return None, f"{label}: 원문 청크를 찾을 수 없는 근거뿐"
     c: CardComposition = invoke_with_retry(
@@ -217,6 +242,7 @@ def draft_card(state: IngestionState) -> dict:
         return {"card_drafts": [], "draft_skips": []}
     chunks = {c["id"]: c for c in state["chunks"]}
     heads = {str(c["document_id"]): c for c in state["chunks"] if c["index"] == 0}
+    positions = state.get("positions", {})
     names = {str(d["id"]): d["original_filename"] for d in state["documents"]}
     llm = get_llm().with_structured_output(CardComposition)
 
@@ -224,7 +250,15 @@ def draft_card(state: IngestionState) -> dict:
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         futures = [
             pool.submit(
-                contextvars.copy_context().run, compose_one, e, chunks, heads, names, llm, i
+                contextvars.copy_context().run,
+                compose_one,
+                e,
+                chunks,
+                heads,
+                names,
+                llm,
+                i,
+                positions,
             )
             for i, e in enumerate(experiences)
         ]

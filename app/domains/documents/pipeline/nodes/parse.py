@@ -10,8 +10,9 @@ from io import BytesIO
 
 from app.core.logging import summarize_error
 from app.domains.documents import repository
+from app.domains.documents.pipeline.positions import docling_positions, text_positions
 from app.domains.documents.pipeline.retry import retry_async
-from app.domains.documents.pipeline.state import IngestionState, ParsedDocument
+from app.domains.documents.pipeline.state import IngestionState, ParsedDocument, Position
 
 # docling은 import만으로 torch까지 불러와 20초 가까이 걸리고, PDF 모델 로딩도 따로 걸린다.
 # 서버 시작(과 --reload)을 붙잡지 않도록 import는 이 함수 안에서 하고, 서버가 켜질 때
@@ -72,16 +73,22 @@ def _decode_text(content: bytes) -> str:
     return content.decode("utf-8", errors="replace")
 
 
-def _extract_text(content: bytes, filename: str) -> str:
+def _convert(content: bytes, filename: str) -> tuple[str, list[Position]]:
+    # (청크에 쓸 마크다운/원문 텍스트, 근거 위치를 찾을 원문 위치 목록)
     extension = filename[filename.rfind(".") :].lower() if "." in filename else ""
     if extension in _TEXT_EXTENSIONS:
-        return _decode_text(content)
+        text = _decode_text(content)
+        return text, text_positions(text, markdown=extension == ".md")
 
     from docling.datamodel.base_models import DocumentStream
 
     stream = DocumentStream(name=filename, stream=BytesIO(content))
-    result = get_converter().convert(stream)
-    return result.document.export_to_markdown()
+    document = get_converter().convert(stream).document
+    return document.export_to_markdown(), docling_positions(document, extension.lstrip("."))
+
+
+def _extract_text(content: bytes, filename: str) -> str:
+    return _convert(content, filename)[0]
 
 
 async def parse(state: IngestionState) -> dict:
@@ -89,13 +96,14 @@ async def parse(state: IngestionState) -> dict:
     # parse_failures에 남겨 카드 경로를 건너뛰게 한다(graph.py 참고). 모두 실패했을 때만 job을
     # 실패시킨다
     parsed_documents: list[ParsedDocument] = []
+    positions: dict[str, list[Position]] = {}
     failures: list[str] = []
     for document in state["documents"]:
         filename = document["original_filename"]
         try:
             content = await _download_with_retry(document["storage_path"])
             # docling 변환은 동기 CPU 작업이라 이벤트 루프를 막지 않도록 스레드에서 돌린다
-            text = await asyncio.to_thread(_extract_text, content, filename)
+            text, document_positions = await asyncio.to_thread(_convert, content, filename)
         except Exception as e:
             failures.append(f"'{filename}' 파싱 실패: {summarize_error(e)}")
             continue
@@ -103,9 +111,14 @@ async def parse(state: IngestionState) -> dict:
             failures.append(f"'{filename}' 파싱 실패: 추출된 텍스트가 거의 없음")
             continue
         parsed_documents.append({"document_id": document["id"], "text": text})
+        positions[str(document["id"])] = document_positions
     if not parsed_documents:
         return {"error": " / ".join(failures)}
-    update: dict = {"parsed_documents": parsed_documents, "parse_failures": failures}
+    update: dict = {
+        "parsed_documents": parsed_documents,
+        "parse_failures": failures,
+        "positions": positions,
+    }
     if failures:
         update["warnings"] = [*state.get("warnings", []), *failures]
     return update

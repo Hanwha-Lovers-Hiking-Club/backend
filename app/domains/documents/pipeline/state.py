@@ -43,11 +43,22 @@ class Chunk(TypedDict):
     location: str
 
 
+# parse가 만드는 원문 위치 목록의 원소 타입(positions.py). 항목 텍스트와 그 위치
+class Position(TypedDict):
+    text: str
+    location: str
+    # 청크 location과 같은 형식의 헤딩 경로. 같은 문구가 여러 곳에 있을 때 근거 청크와 같은 헤딩을
+    # 고른다
+    heading: str
+
+
 # 그래프 전체가 주고받는 state. graph.py가 job 1개당 1번 이 타입으로 invoke한다
 class IngestionState(TypedDict):
     job_id: UUID
     documents: list[DocumentInput]
     parsed_documents: list[ParsedDocument]
+    # 문서 id(문자열) -> 원문 위치 목록(positions.py). draft_card가 근거 인용의 정밀 위치를 찾는다
+    positions: dict[str, list[Position]]
     # 읽지 못한 문서와 사유. 하나라도 있으면 카드 경로를 건너뛴다(반쪽 근거로 카드를 만들지 않음)
     parse_failures: list[str]
     chunks: list[Chunk]

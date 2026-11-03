@@ -23,7 +23,7 @@ from app.core.logging import job_log_context, setup_logging  # noqa: E402
 from app.domains.documents.pipeline.nodes.chunk import chunk  # noqa: E402
 from app.domains.documents.pipeline.nodes.draft_card import draft_card  # noqa: E402
 from app.domains.documents.pipeline.nodes.extract import extract  # noqa: E402
-from app.domains.documents.pipeline.nodes.parse import _extract_text  # noqa: E402
+from app.domains.documents.pipeline.nodes.parse import _convert  # noqa: E402
 from app.domains.documents.pipeline.nodes.verify import verify  # noqa: E402
 from app.domains.documents.pipeline.observe import finish_job_usage, start_job_usage  # noqa: E402
 
@@ -46,13 +46,15 @@ def run(folder: Path) -> tuple[dict, dict, float]:
         {"id": uuid4(), "storage_bucket": "-", "storage_path": "-", "original_filename": f.name}
         for f in files
     ]
+    converted = [_convert(f.read_bytes(), f.name) for f in files]
     state = {
         "job_id": uuid4(),
         "documents": documents,
         "parsed_documents": [
-            {"document_id": d["id"], "text": _extract_text(f.read_bytes(), f.name)}
-            for d, f in zip(documents, files)
+            {"document_id": d["id"], "text": text} for d, (text, _) in zip(documents, converted)
         ],
+        # 근거 인용의 정밀 위치(PDF 페이지, XLSX 셀 등)를 찾는 원문 위치 목록(parse 노드와 같다)
+        "positions": {str(d["id"]): pos for d, (_, pos) in zip(documents, converted)},
     }
     state |= chunk(state)
     started = time.perf_counter()

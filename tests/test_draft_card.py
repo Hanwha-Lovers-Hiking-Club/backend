@@ -214,3 +214,24 @@ def test_string_document_ids_from_the_database_work(monkeypatch):
         c["document_id"] = str(c["document_id"])
     result = DC.draft_card(state)
     assert len(result["card_drafts"]) == 1 and "H1 (대응.txt)" in llm.messages[0]
+
+
+def test_evidence_location_uses_the_precise_position_when_found(monkeypatch):
+    llm = _LLM({"중복 지급": _composition()})
+    monkeypatch.setattr(DC, "get_llm", lambda: llm)
+    state = _state(_experience())
+    state["positions"] = {
+        str(DOC2): [
+            {
+                "text": "DB 스케줄러 락을 채택했다.",
+                "location": "3. 결정 사항 · 단락 4",
+                "heading": "절1",
+            }
+        ]
+    }
+    draft = DC.draft_card(state)["card_drafts"][0]
+    locations = {e.excerpt: e.location for e in draft.evidences}
+    assert locations["DB 스케줄러 락을 채택했다."] == "3. 결정 사항 · 단락 4"
+    # 위치 목록에 없는 문서는 지금처럼 청크의 헤딩 경로를 쓴다
+    assert locations["배포 후 5회 배치에서 중복 0건."] == "절1"
+    assert "회의.docx · 절1" in llm.messages[0]  # 프롬프트 입력은 그대로(청크 위치)
