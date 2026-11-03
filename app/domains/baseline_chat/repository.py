@@ -1,5 +1,5 @@
 # 기본 RAG 챗봇 도메인의 DB 호출을 모은다.
-# 벡터 검색 rpc, BM25용 전체 청크 조회, 앞뒤 청크 조회
+# 벡터 검색 rpc, BM25용 전체 청크 조회, 앞뒤 청크 조회, 문서 제목 조회
 from app.db import supabase
 
 CHUNK_COLUMNS = "id, document_id, chunk_index, location, content, search_text"
@@ -44,3 +44,11 @@ def get_chunks_by_index(document_id: str, chunk_indexes: list[int]) -> list[dict
         .execute()
     )
     return result.data
+
+
+def get_document_titles(document_ids: list[str]) -> dict[str, str]:
+    # 답변 컨텍스트와 근거 표시에 쓸 문서 제목. 없는 id는 결과에서 빠진다
+    if not document_ids:
+        return {}
+    result = supabase.table("documents").select("id, title").in_("id", document_ids).execute()
+    return {row["id"]: row["title"] for row in result.data}

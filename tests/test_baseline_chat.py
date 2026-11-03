@@ -1,15 +1,23 @@
 # 기본 RAG 챗봇 테스트.
-# BM25, 검색 그래프 노드(rewrite, retrieve, rerank, expand)와 그래프 연결을 확인한다.
+# BM25, 검색 그래프 노드(rewrite, retrieve, rerank, expand), 그래프 연결, 답변 생성(generate),
+# 챗봇 엔드포인트를 확인한다.
 # 실제 OpenAI, KURE, Supabase는 호출하지 않고 가짜 함수로 바꾼다.
 import asyncio
+import json
+from uuid import uuid4
 
+from langchain_core.messages import AIMessageChunk
+
+from app.domains.baseline_chat import service as chat_service
 from app.domains.baseline_chat.pipeline.bm25 import BM25Index, tokenize
 from app.domains.baseline_chat.pipeline.graph import build_graph
 from app.domains.baseline_chat.pipeline.nodes import expand as expand_module
+from app.domains.baseline_chat.pipeline.nodes import generate as generate_module
 from app.domains.baseline_chat.pipeline.nodes import rerank as rerank_module
 from app.domains.baseline_chat.pipeline.nodes import retrieve as retrieve_module
 from app.domains.baseline_chat.pipeline.nodes import rewrite as rewrite_module
 from app.domains.baseline_chat.pipeline.nodes.expand import expand
+from app.domains.baseline_chat.pipeline.nodes.generate import NO_CONTEXT_ANSWER, generate
 from app.domains.baseline_chat.pipeline.nodes.rerank import rerank
 from app.domains.baseline_chat.pipeline.nodes.retrieve import reciprocal_rank_fusion, retrieve
 from app.domains.baseline_chat.pipeline.nodes.rewrite import RewrittenQueries, rewrite
@@ -290,3 +298,177 @@ def test_graph_runs_rewrite_to_expand(monkeypatch):
     assert result["queries"] == ["결제 장애"]
     assert [c["id"] for c in result["contexts"]] == ["a"]
     assert result["contexts"][0]["context"] == "a 본문"
+
+
+# ---------------------------------------------------------------
+# generate
+# ---------------------------------------------------------------
+
+
+class _FakeStreamingLLM:
+    def __init__(self, tokens: list[str], error: Exception | None = None):
+        self.tokens = tokens
+        self.error = error
+        self.calls: list = []
+
+    async def astream(self, messages):
+        self.calls.append(messages)
+        for token in self.tokens:
+            yield AIMessageChunk(content=token)
+        if self.error:
+            raise self.error
+
+
+def _context(chunk_id: str, document_id: str, location: str | None, context: str) -> dict:
+    return {**_chunk(chunk_id, document_id), "location": location, "context": context}
+
+
+async def _collect(generator) -> list[str]:
+    return [token async for token in generator]
+
+
+def test_generate_streams_llm_tokens(monkeypatch):
+    llm = _FakeStreamingLLM(["결제 장애는 ", "", "타임아웃 때문입니다 [1]."])
+    monkeypatch.setattr(generate_module, "get_llm", lambda: llm)
+    contexts = [_context("a", "doc-1", "장애 대응", "타임아웃 설명")]
+
+    tokens = asyncio.run(_collect(generate("원인은?", [], contexts, {"doc-1": "결제 회고"})))
+
+    # 빈 토큰은 보내지 않는다
+    assert tokens == ["결제 장애는 ", "타임아웃 때문입니다 [1]."]
+
+
+def test_generate_numbers_contexts_and_keeps_history(monkeypatch):
+    llm = _FakeStreamingLLM(["답"])
+    monkeypatch.setattr(generate_module, "get_llm", lambda: llm)
+    contexts = [
+        _context("a", "doc-1", "장애 대응", "첫 컨텍스트"),
+        _context("b", "doc-2", None, "둘째 컨텍스트"),
+    ]
+    history = [
+        ChatMessage(role="user", content="이전 질문"),
+        ChatMessage(role="assistant", content="이전 답변"),
+    ]
+
+    asyncio.run(_collect(generate("원인은?", history, contexts, {"doc-1": "결제 회고"})))
+
+    messages = llm.calls[0]
+    assert [m.content for m in messages[1:3]] == ["이전 질문", "이전 답변"]
+    prompt = messages[-1].content
+    assert "[1] 결제 회고 · 장애 대응\n첫 컨텍스트" in prompt
+    # 제목을 못 찾은 문서와 위치가 없는 청크
+    assert "[2] 제목 없음\n둘째 컨텍스트" in prompt
+    assert prompt.index("<documents>") < prompt.index("<question>")
+
+
+def test_generate_without_contexts_does_not_call_llm(monkeypatch):
+    llm = _FakeStreamingLLM(["호출되면 안 됨"])
+    monkeypatch.setattr(generate_module, "get_llm", lambda: llm)
+
+    tokens = asyncio.run(_collect(generate("원인은?", [], [], {})))
+
+    assert tokens == [NO_CONTEXT_ANSWER]
+    assert llm.calls == []
+
+
+# ---------------------------------------------------------------
+# 챗봇 엔드포인트 (POST /api/baseline/chat/stream)
+# ---------------------------------------------------------------
+
+CHAT_URL = "/api/baseline/chat/stream"
+
+
+def _events(text: str) -> list[tuple[str, dict]]:
+    # SSE 본문을 (이벤트 이름, data JSON) 목록으로 바꾼다 (tests/test_chat_stream.py와 같은 방식)
+    events = []
+    for block in text.strip().split("\n\n"):
+        fields = dict(line.split(": ", 1) for line in block.split("\n"))
+        events.append((fields["event"], json.loads(fields["data"])))
+    return events
+
+
+class _FakeGraph:
+    def __init__(self, result: dict | None = None, error: Exception | None = None):
+        self.result = result
+        self.error = error
+
+    async def ainvoke(self, state):
+        if self.error:
+            raise self.error
+        return self.result
+
+
+def _patch_chat(monkeypatch, graph: _FakeGraph, llm: _FakeStreamingLLM) -> None:
+    monkeypatch.setattr(chat_service, "get_graph", lambda: graph)
+    monkeypatch.setattr(
+        chat_service.repository,
+        "get_document_titles",
+        lambda ids: {document_id: "결제 회고" for document_id in ids},
+    )
+    monkeypatch.setattr(generate_module, "get_llm", lambda: llm)
+
+
+def test_chat_streams_tokens_then_references_then_completed(client, monkeypatch):
+    chunk_id, document_id = str(uuid4()), str(uuid4())
+    context = {
+        **_context(chunk_id, document_id, "장애 대응", "앞뒤를 붙인 컨텍스트"),
+        "score": 0.8,
+    }
+    _patch_chat(
+        monkeypatch, _FakeGraph({"contexts": [context]}), _FakeStreamingLLM(["답변 ", "[1]"])
+    )
+
+    response = client.post(CHAT_URL, json={"message": "결제 장애 원인?"})
+
+    assert response.status_code == 200
+    events = _events(response.text)
+    assert [name for name, _ in events] == ["token", "token", "references", "completed"]
+    assert "".join(data["content"] for name, data in events if name == "token") == "답변 [1]"
+    assert events[2][1] == {
+        "items": [
+            {
+                "number": 1,
+                "chunkId": chunk_id,
+                "documentId": document_id,
+                "documentTitle": "결제 회고",
+                "location": "장애 대응",
+                # 근거 발췌문은 앞뒤 청크를 붙이기 전의 본문이다
+                "excerpt": f"{chunk_id} 본문",
+                "score": 0.8,
+            }
+        ]
+    }
+
+
+def test_chat_without_contexts_answers_not_found(client, monkeypatch):
+    _patch_chat(monkeypatch, _FakeGraph({"contexts": []}), _FakeStreamingLLM([]))
+
+    events = _events(client.post(CHAT_URL, json={"message": "질문"}).text)
+
+    assert events == [
+        ("token", {"content": NO_CONTEXT_ANSWER}),
+        ("references", {"items": []}),
+        ("completed", {}),
+    ]
+
+
+def test_chat_graph_failure_sends_error_event(client, monkeypatch):
+    _patch_chat(monkeypatch, _FakeGraph(error=RuntimeError("db down")), _FakeStreamingLLM([]))
+
+    events = _events(client.post(CHAT_URL, json={"message": "질문"}).text)
+
+    assert events == [("error", {"message": "답변을 생성하지 못했습니다."})]
+
+
+def test_chat_llm_failure_mid_stream_ends_with_error(client, monkeypatch):
+    context = {**_context(str(uuid4()), str(uuid4()), None, "컨텍스트"), "score": 0.1}
+    llm = _FakeStreamingLLM(["답변 일부"], error=RuntimeError("openai down"))
+    _patch_chat(monkeypatch, _FakeGraph({"contexts": [context]}), llm)
+
+    events = _events(client.post(CHAT_URL, json={"message": "질문"}).text)
+
+    assert [name for name, _ in events] == ["token", "error"]
+
+
+def test_chat_route_is_registered(client):
+    assert CHAT_URL in client.get("/openapi.json").json()["paths"]
