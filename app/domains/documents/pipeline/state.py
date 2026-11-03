@@ -47,8 +47,8 @@ class Chunk(TypedDict):
 class Position(TypedDict):
     text: str
     location: str
-    # 청크 location과 같은 형식의 헤딩 경로. 같은 문구가 여러 곳에 있을 때 근거 청크와 같은 헤딩을
-    # 고른다
+    # 청크 location과 같은 형식의 헤딩 경로.
+    # 같은 문구가 여러 곳에 있을 때 근거 청크와 같은 헤딩 아래의 것을 고른다
     heading: str
 
 

@@ -10,10 +10,8 @@
 # 입력은 그 경험의 근거(E1..)와 근거가 나온 문서의 첫 청크(머리말 H1..: 프로젝트명·부서 등)뿐이다.
 # 원문 전체를 주지 않는 것은 근거 밖 내용이 카드에 들어오는 통로를 줄이기 위해서다.
 # 경험끼리는 독립이라 병렬로 호출한다.
-import contextvars
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
 
@@ -31,7 +29,8 @@ from app.domains.documents.pipeline.models import (
     SourcedText,
 )
 from app.domains.documents.pipeline.positions import locate
-from app.domains.documents.pipeline.stage import finish_stage
+from app.domains.documents.pipeline.quotes import plain
+from app.domains.documents.pipeline.stage import finish_stage, run_parallel
 from app.domains.documents.pipeline.state import Chunk, IngestionState
 
 logger = logging.getLogger(__name__)
@@ -43,12 +42,7 @@ MAX_WORKERS = 4
 _HEADER_CHARS = 1_500
 _REQUIRED = ("title", "summary", "context", "lesson")
 _CONDITIONAL = ("problem", "cause", "approach", "rationale", "outcome")
-_NON_TEXT = re.compile(r"[\W_]+")
 _FULL_DATE_RE = re.compile(r"(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})\s*일?")
-
-
-def _plain(text: str) -> str:
-    return _NON_TEXT.sub("", text)
 
 
 class _Sources:
@@ -61,9 +55,8 @@ class _Sources:
         names: dict,
         positions: dict | None = None,
     ):
-        # positions: 문서 id(문자열) -> 원문 위치 목록. 근거 location을 청크 헤딩 경로 대신 인용이
-        # 있는
-        # 정밀 위치(PDF 페이지, XLSX 셀 등)로 채운다. 못 찾으면 청크 location을 쓴다
+        # positions: 문서 id(문자열) -> 원문 위치 목록. 근거 location을 청크 헤딩 경로 대신
+        # 인용이 있는 정밀 위치(PDF 페이지, XLSX 셀 등)로 채운다. 못 찾으면 청크 location을 쓴다
         self.positions = positions or {}
         self.chunks = chunks
         self.evidences: dict[str, CardEvidenceDraft] = {}
@@ -204,9 +197,8 @@ def compose_one(
     for name in ("project_name", "department", "project_date"):
         field = getattr(c, name)
         text, ids = _text(field), sources.valid(field.source_ids)
-        grounded = [
-            i for i in ids if text and _plain(text) and _plain(text) in _plain(sources.text_of(i))
-        ]
+        value = plain(text) if text else ""
+        grounded = [i for i in ids if value and value in plain(sources.text_of(i))]
         values[name] = text if grounded else None
         if values[name]:
             cite(name, grounded, text)
@@ -246,35 +238,23 @@ def draft_card(state: IngestionState) -> dict:
     names = {str(d["id"]): d["original_filename"] for d in state["documents"]}
     llm = get_llm().with_structured_output(CardComposition)
 
-    # 스레드에는 contextvar(job_id 로그·사용량 집계)가 넘어가지 않아서 호출마다 복사해 넘긴다
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        futures = [
-            pool.submit(
-                contextvars.copy_context().run,
-                compose_one,
-                e,
-                chunks,
-                heads,
-                names,
-                llm,
-                i,
-                positions,
-            )
-            for i, e in enumerate(experiences)
-        ]
+    results = run_parallel(
+        lambda item: compose_one(item[1], chunks, heads, names, llm, item[0], positions),
+        list(enumerate(experiences)),
+        MAX_WORKERS,
+    )
 
     drafts: list[CardDraft] = []
     skips: list[str] = []
     failures: list[str] = []
-    for experience, future in zip(experiences, futures):
-        try:
-            draft, skip = future.result()
-        except Exception as e:
+    for experience, result in zip(experiences, results):
+        if isinstance(result, Exception):
             # 경험 하나가 실패해도 나머지는 계속 처리한다(stage.finish_stage 참고)
             label = experience.title.strip()[:40]
-            logger.warning("draft_card: 경험 건너뜀 (%s): %s", label, summarize_error(e))
-            failures.append(f"카드 후보 생성 실패 ({label}): {summarize_error(e)}")
+            logger.warning("draft_card: 경험 건너뜀 (%s): %s", label, summarize_error(result))
+            failures.append(f"카드 후보 생성 실패 ({label}): {summarize_error(result)}")
             continue
+        draft, skip = result
         if draft:
             drafts.append(draft)
         else:

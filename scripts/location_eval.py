@@ -20,7 +20,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.domains.documents.pipeline.nodes.parse import _convert  # noqa: E402
-from app.domains.documents.pipeline.positions import _pieces, _plain, locate  # noqa: E402
+from app.domains.documents.pipeline.positions import locate  # noqa: E402
+from app.domains.documents.pipeline.quotes import plain as _plain  # noqa: E402
+from app.domains.documents.pipeline.quotes import quote_pieces as _pieces  # noqa: E402
 
 _PAGES = re.compile(r"p\.(\d+)")
 _CELLS = re.compile(r"시트 (.+?) · ([A-Z]+)(\d+):([A-Z]+)(\d+)")

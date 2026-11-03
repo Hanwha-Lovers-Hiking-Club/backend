@@ -93,8 +93,8 @@ def _extract_text(content: bytes, filename: str) -> str:
 
 async def parse(state: IngestionState) -> dict:
     # 문서 단위로 실패를 처리한다. 읽은 문서는 원문 검색(청크 인덱싱)에 쓰고, 하나라도 못 읽었으면
-    # parse_failures에 남겨 카드 경로를 건너뛰게 한다(graph.py 참고). 모두 실패했을 때만 job을
-    # 실패시킨다
+    # parse_failures에 남겨 카드 경로를 건너뛰게 한다(graph.py 참고).
+    # 모두 실패했을 때만 job을 실패시킨다
     parsed_documents: list[ParsedDocument] = []
     positions: dict[str, list[Position]] = {}
     failures: list[str] = []

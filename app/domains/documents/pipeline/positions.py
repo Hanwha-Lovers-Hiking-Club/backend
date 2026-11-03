@@ -1,11 +1,9 @@
 # 원문 위치 목록과, 근거 인용문을 그 위치에서 찾는 함수.
 #
-# 청크는 마크다운 기준으로 나뉘어 location이 헤딩 경로뿐이다(PDF 페이지, XLSX 셀 등은 마크다운에서
-# 사라진다).
-# 그래서 parse가 변환 결과에서 "항목 텍스트 + 위치" 목록을 따로 만들고, draft_card가 카드 근거를
-# 만들 때
-# 인용문을 이 목록에서 찾아 정밀한 위치를 붙인다. 청크 경계는 바꾸지 않는다(검증한 실험 결과를
-# 유지).
+# 청크는 마크다운 기준으로 나뉘어 location이 헤딩 경로뿐이다(PDF 페이지, XLSX 셀 등은
+# 마크다운에서 사라진다). 그래서 parse가 변환 결과에서 "항목 텍스트 + 위치" 목록을 따로 만들고,
+# draft_card가 카드 근거를 만들 때 인용문을 이 목록에서 찾아 정밀한 위치를 붙인다.
+# 청크 경계는 바꾸지 않는다(검증한 실험 결과를 유지). 인용 비교 규칙은 quotes.py를 쓴다.
 #
 # 형식별 단위와 표시:
 #   PDF  문단·표의 행   "p.2 · 2.3 조치와 결과"
@@ -13,23 +11,15 @@
 #   XLSX 표의 행        "시트 동시성테스트 · A5:H5"
 #   TXT  줄             "12행"
 #   MD   줄             "2. 제약 · 18행"
-import re
 
 from app.domains.documents.pipeline.nodes.chunk import _FENCE_RE, _HEADING_RE
+from app.domains.documents.pipeline.quotes import plain, quote_pieces
 from app.domains.documents.pipeline.state import Position
 
-_NON_TEXT = re.compile(r"[\W_]+")
-# extract의 인용 검사와 같은 규칙으로 인용을 조각으로 나눈다("..." 생략, 이어 붙인 문장·표 칸)
-_QUOTE_SPLIT = re.compile(r"\.\.\.|…|\[\.\.\.\]|(?<=[.다음함됨임])\s+|\n|\s\|\s")
-_MIN_PIECE_CHARS = 6
 # 인용 조각이 항목 경계에 걸칠 때 이어 붙여 볼 최대 항목 수
 _MAX_WINDOW = 3
 # 인용 전체를 한 번에 찾을 때 이어 붙여 볼 최대 항목 수(표 여러 행을 한꺼번에 인용하는 경우)
 _MAX_WHOLE_WINDOW = 10
-
-
-def _plain(text: str) -> str:
-    return _NON_TEXT.sub("", text)
 
 
 def _join_heading(stack: list[tuple[int, str]]) -> str:
@@ -143,12 +133,6 @@ def docling_positions(doc, kind: str) -> list[Position]:
     return positions
 
 
-def _pieces(quote: str) -> list[str]:
-    pieces = [p for p in map(_plain, _QUOTE_SPLIT.split(quote)) if len(p) >= _MIN_PIECE_CHARS]
-    whole = _plain(quote)
-    return pieces or ([whole] if whole else [])
-
-
 def _find(
     piece: str, plains: list[str], positions: list[Position], heading: str | None
 ) -> list[int]:
@@ -168,10 +152,10 @@ def _find(
 
 def locate(quote: str, positions: list[Position], heading: str | None = None) -> str | None:
     """인용문이 있는 원문 위치를 돌려준다. 여러 곳에 걸치면 "처음 ~ 끝", 못 찾으면 None."""
-    pieces = _pieces(quote)
+    pieces = quote_pieces(quote)
     if not pieces or not positions:
         return None
-    plains = [_plain(p["text"]) for p in positions]
+    plains = [plain(p["text"]) for p in positions]
     # 인용 전체가 한 항목(또는 인접 항목)에 다 있는 곳을 먼저 찾는다. 조각별로 따로 찾으면 짧은 조각
     # (날짜, 숫자)이 엉뚱한 곳(다른 시트의 같은 날짜 등)에서 먼저 잡힌다
     whole = _find_all(pieces, plains, positions, heading)

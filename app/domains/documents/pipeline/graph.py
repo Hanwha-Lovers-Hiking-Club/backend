@@ -1,20 +1,17 @@
 # 파이프라인 전체 연결:
-# parse -> chunk -> extract -> draft_card -> verify -> embed -> save -> embed_chunks -> save_chunks.
-# verify가 정한 공개 상태(active/draft)가 있는 카드만 embed/save로 간다
-# (excluded/incomplete는 저장 안 함).
-# embed_chunks/save_chunks(청크 검색 인덱싱)는 카드 저장 뒤에 붙고,
-# 실패해도 error가 아니라 warnings만 남긴다.
+#   parse -> chunk -> extract -> draft_card -> verify -> embed -> save
+#   -> embed_chunks -> save_chunks
 #
-# 원문 검색(청크 인덱싱)은 카드 생성과 독립이다. 카드가 실패해도 읽은 문서는 챗봇이 원문으로 쓸 수
-# 있어야 한다.
-#   - 카드 경로(extract, draft_card, verify, embed, save)의 오류는 state["card_error"]로 바꿔 담고
-#     남은 카드 노드를 건너뛰어 embed_chunks로 간다(job을 실패시키지 않음)
-# - parse가 일부 문서를 못 읽었으면(parse_failures) 카드 경로를 통째로 건너뛰고 embed_chunks로 간다.
+# 카드 경로(extract ~ save)와 원문 검색 인덱싱(embed_chunks, save_chunks)은 독립이다.
+# 카드가 실패해도 읽은 문서는 챗봇이 원문으로 쓸 수 있어야 해서, 라우터가 두 군데에서
+# 인덱싱으로 바로 건너뛴다.
+#   - 카드 노드의 오류는 _card_step이 state["card_error"]로 바꿔 담고, 남은 카드 노드를 건너뛴다
+#   - parse가 일부 문서를 못 읽었으면(parse_failures) 카드 경로를 통째로 건너뛴다.
 #     빠진 문서가 핵심 근거였을 수 있어서 반쪽 근거로 카드를 만들지 않는다
-#   - 그 밖의 노드(parse, chunk, embed_chunks, save_chunks)가 state["error"]를 설정하면 즉시 끝낸다.
-#     parse는 모든 문서를 못 읽었을 때만 error다
-# 노드 안에서 처리하지 못한 예외는 _safe가 error로 바꿔준다(카드 노드면 그 error가 다시 card_error가
-# 된다).
+#   - 그 밖의 노드가 state["error"]를 설정하면 즉시 끝낸다(parse는 모든 문서를 못 읽었을 때만 error)
+# 노드 안에서 처리하지 못한 예외는 _safe가 error로 바꾼다(카드 노드면 다시 card_error가 된다).
+# 저장할 카드는 verify가 정한 공개 상태(active/draft)가 있는 것뿐이다
+# (excluded/incomplete는 저장 안 함).
 # job을 실패로 볼지(쓸 수 있는 결과가 하나도 없는지)는 documents/service.py가 최종 state로 정한다.
 #
 # 실패 정책(노드별):
@@ -22,7 +19,7 @@
 #   항목 단위 soft-fail(stage.finish_stage): draft_card, verify, embed, save —
 #     실패한 항목은 건너뛰고 warnings에 남기며, 처리하려던 항목이 전부 실패했을 때만 카드 경로 오류
 #   soft-fail(warnings만): embed_chunks, save_chunks —
-#     청크 인덱싱이 실패하면 warnings에 남는다(카드도 0개면 service가 job을 실패시킨다)
+#     인덱싱이 실패하면 warnings에 남는다(카드도 0개면 service가 job을 실패시킨다)
 import functools
 import inspect
 import logging

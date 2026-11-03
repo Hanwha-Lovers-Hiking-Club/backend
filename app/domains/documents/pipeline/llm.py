@@ -1,4 +1,4 @@
-# LLM 클라이언트 생성을 한 곳에 모은다 (모델 교체, temperature 등 설정 관리).
+# LLM 클라이언트 생성을 한 곳에 모은다 (모델, 추론 강도, 타임아웃 설정 관리).
 # 지금은 OpenAI 키로 쓰고, 나중에 해커톤 측에서 Claude/OpenAI 키를 받으면 이 함수만 고치면 된다.
 # 임베딩(kure-v3) 클라이언트는 여기가 아니라 embed 노드 단계에서 따로 정한다.
 from functools import lru_cache

@@ -11,7 +11,6 @@
 #     후보)은 버린다. 실험에서 모델이 낸 잘못된 경험(승인 안 된 후보 과제 등)은 전부 계획·관찰뿐이라
 #     이 규칙으로 걸러졌다. 기각한 가설은 원인을 못 찾은 조사에서도 진단 교훈의 근거가 되어 남긴다.
 import logging
-import re
 from pathlib import Path
 
 import tiktoken
@@ -20,6 +19,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.core.logging import summarize_error
 from app.domains.documents.pipeline.llm import get_llm, invoke_with_retry
 from app.domains.documents.pipeline.models import Evidence, Experience, Experiences
+from app.domains.documents.pipeline.quotes import plain, quote_pieces
 from app.domains.documents.pipeline.state import Chunk, IngestionState
 
 logger = logging.getLogger(__name__)
@@ -33,18 +33,6 @@ MAX_INPUT_TOKENS = 200_000
 
 # 이 중 하나도 없으면 실제로 일어난 일(원인 확인, 결정, 조치, 결과, 가설 기각)이 없는 경험이다
 _FACT_KINDS = {"cause", "decision", "action", "result", "rejected_hypothesis"}
-
-# 인용 비교는 글자와 숫자만 본다. PDF 변환문은 줄바꿈 자리에 공백이 끼고("대 사"),
-# 모델은 기호를 빼고 인용하는 일이 흔하다
-_NON_TEXT = re.compile(r"[\W_]+")
-# 모델은 인용 중간을 "..."로 줄이거나 떨어진 문장·표 칸을 이어 붙인다. 조각마다 원문에 있는지 본다
-_QUOTE_SPLIT = re.compile(r"\.\.\.|…|\[\.\.\.\]|(?<=[.다음함됨임])\s+|\n|\s\|\s")
-# 이보다 짧은 조각(표의 "Pass", 숫자 하나 등)은 어디에나 있을 수 있어서 따로 보지 않는다
-_MIN_PIECE_CHARS = 6
-
-
-def _plain(text: str) -> str:
-    return _NON_TEXT.sub("", text)
 
 
 def _aliases(state: IngestionState) -> tuple[dict[str, Chunk], dict[str, str]]:
@@ -72,18 +60,14 @@ def _ground(evidence: Evidence, chunks: dict[str, Chunk]) -> Evidence | None:
     # 모델이 청크 id를 잘못 적은 경우(같은 문서의 다른 청크에 인용이 있음)는 id를 고친다
     doc = evidence.chunk_id.split(":")[0]
     doc_chunks = [(alias, c) for alias, c in chunks.items() if alias.split(":")[0] == doc]
-    quote = _plain(evidence.quote)
-    pieces = [
-        p for p in map(_plain, _QUOTE_SPLIT.split(evidence.quote)) if len(p) >= _MIN_PIECE_CHARS
-    ]
-    pieces = pieces or ([quote] if quote else [])
-    doc_text = "".join(_plain(c["text"]) for _, c in doc_chunks)
+    pieces = quote_pieces(evidence.quote)
+    doc_text = "".join(plain(c["text"]) for _, c in doc_chunks)
     if not pieces or not all(p in doc_text for p in pieces):
         return None
     chunk = chunks.get(evidence.chunk_id)
-    if chunk is None or pieces[0] not in _plain(chunk["text"]):
+    if chunk is None or pieces[0] not in plain(chunk["text"]):
         # 인용 조각이 청크 경계에 걸쳐 있으면 어느 청크에도 통째로 없다. 그때는 원래 청크를 둔다
-        found = next((c for _, c in doc_chunks if pieces[0] in _plain(c["text"])), None)
+        found = next((c for _, c in doc_chunks if pieces[0] in plain(c["text"])), None)
         chunk = found or chunk or doc_chunks[0][1]
     return evidence.model_copy(update={"chunk_id": chunk["id"]})
 

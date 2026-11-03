@@ -16,10 +16,8 @@
 #   호출 실패·판정 누락 -> incomplete(저장 안 함, job 경고)
 # 공개 상태: passed이고 효과가 확인된 outcome이 있으면 active. 결과 없는 passed, 결과 미확정
 # (원문이 효과 판단을 보류한 관찰)인 passed, held는 draft.
-import contextvars
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -34,7 +32,7 @@ from app.domains.documents.pipeline.models import (
     VerificationResult,
     VerifiedCard,
 )
-from app.domains.documents.pipeline.stage import finish_stage
+from app.domains.documents.pipeline.stage import finish_stage, run_parallel
 from app.domains.documents.pipeline.state import Chunk, IngestionState
 
 logger = logging.getLogger(__name__)
@@ -46,11 +44,25 @@ MAX_WORKERS = 4
 _MAX_CHUNK_CHARS = 30_000
 _REQUIRED = ("title", "summary", "context", "lesson")
 _CONDITIONAL = ("problem", "cause", "approach", "rationale", "outcome")
-_OPTIONAL = ("technologies", "project_name", "department", "project_date")
-_FIELDS = (*_REQUIRED[:3], *_CONDITIONAL, "lesson", *_OPTIONAL)
+# 검증 메시지에 보여 주고 판정을 받는 필드(카드 필드 순서 그대로)
+_FIELDS = (
+    "title",
+    "summary",
+    "context",
+    "problem",
+    "cause",
+    "approach",
+    "rationale",
+    "outcome",
+    "lesson",
+    "technologies",
+    "project_name",
+    "department",
+    "project_date",
+)
 _OK = {"supported", "lesson_within_scope"}
-# 내용 오류는 아니지만 공개하지 않을 판정: 원문이 효과 판단을 보류한 결과(outcome을 남기고 draft로
-# 둔다)
+# 내용 오류는 아니지만 공개하지 않을 판정.
+# 원문이 효과 판단을 보류한 결과라, outcome은 남기고 카드를 draft로 둔다
 _UNCONFIRMED = "result_unconfirmed"
 _NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
@@ -211,26 +223,19 @@ def verify(state: IngestionState) -> dict:
         i = draft.experience_index
         return experiences[i] if i is not None and 0 <= i < len(experiences) else None
 
-    # 스레드에는 contextvar(job_id 로그·사용량 집계)가 넘어가지 않아서 호출마다 복사해 넘긴다
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        futures = [
-            pool.submit(
-                contextvars.copy_context().run, verify_one, d, experience_of(d), chunks, names, llm
-            )
-            for d in drafts
-        ]
+    results = run_parallel(
+        lambda d: verify_one(d, experience_of(d), chunks, names, llm), drafts, MAX_WORKERS
+    )
 
     verified: list[VerifiedCard] = []
     failures: list[str] = []
-    for draft, future in zip(drafts, futures):
-        try:
-            card = future.result()
-        except Exception as e:
+    for draft, card in zip(drafts, results):
+        if isinstance(card, Exception):
             # 검증하지 못한 카드는 저장하지 않는다(내용 보류와 구분해 incomplete로 남긴다)
             card = VerifiedCard(
                 draft=draft,
                 verification=VerificationResult(
-                    verdict="incomplete", reasons=[f"검증 호출 실패: {summarize_error(e)}"]
+                    verdict="incomplete", reasons=[f"검증 호출 실패: {summarize_error(card)}"]
                 ),
             )
         verified.append(card)

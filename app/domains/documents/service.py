@@ -203,12 +203,10 @@ async def _run_pipeline(job_id: UUID, documents: list[dict]) -> None:
         if final.get("error"):
             _fail(job_id, final["error"])
             return
-        # 카드가 0개여도(경험 없는 문서, 카드 생성 실패, 읽지 못한 문서가 있어 카드를 건너뜀) 원문
-        # 검색용
-        # 청크가 저장됐으면 실패가 아니다. 쓸 수 있는 결과(카드 또는 검색 가능한 문서)가 하나도 없을
-        # 때만
-        # 실패다. 그 구분과 사유(warnings)는 해커톤 범위에서는 프론트로 보내지 않고 job과 로그에만
-        # 남긴다
+        # 카드가 0개여도(경험 없는 문서, 카드 생성 실패, 읽지 못한 문서가 있어 카드를 건너뜀)
+        # 원문 검색용 청크가 저장됐으면 실패가 아니다. 쓸 수 있는 결과(카드 또는 검색 가능한 문서)가
+        # 하나도 없을 때만 실패다. 그 구분과 사유(warnings)는 해커톤 범위에서는 프론트로 보내지 않고
+        # job과 로그에만 남긴다
         card_count = final.get("saved_card_count", 0)
         indexed = final.get("indexed_document_count", 0)
         warnings = list(final.get("warnings", []))
