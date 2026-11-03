@@ -48,6 +48,8 @@ class IngestionState(TypedDict):
     job_id: UUID
     documents: list[DocumentInput]
     parsed_documents: list[ParsedDocument]
+    # 읽지 못한 문서와 사유. 하나라도 있으면 카드 경로를 건너뛴다(반쪽 근거로 카드를 만들지 않음)
+    parse_failures: list[str]
     chunks: list[Chunk]
     # extract 노드의 출력. 인용 검사와 근거 종류 필터를 통과한 경험만 들어 있다
     experiences: list[Experience]
@@ -70,4 +72,8 @@ class IngestionState(TypedDict):
     warnings: list[str]
     # documents/service.py의 STEP_PROGRESS 인덱스에 대응하는 그래프 진행 단계
     active_step: int
+    # 카드 경로(extract~save)의 오류. job을 실패시키지 않고 청크 인덱싱으로 넘어간다
+    card_error: str | None
+    # save_chunks가 청크를 저장한 문서 수. 원문 검색이 가능한 문서 수다
+    indexed_document_count: int
     error: str | None

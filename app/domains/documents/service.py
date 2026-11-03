@@ -203,11 +203,30 @@ async def _run_pipeline(job_id: UUID, documents: list[dict]) -> None:
         if final.get("error"):
             _fail(job_id, final["error"])
             return
-        # 카드가 0개여도(예: 일정 공지만 있는 문서) 문서 검색용 청크는 저장되므로 실패가 아니다.
-        # warnings(카드 일부 저장 실패 등)는 지금은 프론트로 보내지 않고 job에만 남긴다
+        # 카드가 0개여도(경험 없는 문서, 카드 생성 실패, 읽지 못한 문서가 있어 카드를 건너뜀) 원문
+        # 검색용
+        # 청크가 저장됐으면 실패가 아니다. 쓸 수 있는 결과(카드 또는 검색 가능한 문서)가 하나도 없을
+        # 때만
+        # 실패다. 그 구분과 사유(warnings)는 해커톤 범위에서는 프론트로 보내지 않고 job과 로그에만
+        # 남긴다
         card_count = final.get("saved_card_count", 0)
-        warnings = final.get("warnings", [])
-        logger.info("작업 완료: 카드 %d개 저장 (경고 %d건)", card_count, len(warnings))
+        indexed = final.get("indexed_document_count", 0)
+        warnings = list(final.get("warnings", []))
+        if final.get("card_error"):
+            warnings.append(f"카드 생성 실패: {final['card_error']}")
+        if final.get("parse_failures"):
+            warnings.append("읽지 못한 문서가 있어 카드 생성을 건너뜀")
+        if card_count == 0 and indexed == 0:
+            reasons = " / ".join(warnings) or "저장된 결과 없음"
+            _fail(job_id, f"저장된 카드와 검색 가능한 문서가 없습니다: {reasons}"[:500])
+            return
+        logger.info(
+            "작업 완료: 카드 %d개 저장, 검색 가능 문서 %d/%d개 (경고 %d건)",
+            card_count,
+            indexed,
+            len(documents),
+            len(warnings),
+        )
         jobs.update_job(
             job_id, status="completed", created_card_count=card_count, warnings=warnings
         )

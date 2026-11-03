@@ -103,3 +103,58 @@ def test_unexpected_exception_in_a_node_becomes_an_error_instead_of_raising(env,
     monkeypatch.setitem(G._NODES, "chunk", boom)
     final = _run()
     assert "chunk 단계에서 예기치 못한 오류" in final["error"] and "embedded_chunks" not in final
+
+
+def _run_docs(*paths: str) -> dict:
+    state = {
+        "job_id": uuid4(),
+        "documents": [
+            {
+                "id": uuid4(),
+                "storage_bucket": "b",
+                "storage_path": p,
+                "original_filename": f"{p}.txt",
+            }
+            for p in paths
+        ],
+    }
+    return asyncio.run(G.build_graph().ainvoke(state))
+
+
+def test_card_llm_failure_still_indexes_chunks_for_original_text_search(env, monkeypatch):
+    class Down:
+        def with_structured_output(self, _schema):
+            return self
+
+        def invoke(self, _messages):
+            raise RuntimeError("terra down")
+
+    monkeypatch.setattr(EX, "get_llm", lambda: Down())
+    final = _run()
+    assert final.get("error") is None and final["card_error"].startswith("경험 추출 실패")
+    assert env["chunk_rows"] and final["indexed_document_count"] == 1 and env["cards"] == []
+
+
+def test_one_broken_document_skips_cards_but_indexes_the_others(env, monkeypatch):
+    def download(path):
+        if path == "broken":
+            raise RuntimeError("깨진 파일")
+        return TEXT.encode()
+
+    def no_llm():
+        raise AssertionError("문서가 빠진 묶음으로 카드를 만들면 안 된다")
+
+    monkeypatch.setattr(P.repository, "download_file", download)
+    monkeypatch.setattr(EX, "get_llm", no_llm)
+    final = _run_docs("ok", "broken")
+    assert final.get("error") is None and "broken.txt" in final["parse_failures"][0]
+    assert final["indexed_document_count"] == 1 and "experiences" not in final
+
+
+def test_nearly_empty_extraction_counts_as_a_broken_document(env, monkeypatch):
+    monkeypatch.setattr(
+        P.repository, "download_file", lambda path: b"  \n " if path == "empty" else TEXT.encode()
+    )
+    final = _run_docs("ok", "empty")
+    assert "추출된 텍스트가 거의 없음" in final["parse_failures"][0]
+    assert final["indexed_document_count"] == 1

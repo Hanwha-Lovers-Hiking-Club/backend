@@ -43,11 +43,14 @@ def _patch_nodes(monkeypatch, job_id, overrides: dict | None = None) -> list[tup
     # 모든 노드를 가짜로 바꾼다. 각 노드가 시작할 때 보이는 job 상태를 기록해서 돌려준다
     seen: list[tuple] = []
 
+    # 기본으로 청크 인덱싱은 성공한 것으로 둔다(검색 가능한 문서 1개)
+    defaults = {"save_chunks": {"indexed_document_count": 1}}
+
     def make(name):
         def node(state):
             job = jobs._jobs[job_id]
             seen.append((name, job["status"], job["active_step"], job["progress"]))
-            return (overrides or {}).get(name, {})
+            return {**defaults, **(overrides or {})}.get(name, {})
 
         return node
 
@@ -93,7 +96,11 @@ def test_completed_with_zero_cards_is_not_a_failure(monkeypatch):
 
 def test_warnings_are_kept_on_job(monkeypatch):
     job_id = _new_job()
-    _patch_nodes(monkeypatch, job_id, {"save_chunks": {"warnings": ["청크 저장 실패: x"]}})
+    overrides = {
+        "save": {"saved_card_count": 1},
+        "save_chunks": {"warnings": ["청크 저장 실패: x"]},
+    }
+    _patch_nodes(monkeypatch, job_id, overrides)
 
     job = _run(job_id)
 
@@ -101,15 +108,54 @@ def test_warnings_are_kept_on_job(monkeypatch):
     assert job["warnings"] == ["청크 저장 실패: x"]
 
 
-def test_node_error_fails_job_and_skips_remaining_nodes(monkeypatch):
+def test_nothing_usable_fails_the_job(monkeypatch):
+    # 카드 0개 + 검색 가능한 문서 0개(청크 저장 실패)면 사용자가 쓸 수 있는 결과가 없다
+    job_id = _new_job()
+    _patch_nodes(monkeypatch, job_id, {"save_chunks": {"warnings": ["청크 저장 실패: x"]}})
+
+    job = _run(job_id)
+
+    assert job["status"] == "failed" and "청크 저장 실패: x" in job["message"]
+
+
+def test_card_path_error_skips_to_chunk_indexing_and_completes(monkeypatch):
     job_id = _new_job()
     seen = _patch_nodes(monkeypatch, job_id, {"extract": {"error": "경험 추출 실패: boom"}})
 
     job = _run(job_id)
 
-    assert [name for name, *_ in seen] == ["parse", "chunk", "extract"]
+    assert [name for name, *_ in seen] == [
+        "parse",
+        "chunk",
+        "extract",
+        "embed_chunks",
+        "save_chunks",
+    ]
+    assert job["status"] == "completed" and job["created_card_count"] == 0
+    assert job["warnings"] == ["카드 생성 실패: 경험 추출 실패: boom"]
+
+
+def test_parse_failure_of_some_documents_skips_the_card_path(monkeypatch):
+    job_id = _new_job()
+    overrides = {"parse": {"parse_failures": ["'b.pdf' 파싱 실패: x"]}}
+    seen = _patch_nodes(monkeypatch, job_id, overrides)
+
+    job = _run(job_id)
+
+    assert [name for name, *_ in seen] == ["parse", "chunk", "embed_chunks", "save_chunks"]
+    assert job["status"] == "completed"
+    assert "읽지 못한 문서가 있어 카드 생성을 건너뜀" in job["warnings"]
+
+
+def test_non_card_node_error_fails_job_and_skips_remaining_nodes(monkeypatch):
+    job_id = _new_job()
+    seen = _patch_nodes(monkeypatch, job_id, {"chunk": {"error": "청크 실패: boom"}})
+
+    job = _run(job_id)
+
+    assert [name for name, *_ in seen] == ["parse", "chunk"]
     assert job["status"] == "failed"
-    assert job["message"] == "경험 추출 실패: boom"
+    assert job["message"] == "청크 실패: boom"
 
 
 def test_node_exception_fails_job_with_short_message(monkeypatch):
@@ -119,12 +165,12 @@ def test_node_exception_fails_job_with_short_message(monkeypatch):
         raise ValueError("문서 내용 " * 200)
 
     _patch_nodes(monkeypatch, job_id)
-    G._NODES["embed"] = boom
+    G._NODES["chunk"] = boom
 
     job = _run(job_id)
 
     assert job["status"] == "failed"
-    assert job["message"].startswith("embed 단계에서 예기치 못한 오류")
+    assert job["message"].startswith("chunk 단계에서 예기치 못한 오류")
     assert len(job["message"]) < 300
 
 

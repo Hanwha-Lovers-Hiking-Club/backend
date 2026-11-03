@@ -79,7 +79,7 @@ def test_save_inserts_in_batches(monkeypatch):
     inserted: list[int] = []
     monkeypatch.setattr(SC.repository, "insert_chunks", lambda rows: inserted.append(len(rows)))
     result = SC.save_chunks({"embedded_chunks": _embedded(SC.INSERT_BATCH_SIZE + 5)})
-    assert result == {} and inserted == [SC.INSERT_BATCH_SIZE, 5]
+    assert "indexed_document_count" in result and inserted == [SC.INSERT_BATCH_SIZE, 5]
 
 
 def test_save_failure_cleans_up_and_only_warns(monkeypatch):

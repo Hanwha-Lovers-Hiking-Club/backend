@@ -44,4 +44,4 @@ def save_chunks(state: IngestionState) -> dict:
         return {"warnings": [*state.get("warnings", []), f"청크 저장 실패: {summarize_error(e)}"]}
 
     logger.info("save_chunks: 청크 %d개 저장 완료", len(rows))
-    return {}
+    return {"indexed_document_count": len({r["document_id"] for r in rows})}

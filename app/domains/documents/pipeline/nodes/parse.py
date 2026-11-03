@@ -21,6 +21,9 @@ from app.domains.documents.pipeline.state import IngestionState, ParsedDocument
 # 변환기는 모델 로딩 비용이 있어서 노드 호출마다 새로 만들지 않고 하나만 재사용한다.
 # 로딩이 실패하면 결과를 저장하지 않으므로 다음 호출에서 다시 시도한다
 _TEXT_EXTENSIONS = {".txt", ".md"}
+# 이보다 짧은 추출 결과는 실패로 본다(스캔 이미지뿐인 PDF처럼 오류 없이 빈 텍스트가 나오는 경우).
+# ponytail: 공백 제외 글자 수 기준의 임시값. 실제로 짧은 정상 문서가 걸리면 낮춘다
+MIN_TEXT_CHARS = 20
 _converter = None
 _converter_lock = threading.Lock()
 
@@ -82,7 +85,11 @@ def _extract_text(content: bytes, filename: str) -> str:
 
 
 async def parse(state: IngestionState) -> dict:
+    # 문서 단위로 실패를 처리한다. 읽은 문서는 원문 검색(청크 인덱싱)에 쓰고, 하나라도 못 읽었으면
+    # parse_failures에 남겨 카드 경로를 건너뛰게 한다(graph.py 참고). 모두 실패했을 때만 job을
+    # 실패시킨다
     parsed_documents: list[ParsedDocument] = []
+    failures: list[str] = []
     for document in state["documents"]:
         filename = document["original_filename"]
         try:
@@ -90,7 +97,15 @@ async def parse(state: IngestionState) -> dict:
             # docling 변환은 동기 CPU 작업이라 이벤트 루프를 막지 않도록 스레드에서 돌린다
             text = await asyncio.to_thread(_extract_text, content, filename)
         except Exception as e:
-            # 문서 하나라도 실패하면 job 전체를 중단한다. 어느 문서인지 바로 알 수 있게 파일명을 남긴다
-            return {"error": f"'{filename}' 파싱 실패: {summarize_error(e)}"}
+            failures.append(f"'{filename}' 파싱 실패: {summarize_error(e)}")
+            continue
+        if len("".join(text.split())) < MIN_TEXT_CHARS:
+            failures.append(f"'{filename}' 파싱 실패: 추출된 텍스트가 거의 없음")
+            continue
         parsed_documents.append({"document_id": document["id"], "text": text})
-    return {"parsed_documents": parsed_documents}
+    if not parsed_documents:
+        return {"error": " / ".join(failures)}
+    update: dict = {"parsed_documents": parsed_documents, "parse_failures": failures}
+    if failures:
+        update["warnings"] = [*state.get("warnings", []), *failures]
+    return update

@@ -82,12 +82,12 @@ def test_parse_retries_the_download(monkeypatch):
         calls["n"] += 1
         if calls["n"] < 3:
             raise RuntimeError("storage down")
-        return "한글 본문".encode()
+        return "한글 본문이 충분히 긴 문서입니다. 다운로드 재시도 확인용.".encode()
 
     monkeypatch.setattr(P.repository, "download_file", flaky_download)
     doc = {"id": "d", "storage_path": "p", "original_filename": "a.txt"}
     result = asyncio.run(P.parse({"documents": [doc]}))
-    assert calls["n"] == 3 and result["parsed_documents"][0]["text"] == "한글 본문"
+    assert calls["n"] == 3 and result["parsed_documents"][0]["text"].startswith("한글 본문")
 
 
 def test_llm_format_errors_are_retried_once_but_transport_errors_are_not():
