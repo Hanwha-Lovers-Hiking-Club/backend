@@ -5,12 +5,18 @@
 사례마다 기대 처리(판정, 비워야 할 필드)를 적어 두고 실제 결과와 비교한다. DB에 쓰지 않고 OpenAI만 호출한다.
 알려진 경계 사례로 프롬프트를 고쳤다면 최종 평가는 튜닝에 쓰지 않은 프로젝트로도 해야 한다.
 
+손으로 만든 미묘한 변조는 --cases JSON으로 준다(원본 카드를 보고 쓴다). 항목 형식:
+    {"project": "pkl 이름 일부", "title": "카드 제목 일부", "name": "사례 이름",
+     "update": {"필드": "새 값"}, "verdicts": ["held"], "cleared": [], "intact": []}
+일반 변조의 "passed" 기대는 원본이 이미 held면 held로 본다(원본 판정을 기준선으로 쓴다).
+
 사용법 (레포 루트에서):
-    uv run python scripts/verify_eval.py runs/dry/<실행 폴더> [--per-type 2]
+    uv run python scripts/verify_eval.py runs/dry/<실행 폴더> [--per-type 2] [--cases cases.json]
 결과: <실행 폴더>/verify_eval.md
 """
 
 import argparse
+import json
 import pickle
 import sys
 from dataclasses import dataclass
@@ -18,10 +24,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.core.logging import setup_logging  # noqa: E402
+from app.core.logging import job_log_context, setup_logging  # noqa: E402
 from app.domains.documents.pipeline.llm import get_llm  # noqa: E402
 from app.domains.documents.pipeline.models import CardDraft, ClaimChecks  # noqa: E402
 from app.domains.documents.pipeline.nodes.verify import verify_one  # noqa: E402
+from app.domains.documents.pipeline.observe import finish_job_usage, start_job_usage  # noqa: E402
 
 FAKE_NUMBER = " 처리 시간도 평균 37% 단축됐다."
 OVERREACH = " 이 방식을 적용하면 같은 유형의 문제를 모든 환경에서 완전히 방지할 수 있다."
@@ -39,12 +46,17 @@ class Case:
 
 def _cases(state: dict, per_type: int) -> list[Case]:
     experiences = state.get("experiences", [])
+    baseline = {
+        c.draft.experience_index: c.verification.verdict for c in state.get("verified_cards", [])
+    }
     cases: list[Case] = []
     counts: dict[str, int] = {}
 
     def add(kind: str, case: Case) -> None:
         if counts.get(kind, 0) < per_type:
             counts[kind] = counts.get(kind, 0) + 1
+            if case.verdicts == {"passed"} and baseline.get(case.experience_index) == "held":
+                case.verdicts = {"held"}  # 원본이 이미 보류인 카드는 변조와 무관하게 보류
             cases.append(case)
 
     for d in state.get("card_drafts", []):
@@ -108,20 +120,6 @@ def _cases(state: dict, per_type: int) -> list[Case]:
                     {"approach"},
                 ),
             )
-        rejected = [e for e in (exp.evidences if exp else []) if e.kind == "rejected_hypothesis"]
-        if rejected and d.approach:
-            # 기각한 가설을 확정 원인으로 쓴 cause는 비워야 한다
-            add(
-                "rejected_as_cause",
-                Case(
-                    f"기각한 가설을 원인으로 | {d.title}",
-                    d.model_copy(update={"cause": f"확인된 원인: {rejected[0].statement}"}),
-                    d.experience_index,
-                    {"passed"},
-                    {"cause"},
-                    {"approach"},
-                ),
-            )
     return cases
 
 
@@ -142,16 +140,19 @@ def main() -> None:
         metavar=("제목일부", "과장제목", "제한제목"),
         help="짝 시험: 카드 제목 일부, 과장한 제목(기대: held), 범위를 제한한 제목(기대: passed)",
     )
+    parser.add_argument("--cases", default=None, help="손으로 만든 변조 사례 JSON 파일")
     args = parser.parse_args()
+    manual = json.loads(Path(args.cases).read_text(encoding="utf-8")) if args.cases else []
     setup_logging()
 
     llm = get_llm().with_structured_output(ClaimChecks)
+    start_job_usage("verify-eval")
     lines = ["# verify 평가", ""]
     rows, failures = [], 0
     for pkl in sorted(Path(args.run_dir).glob("*.pkl")):
         state = pickle.loads(pkl.read_bytes())
         chunks = {c["id"]: c for c in state["chunks"]}
-        names = {d["id"]: d["original_filename"] for d in state["documents"]}
+        names = {str(d["id"]): d["original_filename"] for d in state["documents"]}
         experiences = state.get("experiences", [])
 
         # 원본 카드: dry-run의 판정을 그대로 보여 준다(사람이 정상 카드인지 판단)
@@ -161,7 +162,22 @@ def main() -> None:
                 f"| 원본 | {pkl.stem} | {c.draft.title[:40]} | (사람 판단) | {v.verdict}/{v.status} 비움 {v.cleared_fields} | - |"
             )
 
-        cases = _cases(state, args.per_type)
+        cases = _cases(state, args.per_type) if args.per_type else []
+        for m in manual:
+            if m["project"] not in pkl.stem:
+                continue
+            for d in state.get("card_drafts", []):
+                if m["title"] in d.title:
+                    cases.append(
+                        Case(
+                            f"수작업:{m['name']} | {d.title}",
+                            d.model_copy(update=m["update"]),
+                            d.experience_index,
+                            set(m["verdicts"]),
+                            set(m.get("cleared", [])),
+                            set(m.get("intact", [])),
+                        )
+                    )
         for part, overclaim, limited in args.pair:
             for d in state.get("card_drafts", []):
                 if part in d.title:
@@ -188,7 +204,8 @@ def main() -> None:
         for case in cases:
             exp = experiences[case.experience_index] if case.experience_index is not None else None
             try:
-                result = verify_one(case.draft, exp, chunks, names, llm)
+                with job_log_context("verify-eval"):
+                    result = verify_one(case.draft, exp, chunks, names, llm)
             except Exception as e:
                 rows.append(
                     f"| {case.name.split(' | ')[0]} | {pkl.stem} | {case.name.split(' | ')[1][:40]} | {sorted(case.verdicts)} | 호출 실패 {e} | ✗ |"
@@ -213,7 +230,12 @@ def main() -> None:
             )
 
     lines += ["| 사례 | 프로젝트 | 카드 | 기대 | 실제 | 일치 |", "|---|---|---|---|---|---|", *rows]
+    usage = finish_job_usage("verify-eval")
     lines += ["", f"변조·짝 사례 중 기대와 다른 것: {failures}개"]
+    lines.append(
+        f"LLM {usage.llm_calls}회, 입력 {usage.input_tokens:,} / 출력 {usage.output_tokens:,} 토큰"
+    )
+    print(lines[-1])
     out = Path(args.run_dir) / "verify_eval.md"
     out.write_text("\n".join(lines), encoding="utf-8")
     print(f"결과: {out}")
