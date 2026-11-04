@@ -1,11 +1,13 @@
 # POST /api/chat/stream (SSE) 테스트. 의도 파악/검색/검증/생성은 가짜로 바꿔서 service의 순서와
 # 분기만 확인한다 (LLM, 임베딩, DB를 호출하지 않는다).
+import asyncio
 import json
+import time
 
 import pytest
 
 from app.domains.chat import service
-from app.domains.chat.generator import NO_CARD_MESSAGE, OFF_TOPIC_MESSAGE
+from app.domains.chat.generator import NO_DATA_MESSAGE, OFF_TOPIC_MESSAGE
 from app.domains.chat.models import Candidate, Intent, VerifiedCandidate
 
 URL = "/api/chat/stream"
@@ -236,7 +238,7 @@ def test_no_cards_found_answers_with_notice(client, monkeypatch):
     response = client.post(URL, json={"message": "질문"})
 
     events = _events(response.text)
-    assert _answer(events) == NO_CARD_MESSAGE
+    assert _answer(events) == NO_DATA_MESSAGE
     assert dict(events)["references"]["items"] == []
     assert events[-1][0] == "completed"
 
@@ -251,6 +253,55 @@ def test_failure_sends_error_event(client, pipeline, monkeypatch, failing):
     response = client.post(URL, json={"message": "질문"})
 
     assert response.status_code == 200
+    assert _events(response.text) == [("error", {"message": "답변을 생성하지 못했습니다."})]
+
+
+@pytest.mark.parametrize(
+    ("stage", "limit"),
+    [("understand_intent", "INTENT_TIMEOUT_SECONDS"), ("search_cards", "SEARCH_TIMEOUT_SECONDS")],
+)
+def test_slow_stage_ends_with_error_event(client, pipeline, monkeypatch, stage, limit):
+    async def slow(*args):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(service, stage, slow)
+    monkeypatch.setattr(service, limit, 0.05)
+
+    started = time.perf_counter()
+    response = client.post(URL, json={"message": "질문"})
+
+    assert time.perf_counter() - started < 2
+    assert _events(response.text) == [("error", {"message": "답변을 생성하지 못했습니다."})]
+
+
+def test_slow_generation_is_cut_at_time_limit_with_notice(client, pipeline, monkeypatch):
+    async def slow_generate(message, history, kind, cards):
+        yield "첫 문장입니다."
+        await asyncio.sleep(5)
+        yield "시간 밖의 문장"
+
+    monkeypatch.setattr(service, "generate_answer", slow_generate)
+    monkeypatch.setattr(service, "ANSWER_TIME_LIMIT_SECONDS", 0.3)
+
+    started = time.perf_counter()
+    response = client.post(URL, json={"message": "질문"})
+
+    assert time.perf_counter() - started < 2
+    events = _events(response.text)
+    assert [name for name, _ in events] == ["token", "token", "references", "completed"]
+    assert _answer(events) == "첫 문장입니다." + service.TRUNCATED_NOTICE
+
+
+def test_generation_without_any_token_in_time_is_error(client, pipeline, monkeypatch):
+    async def silent_generate(message, history, kind, cards):
+        await asyncio.sleep(5)
+        yield "늦은 답"
+
+    monkeypatch.setattr(service, "generate_answer", silent_generate)
+    monkeypatch.setattr(service, "ANSWER_TIME_LIMIT_SECONDS", 0.3)
+
+    response = client.post(URL, json={"message": "질문"})
+
     assert _events(response.text) == [("error", {"message": "답변을 생성하지 못했습니다."})]
 
 

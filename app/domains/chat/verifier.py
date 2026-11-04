@@ -8,6 +8,7 @@
 #
 # 대가: 답변이 나오기까지 LLM 호출이 한 번 더 끼어 지연되고 비용이 늘어난다.
 # 끄고 싶으면 환경변수 CHAT_VERIFY_ENABLED=false (config.py).
+import asyncio
 import logging
 from pathlib import Path
 
@@ -29,6 +30,10 @@ _PROMPT = (Path(__file__).parent / "prompts" / "verify.md").read_text(encoding="
 UNVERIFIED_REASON = "질문과 의미가 가까운 카드로 검색됐습니다. (교차 검증은 진행하지 못했습니다.)"
 
 _NONE = "(없음)"
+
+# 답변 전체를 30초 안에 끝내기 위한 검증 단계 몫 (service.py ANSWER_TIME_LIMIT_SECONDS).
+# 실측 3~8초. 넘기면 실패와 똑같이 검증 없이 후보를 그대로 쓴다
+VERIFY_TIMEOUT_SECONDS = 12
 
 
 def _unverified_reason(candidate: Candidate) -> str:
@@ -94,10 +99,11 @@ async def verify(question: str, retrieval: Retrieval) -> Verification:
         return Verification(chunks=[], cards=[], answerable=False)
 
     try:
-        output = (
-            await get_llm()
+        output = await asyncio.wait_for(
+            get_llm()
             .with_structured_output(VerificationOutput)
-            .ainvoke(_build_prompt(question, retrieval))
+            .ainvoke(_build_prompt(question, retrieval)),
+            timeout=VERIFY_TIMEOUT_SECONDS,
         )
     except Exception:
         # 검증이 실패했다고 답변까지 막지 않는다. 검증 못 했다는 사실은 이유 문구와 로그에 남긴다

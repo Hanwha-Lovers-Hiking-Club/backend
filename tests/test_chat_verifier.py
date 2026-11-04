@@ -1,4 +1,6 @@
 # 챗봇 검증 에이전트 테스트. LLM은 가짜로 바꿔 판단 결과를 처리하는 로직만 본다.
+import asyncio
+
 import pytest
 
 from app.domains.chat import verifier
@@ -223,6 +225,21 @@ async def test_llm_failure_keeps_everything_and_says_unverified(monkeypatch, ret
 
     assert result.chunks == retrieval.chunks
     assert [v.candidate for v in result.cards] == retrieval.cards
+    assert all(v.reason == verifier.UNVERIFIED_REASON for v in result.cards)
+    assert result.answerable is True
+
+
+async def test_slow_llm_falls_back_like_failure(monkeypatch, retrieval):
+    class SlowLLM(FakeLLM):
+        async def ainvoke(self, prompt):
+            await asyncio.sleep(5)
+
+    _use(monkeypatch, SlowLLM())
+    monkeypatch.setattr(verifier, "VERIFY_TIMEOUT_SECONDS", 0.05)
+
+    result = await verifier.verify("질문", retrieval)
+
+    assert result.chunks == retrieval.chunks
     assert all(v.reason == verifier.UNVERIFIED_REASON for v in result.cards)
     assert result.answerable is True
 
