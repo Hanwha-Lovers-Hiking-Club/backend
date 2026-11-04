@@ -6,9 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-# extract 노드의 LLM 구조화 출력 타입들. 필드 이름과 순서는 비교 실험
-# (scripts/compare_extraction.py)에서 검증한 그대로다. 구조화 출력은 필드 순서대로 생성되므로
-# 바꾸면 결과가 달라질 수 있다
+# extract 노드의 LLM 구조화 출력 타입들. 필드 이름과 순서는 비교 실험에서 검증한 그대로다.
+# 구조화 출력은 필드 순서대로 생성되므로 바꾸면 결과가 달라질 수 있다
 EvidenceKind = Literal[
     "observation",
     "hypothesis",
