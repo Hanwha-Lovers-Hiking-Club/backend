@@ -27,7 +27,10 @@ OFF_TOPIC_MESSAGE = (
     "개발 기술 및 관련 개념에 대해 질문해 주세요."
 )
 
-HISTORY_LIMIT = 10
+# 이전 대화는 후속 질문일 때만 넘긴다(service.py). 지금 질문이 무엇을 가리키는지 알면 충분해서
+# 최근 대화만 넣고, 이전 답변은 앞부분만 넣는다. 답변 근거는 매번 새로 검색한 자료다
+HISTORY_LIMIT = 6
+ASSISTANT_PREVIEW_CHARS = 500
 
 _NONE = "(없음)"
 
@@ -85,8 +88,12 @@ def _build_messages(
     system = f"{_SYSTEM_PROMPT}{INTENT_GUIDANCE[kind]}"
     messages: list[BaseMessage] = [SystemMessage(content=system)]
     for item in history[-HISTORY_LIMIT:]:
-        message_type = HumanMessage if item.role == "user" else AIMessage
-        messages.append(message_type(content=item.content))
+        if item.role == "user":
+            messages.append(HumanMessage(content=item.content))
+        elif len(item.content) > ASSISTANT_PREVIEW_CHARS:
+            messages.append(AIMessage(content=item.content[:ASSISTANT_PREVIEW_CHARS] + "...(생략)"))
+        else:
+            messages.append(AIMessage(content=item.content))
     messages.append(
         HumanMessage(content=f"{_context(chunks, cards, conflicts)}\n\n## 질문\n{message}")
     )

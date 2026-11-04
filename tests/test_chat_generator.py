@@ -137,6 +137,21 @@ async def test_history_is_trimmed_to_limit(monkeypatch, make_card):
     assert llm.messages[1].content == f"질문 {30 - generator.HISTORY_LIMIT}"
 
 
+async def test_long_previous_answer_is_shortened(monkeypatch, make_card):
+    llm = FakeStreamLLM(["답"])
+    _use(monkeypatch, llm)
+    long_answer = "가" * (generator.ASSISTANT_PREVIEW_CHARS + 50)
+    history = [
+        ChatMessage(role="user", content="이전 질문"),
+        ChatMessage(role="assistant", content=long_answer),
+    ]
+
+    await _collect(generator.generate_answer("질문", history, "general", [make_card()]))
+
+    previous_answer = llm.messages[2].content
+    assert previous_answer == "가" * generator.ASSISTANT_PREVIEW_CHARS + "...(생략)"
+
+
 async def test_no_data_answers_with_notice_without_calling_llm(monkeypatch):
     def forbidden():
         raise AssertionError("자료가 없으면 LLM을 부르면 안 된다")

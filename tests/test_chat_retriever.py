@@ -263,6 +263,6 @@ async def test_intent_selects_embedding_kind(monkeypatch, kind, embedding_kind):
     monkeypatch.setattr(retriever, "search_chunks", no_chunks)
     monkeypatch.setattr(retriever, "_rank_cards", lambda similarities, chunks: [])
 
-    await retriever.search_cards(_intent(kind))
+    await retriever.search(_intent(kind))
 
     assert received["kind"] == embedding_kind

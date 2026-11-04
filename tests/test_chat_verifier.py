@@ -263,18 +263,6 @@ def test_skip_verification_keeps_everything(retrieval):
     assert result.answerable is True
 
 
-async def test_verify_candidates_wraps_verify_for_cards_only(monkeypatch, candidates):
-    _use(
-        monkeypatch,
-        FakeLLM(_output(cards=[CardJudgement(index=2, relevant=True, reason="이유")])),
-    )
-
-    result = await verifier.verify_candidates("질문", candidates)
-
-    assert [v.candidate.card.title for v in result] == ["카드 2"]
-    assert await verifier.verify_candidates("질문", []) == []
-
-
 def test_unverified_reason_shows_similarity(candidates):
     result = verifier.unverified(candidates)
 

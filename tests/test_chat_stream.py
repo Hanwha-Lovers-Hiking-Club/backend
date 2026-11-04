@@ -3,14 +3,26 @@
 import asyncio
 import json
 import time
+from uuid import UUID, uuid4
 
 import pytest
 
-from app.domains.chat import service
+from app.domains.chat import service, verifier
 from app.domains.chat.generator import NO_DATA_MESSAGE, OFF_TOPIC_MESSAGE
-from app.domains.chat.models import Candidate, Intent, VerifiedCandidate
+from app.domains.chat.models import (
+    Candidate,
+    ChunkCandidate,
+    Intent,
+    Retrieval,
+    Verification,
+    VerifiedCandidate,
+)
 
 URL = "/api/chat/stream"
+HISTORY = [
+    {"role": "user", "content": "RAG 검색에 대해 설명해줘."},
+    {"role": "assistant", "content": "RAG는 외부 지식을 검색하는 방식입니다."},
+]
 
 
 def _intent(**overrides) -> Intent:
@@ -27,6 +39,19 @@ def _intent(**overrides) -> Intent:
     return Intent(**data)
 
 
+def _chunk(n: int = 1) -> ChunkCandidate:
+    return ChunkCandidate(
+        id=str(uuid4()),
+        document_id=str(uuid4()),
+        document_title=f"문서 {n}",
+        chunk_index=n,
+        location=f"{n}장",
+        content=f"원문 내용 {n}",
+        score=0.02,
+        similarity=0.5,
+    )
+
+
 def _events(text: str) -> list[tuple[str, dict]]:
     # SSE 본문을 (이벤트 이름, data JSON) 목록으로 바꾼다
     events = []
@@ -40,11 +65,29 @@ def _answer(events: list[tuple[str, dict]]) -> str:
     return "".join(data["content"] for name, data in events if name == "token")
 
 
+def _use_verification(monkeypatch, **fields):
+    # 검증 결과를 고정한다. 지정하지 않은 값은 검색 결과를 모두 통과시킨 것과 같다
+    async def fake_verify(question, retrieval):
+        data = {
+            "chunks": retrieval.chunks,
+            "cards": [
+                VerifiedCandidate(candidate=c, reason="질문과 같은 문제를 다룹니다.")
+                for c in retrieval.cards
+            ],
+            "answerable": True,
+            **fields,
+        }
+        return Verification(**data)
+
+    monkeypatch.setattr(service, "verify", fake_verify)
+
+
 @pytest.fixture
 def pipeline(monkeypatch, make_card):
-    # 정상 흐름용 가짜 단계들. 각 테스트가 필요하면 monkeypatch로 다시 덮어쓴다
+    # 정상 흐름(유형 E)용 가짜 단계들. 각 테스트가 필요하면 monkeypatch로 다시 덮어쓴다
     calls = {"generate": [], "search": 0, "verify": 0}
     card = make_card()
+    chunks = [_chunk(1), _chunk(2)]
 
     async def fake_intent(message, history):
         calls["intent"] = (message, history)
@@ -52,30 +95,48 @@ def pipeline(monkeypatch, make_card):
 
     async def fake_search(intent):
         calls["search"] += 1
-        return [Candidate(card=card, similarity=0.8)]
+        return Retrieval(cards=[Candidate(card=card, similarity=0.8)], chunks=chunks)
 
-    async def fake_verify(question, candidates):
+    async def fake_verify(question, retrieval):
         calls["verify"] += 1
         calls["verify_question"] = question
-        return [
-            VerifiedCandidate(candidate=c, reason="질문과 같은 문제를 다룹니다.")
-            for c in candidates
-        ]
+        return Verification(
+            chunks=retrieval.chunks,
+            cards=[
+                VerifiedCandidate(candidate=c, reason="질문과 같은 문제를 다룹니다.")
+                for c in retrieval.cards
+            ],
+            answerable=True,
+            conflicts="v1 문서와 회의록의 수치가 다르다",
+        )
 
-    async def fake_generate(message, history, kind, cards):
-        calls["generate"].append((kind, cards))
+    async def fake_generate(message, history, kind, cards, chunks=None, conflicts=None):
+        calls["generate"].append(
+            {
+                "history": history,
+                "kind": kind,
+                "cards": cards,
+                "chunks": chunks,
+                "conflicts": conflicts,
+            }
+        )
         for token in ["하이브리드 ", "검색을 썼어요."]:
             yield token
 
     monkeypatch.setattr(service, "understand_intent", fake_intent)
-    monkeypatch.setattr(service, "search_cards", fake_search)
-    monkeypatch.setattr(service, "verify_candidates", fake_verify)
+    monkeypatch.setattr(service, "search", fake_search)
+    monkeypatch.setattr(service, "verify", fake_verify)
     monkeypatch.setattr(service, "generate_answer", fake_generate)
     calls["card"] = card
+    calls["chunks"] = chunks
     return calls
 
 
-def test_streams_tokens_then_references_then_completed(client, pipeline):
+def _references(response) -> dict:
+    return dict(_events(response.text))["references"]
+
+
+def test_streams_tokens_then_references_then_completed_with_message_id(client, pipeline):
     response = client.post(URL, json={"message": "RAG 검색 정확도를 개선한 사례가 있어?"})
 
     assert response.status_code == 200
@@ -83,14 +144,22 @@ def test_streams_tokens_then_references_then_completed(client, pipeline):
     events = _events(response.text)
     assert [name for name, _ in events] == ["token", "token", "references", "completed"]
     assert _answer(events) == "하이브리드 검색을 썼어요."
-    assert events[-1][1] == {}
+    assert set(events[-1][1]) == {"messageId"}
+    UUID(events[-1][1]["messageId"])
+
+
+def test_each_answer_gets_a_new_message_id(client, pipeline):
+    first = _events(client.post(URL, json={"message": "질문"}).text)[-1][1]["messageId"]
+    second = _events(client.post(URL, json={"message": "질문"}).text)[-1][1]["messageId"]
+
+    assert first != second
 
 
 def test_references_match_frontend_chat_reference(client, pipeline):
-    # 프론트 src/features/chat/types.ts의 ChatReference 모양
+    # 프론트 src/features/chat/types.ts의 ChatReference 모양 (기존 형식 그대로)
     response = client.post(URL, json={"message": "질문"})
 
-    [reference] = dict(_events(response.text))["references"]["items"]
+    [reference] = _references(response)["items"]
     assert set(reference) == {"id", "type", "label", "card", "reason", "document"}
     assert reference["type"] == "knowledge-card"
     assert reference["reason"] == "질문과 같은 문제를 다룹니다."
@@ -109,34 +178,58 @@ def test_references_match_frontend_chat_reference(client, pipeline):
     }
 
 
-def test_answer_is_generated_from_verified_cards_with_intent_kind(client, pipeline):
+def test_sources_list_chunks_used_for_answer(client, pipeline):
+    response = client.post(URL, json={"message": "질문"})
+
+    sources = _references(response)["sources"]
+    assert sources == [
+        {
+            "chunkId": chunk.id,
+            "documentId": chunk.document_id,
+            "documentTitle": chunk.document_title,
+            "location": chunk.location,
+            "excerpt": chunk.content,
+        }
+        for chunk in pipeline["chunks"]
+    ]
+
+
+def test_answer_is_generated_from_verified_chunks_cards_and_conflicts(client, pipeline):
     client.post(URL, json={"message": "질문"})
 
-    [(kind, cards)] = pipeline["generate"]
-    assert kind == "solution"
-    assert [c.title for c in cards] == [pipeline["card"].title]
+    [generated] = pipeline["generate"]
+    assert generated["kind"] == "solution"
+    assert [c.title for c in generated["cards"]] == [pipeline["card"].title]
+    assert generated["chunks"] == pipeline["chunks"]
+    assert generated["conflicts"] == "v1 문서와 회의록의 수치가 다르다"
     # 검증 에이전트는 이전 대화가 풀어 쓰인 검색 문장을 받는다
     assert pipeline["verify_question"] == "RAG 검색 정확도를 높인 방법"
 
 
 def test_history_is_passed_to_intent(client, pipeline):
-    client.post(
-        URL,
-        json={
-            "message": "질문",
-            "history": [
-                {"role": "user", "content": "RAG 검색에 대해 설명해줘."},
-                {"role": "assistant", "content": "RAG는 외부 지식을 검색하는 방식입니다."},
-            ],
-        },
-    )
+    client.post(URL, json={"message": "질문", "history": HISTORY})
 
     message, history = pipeline["intent"]
     assert message == "질문"
-    assert [(m.role, m.content) for m in history] == [
-        ("user", "RAG 검색에 대해 설명해줘."),
-        ("assistant", "RAG는 외부 지식을 검색하는 방식입니다."),
-    ]
+    assert [(m.role, m.content) for m in history] == [(m["role"], m["content"]) for m in HISTORY]
+
+
+def test_new_topic_question_is_generated_without_history(client, pipeline):
+    client.post(URL, json={"message": "질문", "history": HISTORY})
+
+    assert pipeline["generate"][0]["history"] == []
+
+
+def test_follow_up_question_is_generated_with_history(client, pipeline, monkeypatch):
+    async def follow_up(message, history):
+        return _intent(is_follow_up=True)
+
+    monkeypatch.setattr(service, "understand_intent", follow_up)
+
+    client.post(URL, json={"message": "그건 왜 그랬어?", "history": HISTORY})
+
+    history = pipeline["generate"][0]["history"]
+    assert [(m.role, m.content) for m in history] == [(m["role"], m["content"]) for m in HISTORY]
 
 
 def test_verification_can_be_disabled(client, pipeline, monkeypatch):
@@ -145,38 +238,69 @@ def test_verification_can_be_disabled(client, pipeline, monkeypatch):
     response = client.post(URL, json={"message": "질문"})
 
     assert pipeline["verify"] == 0
-    [reference] = dict(_events(response.text))["references"]["items"]
+    [reference] = _references(response)["items"]
     assert "유사도 0.80" in reference["reason"]
+    assert len(_references(response)["sources"]) == 2
 
 
 def test_references_are_capped(client, pipeline, monkeypatch, make_card):
     cards = [make_card(f"카드 {i}") for i in range(5)]
-
-    async def many(question, candidates):
-        return [
+    _use_verification(
+        monkeypatch,
+        cards=[
             VerifiedCandidate(candidate=Candidate(card=c, similarity=0.9), reason="관련 있음")
             for c in cards
-        ]
-
-    monkeypatch.setattr(service, "verify_candidates", many)
+        ],
+    )
 
     response = client.post(URL, json={"message": "질문"})
 
-    items = dict(_events(response.text))["references"]["items"]
+    items = _references(response)["items"]
     assert [item["label"] for item in items] == ["카드 0", "카드 1", "카드 2"]
-    assert len(pipeline["generate"][0][1]) == service.MAX_REFERENCES
+    assert len(pipeline["generate"][0]["cards"]) == service.MAX_REFERENCES
 
 
-def test_no_verified_cards_generates_with_empty_cards(client, pipeline, monkeypatch):
-    async def none_passed(question, candidates):
-        return []
-
-    monkeypatch.setattr(service, "verify_candidates", none_passed)
+def test_chunks_without_related_cards_answer_without_card_area(client, pipeline, monkeypatch):
+    # 유형 D: 원문으로 답하고 카드 참조는 빈 목록 (프론트는 카드 영역을 그리지 않는다)
+    _use_verification(monkeypatch, cards=[])
 
     response = client.post(URL, json={"message": "질문"})
 
-    assert pipeline["generate"] == [("solution", [])]
-    assert dict(_events(response.text))["references"]["items"] == []
+    [generated] = pipeline["generate"]
+    assert generated["cards"] == [] and generated["chunks"] == pipeline["chunks"]
+    references = _references(response)
+    assert references["items"] == []
+    assert len(references["sources"]) == 2
+    assert _answer(_events(response.text)) == "하이브리드 검색을 썼어요."
+
+
+def test_not_answerable_answers_with_notice_without_generating(client, pipeline, monkeypatch):
+    # 유형 B: 검색 결과가 있어도 검증이 답할 수 없다고 하면 고정 문구로 답한다
+    _use_verification(monkeypatch, answerable=False)
+
+    response = client.post(URL, json={"message": "Kafka 컨슈머 랙 대응 사례?"})
+
+    events = _events(response.text)
+    assert [name for name, _ in events] == ["token", "references", "completed"]
+    assert _answer(events) == NO_DATA_MESSAGE
+    assert dict(events)["references"] == {"items": [], "sources": []}
+    assert pipeline["generate"] == []
+
+
+def test_nothing_found_answers_with_notice(client, pipeline, monkeypatch):
+    # verify는 진짜를 쓴다: 후보가 하나도 없으면 LLM 없이 답할 수 없다고 판단한다
+    async def nothing(intent):
+        return Retrieval(cards=[], chunks=[])
+
+    monkeypatch.setattr(service, "search", nothing)
+    monkeypatch.setattr(service, "verify", verifier.verify)
+
+    response = client.post(URL, json={"message": "질문"})
+
+    events = _events(response.text)
+    assert _answer(events) == NO_DATA_MESSAGE
+    assert events[-1][0] == "completed"
+    assert pipeline["generate"] == []
 
 
 def test_clarification_asks_back_without_searching(client, pipeline, monkeypatch):
@@ -194,7 +318,7 @@ def test_clarification_asks_back_without_searching(client, pipeline, monkeypatch
     events = _events(response.text)
     assert [name for name, _ in events] == ["token", "references", "completed"]
     assert _answer(events) == "어떤 기술 스택에 대한 사례를 찾으세요?"
-    assert dict(events)["references"]["items"] == []
+    assert dict(events)["references"] == {"items": [], "sources": []}
     assert pipeline["search"] == 0
     assert pipeline["generate"] == []
 
@@ -211,6 +335,7 @@ def test_clarification_flag_without_question_still_searches(client, pipeline, mo
 
 
 def test_off_topic_answers_with_notice_without_searching(client, pipeline, monkeypatch):
+    # 유형 A
     async def chitchat(message, history):
         return _intent(is_dev_domain=False, kind="general", key_terms=[])
 
@@ -221,31 +346,14 @@ def test_off_topic_answers_with_notice_without_searching(client, pipeline, monke
     events = _events(response.text)
     assert [name for name, _ in events] == ["token", "references", "completed"]
     assert _answer(events) == OFF_TOPIC_MESSAGE
+    assert dict(events)["references"] == {"items": [], "sources": []}
+    assert "messageId" in events[-1][1]
     assert pipeline["search"] == 0
 
 
-def test_no_cards_found_answers_with_notice(client, monkeypatch):
-    # generate_answer는 진짜를 쓴다: 카드가 없으면 LLM을 부르지 않고 고정 문구로 답한다
-    async def fake_intent(message, history):
-        return _intent()
-
-    async def nothing(intent):
-        return []
-
-    monkeypatch.setattr(service, "understand_intent", fake_intent)
-    monkeypatch.setattr(service, "search_cards", nothing)
-
-    response = client.post(URL, json={"message": "질문"})
-
-    events = _events(response.text)
-    assert _answer(events) == NO_DATA_MESSAGE
-    assert dict(events)["references"]["items"] == []
-    assert events[-1][0] == "completed"
-
-
-@pytest.mark.parametrize("failing", ["understand_intent", "search_cards", "generate_answer"])
+@pytest.mark.parametrize("failing", ["understand_intent", "search", "verify", "generate_answer"])
 def test_failure_sends_error_event(client, pipeline, monkeypatch, failing):
-    def broken(*args):
+    def broken(*args, **kwargs):
         raise RuntimeError("실패")
 
     monkeypatch.setattr(service, failing, broken)
@@ -258,7 +366,7 @@ def test_failure_sends_error_event(client, pipeline, monkeypatch, failing):
 
 @pytest.mark.parametrize(
     ("stage", "limit"),
-    [("understand_intent", "INTENT_TIMEOUT_SECONDS"), ("search_cards", "SEARCH_TIMEOUT_SECONDS")],
+    [("understand_intent", "INTENT_TIMEOUT_SECONDS"), ("search", "SEARCH_TIMEOUT_SECONDS")],
 )
 def test_slow_stage_ends_with_error_event(client, pipeline, monkeypatch, stage, limit):
     async def slow(*args):
@@ -275,7 +383,7 @@ def test_slow_stage_ends_with_error_event(client, pipeline, monkeypatch, stage, 
 
 
 def test_slow_generation_is_cut_at_time_limit_with_notice(client, pipeline, monkeypatch):
-    async def slow_generate(message, history, kind, cards):
+    async def slow_generate(*args, **kwargs):
         yield "첫 문장입니다."
         await asyncio.sleep(5)
         yield "시간 밖의 문장"
@@ -293,7 +401,7 @@ def test_slow_generation_is_cut_at_time_limit_with_notice(client, pipeline, monk
 
 
 def test_generation_without_any_token_in_time_is_error(client, pipeline, monkeypatch):
-    async def silent_generate(message, history, kind, cards):
+    async def silent_generate(*args, **kwargs):
         await asyncio.sleep(5)
         yield "늦은 답"
 

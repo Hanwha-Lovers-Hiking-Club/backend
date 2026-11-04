@@ -141,10 +141,3 @@ async def verify(question: str, retrieval: Retrieval) -> Verification:
     return Verification(
         chunks=chunks, cards=cards, answerable=answerable, conflicts=output.conflicts or None
     )
-
-
-async def verify_candidates(question: str, candidates: list[Candidate]) -> list[VerifiedCandidate]:
-    # 아직 원문을 쓰지 않는 기존 흐름(service.py)용. 원문 결합 흐름으로 바뀌면 verify로 대체한다
-    if not candidates:
-        return []
-    return (await verify(question, Retrieval(cards=candidates, chunks=[]))).cards

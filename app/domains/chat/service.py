@@ -1,28 +1,35 @@
-# 챗봇 로직: 질문 의도 파악 -> 지식카드 검색 -> (검증) -> 답변 생성을 SSE 이벤트로 흘려보낸다.
+# 챗봇 로직: 질문 분석 -> 원문·지식카드 검색 -> (검증) -> 답변 생성을 SSE 이벤트로 흘려보낸다.
 # 각 단계의 구현은 intent.py / retriever.py / verifier.py / generator.py에 있고, 여기서는 순서와
-# 분기(범위 밖 질문, 역질문, 카드 없음)만 정한다.
+# 분기만 정한다.
+#   A. 개발 도메인 밖 질문        -> 고정 안내 문구 (검색하지 않음)
+#   B. 자료로 답할 수 없음         -> 고정 안내 문구 (LLM 답변 생성 안 함)
+#   D. 원문만 있고 관련 카드 없음  -> 원문으로 답변, 카드 참조는 빈 목록 (프론트가 카드 영역 숨김)
+#   E. 원문과 관련 카드 모두 있음  -> 원문 + 카드로 답변, 카드 참조 표시
+# (C는 D와 E에 공통인 "원문 선별" 단계라 따로 분기하지 않는다.) 정보가 너무 부족하면 되묻는다.
 import asyncio
 import logging
+import uuid
 from collections.abc import AsyncIterator
 
 from fastapi.sse import ServerSentEvent
 
 from app.config import settings
 from app.core.sse import to_sse
-from app.domains.chat.generator import OFF_TOPIC_MESSAGE, generate_answer
+from app.domains.chat.generator import NO_DATA_MESSAGE, OFF_TOPIC_MESSAGE, generate_answer
 from app.domains.chat.intent import understand_intent
-from app.domains.chat.models import VerifiedCandidate
-from app.domains.chat.retriever import search_cards
+from app.domains.chat.models import ChunkCandidate, VerifiedCandidate
+from app.domains.chat.retriever import search
 from app.domains.chat.schemas import (
     ChatCompletedEvent,
     ChatErrorEvent,
     ChatMessage,
     ChatReference,
     ChatReferencesEvent,
+    ChatSource,
     ChatSourceDocument,
     ChatTokenEvent,
 )
-from app.domains.chat.verifier import unverified, verify_candidates
+from app.domains.chat.verifier import skip_verification, verify
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +68,16 @@ def _to_reference(verified: VerifiedCandidate) -> ChatReference:
             location=evidence.location,
             excerpt=evidence.excerpt,
         ),
+    )
+
+
+def _to_source(chunk: ChunkCandidate) -> ChatSource:
+    return ChatSource(
+        chunk_id=chunk.id,
+        document_id=chunk.document_id,
+        document_title=chunk.document_title,
+        location=chunk.location,
+        excerpt=chunk.content,
     )
 
 
@@ -106,7 +123,7 @@ async def _answer_events(
         understand_intent(message, history), timeout=INTENT_TIMEOUT_SECONDS
     )
 
-    # 개발 도메인 여부는 검색 결과와 상관없이 질문만 보고 판단한다 (자료가 없는 개발 질문과 구분)
+    # A. 개발 도메인 여부는 검색 결과와 상관없이 질문만 보고 판단한다 (자료가 없는 개발 질문과 구분)
     if not intent.is_dev_domain:
         for event in _text_events(OFF_TOPIC_MESSAGE):
             yield event
@@ -118,22 +135,43 @@ async def _answer_events(
             yield event
         return
 
-    candidates = await asyncio.wait_for(search_cards(intent), timeout=SEARCH_TIMEOUT_SECONDS)
+    retrieval = await asyncio.wait_for(search(intent), timeout=SEARCH_TIMEOUT_SECONDS)
     if settings.CHAT_VERIFY_ENABLED:
-        verified = await verify_candidates(intent.search_query, candidates)
+        verification = await verify(intent.search_query, retrieval)
     else:
-        verified = unverified(candidates)
+        verification = skip_verification(retrieval)
 
-    # 근거가 하나도 없는 카드는 참조로 보여줄 수 없다 (카드당 근거 1개 이상은 앱 로직이 보장하지만
-    # 방어한다)
-    references = [_to_reference(v) for v in verified if v.candidate.card.evidences][:MAX_REFERENCES]
+    # B. 답할 수 있는지는 검색 유사도가 아니라 검증 단계가 자료 내용을 보고 정한다
+    if not verification.answerable:
+        for event in _text_events(NO_DATA_MESSAGE):
+            yield event
+        return
 
+    # D/E. 근거가 하나도 없는 카드는 참조로 보여줄 수 없다 (카드당 근거 1개 이상은 앱 로직이
+    # 보장하지만 방어한다). 관련 카드가 없으면 빈 목록이 되어 원문만으로 답한다(D)
+    references = [_to_reference(v) for v in verification.cards if v.candidate.card.evidences][
+        :MAX_REFERENCES
+    ]
     cards = [reference.card for reference in references]
+    # 이전 대화는 후속 질문일 때만 넘긴다. 새 주제 질문에 이전 대화가 섞이지 않게 한다
+    generation_history = history if intent.is_follow_up else []
+
     async for event in _stream_until(
-        generate_answer(message, history, intent.kind, cards), deadline
+        generate_answer(
+            message,
+            generation_history,
+            intent.kind,
+            cards,
+            chunks=verification.chunks,
+            conflicts=verification.conflicts,
+        ),
+        deadline,
     ):
         yield event
-    yield to_sse("references", ChatReferencesEvent(items=references))
+    yield to_sse(
+        "references",
+        ChatReferencesEvent(items=references, sources=[_to_source(c) for c in verification.chunks]),
+    )
 
 
 async def chat_stream(message: str, history: list[ChatMessage]) -> AsyncIterator[ServerSentEvent]:
@@ -146,4 +184,5 @@ async def chat_stream(message: str, history: list[ChatMessage]) -> AsyncIterator
         logger.exception("챗봇 답변 생성 실패")
         yield to_sse("error", ChatErrorEvent(message=CHAT_FAILED_MESSAGE))
         return
-    yield to_sse("completed", ChatCompletedEvent())
+    # 고정 문구로 답한 경우에도 피드백을 받을 수 있도록 모든 답변에 식별자를 붙인다
+    yield to_sse("completed", ChatCompletedEvent(message_id=uuid.uuid4()))

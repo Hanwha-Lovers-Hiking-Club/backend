@@ -157,8 +157,3 @@ async def search(intent: Intent) -> Retrieval:
     )
     cards = await asyncio.to_thread(_rank_cards, similarities, chunks)
     return Retrieval(cards=cards, chunks=chunks)
-
-
-async def search_cards(intent: Intent) -> list[Candidate]:
-    # 아직 원문을 쓰지 않는 기존 흐름(service.py)용. 원문 결합 흐름으로 바뀌면 search로 대체한다
-    return (await search(intent)).cards
