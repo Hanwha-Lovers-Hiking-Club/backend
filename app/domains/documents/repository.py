@@ -2,6 +2,7 @@
 # 노드/서비스가 DB를 직접 만지지 않고 여기 함수를 거치게 한다.
 # 지식카드 저장은 이 파일이 아니라 knowledge_cards 도메인의 service를 호출한다.
 from app.config import settings
+from app.core.text import strip_nul
 from app.db import supabase
 
 
@@ -23,6 +24,14 @@ def insert_documents(rows: list[dict]) -> list[str]:
     # 넣은 순서대로 생성된 documents.id를 돌려준다
     result = supabase.table("documents").insert(rows).execute()
     return [row["id"] for row in result.data]
+
+
+def insert_chunks(rows: list[dict]) -> None:
+    supabase.table("document_chunks").insert(strip_nul(rows)).execute()
+
+
+def delete_chunks(document_ids: list[str]) -> None:
+    supabase.table("document_chunks").delete().in_("document_id", document_ids).execute()
 
 
 def get_document(document_id: str) -> dict | None:

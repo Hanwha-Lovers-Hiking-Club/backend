@@ -6,6 +6,8 @@ import os
 os.environ["SUPABASE_URL"] = "https://test.supabase.co"
 os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "test-service-role-key"
 os.environ["CORS_ORIGINS"] = "http://localhost:3000"
+os.environ["OPENAI_API_KEY"] = "test-openai-key"
+os.environ["KURE_API_KEY"] = "test-kure-key"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
