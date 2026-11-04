@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import HTTPException
 from postgrest.exceptions import APIError
 
+from app.core.errors import internal_error
 from app.core.technology import display_name, find_technologies, is_valid_id, normalize_technology
 from app.core.text import strip_nul
 from app.db import supabase
@@ -140,14 +141,14 @@ async def list_cards(q: str, sort: CardSort, page: int, page_size: int) -> dict:
         result = query.execute()
     except APIError as e:
         if e.code != RANGE_NOT_SATISFIABLE:
-            raise HTTPException(status_code=500, detail=LIST_FAILED_DETAIL)
+            raise internal_error(LIST_FAILED_DETAIL)
         # 마지막 페이지를 넘긴 요청: 빈 목록 + 전체 개수를 돌려준다
         try:
             count_result = _apply_filters(
                 supabase.table("knowledge_cards").select("id", count="exact", head=True), q
             ).execute()
         except APIError:
-            raise HTTPException(status_code=500, detail=LIST_FAILED_DETAIL)
+            raise internal_error(LIST_FAILED_DETAIL)
         return {"items": [], "total": count_result.count or 0}
 
     return {
@@ -168,7 +169,7 @@ async def get_card(card_id: UUID) -> dict:
             .execute()
         )
     except APIError:
-        raise HTTPException(status_code=500, detail=GET_FAILED_DETAIL)
+        raise internal_error(GET_FAILED_DETAIL)
     if not result.data:
         raise HTTPException(status_code=404, detail=CARD_NOT_FOUND_DETAIL)
     return _to_card(result.data[0])

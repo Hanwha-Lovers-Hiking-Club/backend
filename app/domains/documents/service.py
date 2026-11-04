@@ -15,6 +15,7 @@ from postgrest.exceptions import APIError
 from storage3.exceptions import StorageException
 
 from app.config import settings
+from app.core.errors import internal_error
 from app.core.logging import job_log_context, summarize_error
 from app.core.sse import to_sse
 from app.domains.documents import jobs, repository
@@ -107,7 +108,7 @@ async def _store_files(job_id: UUID, files: list[UploadFile]) -> list[dict]:
             )
     except StorageException:
         _remove_quietly([row["storage_path"] for row in rows])
-        raise HTTPException(status_code=500, detail=STORE_FAILED_DETAIL)
+        raise internal_error(STORE_FAILED_DETAIL)
     return rows
 
 
@@ -123,7 +124,7 @@ async def upload_documents(files: list[UploadFile]) -> dict:
         document_ids = repository.insert_documents(rows)
     except APIError:
         _remove_quietly([row["storage_path"] for row in rows])
-        raise HTTPException(status_code=500, detail=STORE_FAILED_DETAIL)
+        raise internal_error(STORE_FAILED_DETAIL)
 
     # 파이프라인(parse 노드)이 Storage에서 파일을 내려받는 데 필요한 정보
     documents = [
@@ -285,7 +286,7 @@ def get_document_url(document_id: UUID) -> DocumentUrlResponse:
     try:
         document = repository.get_document(str(document_id))
     except APIError:
-        raise HTTPException(status_code=500, detail=URL_FAILED_DETAIL)
+        raise internal_error(URL_FAILED_DETAIL)
     if document is None:
         raise HTTPException(status_code=404, detail=DOCUMENT_NOT_FOUND_DETAIL)
 
@@ -298,5 +299,5 @@ def get_document_url(document_id: UUID) -> DocumentUrlResponse:
             download=None if inline else filename,
         )
     except StorageException:
-        raise HTTPException(status_code=500, detail=URL_FAILED_DETAIL)
+        raise internal_error(URL_FAILED_DETAIL)
     return DocumentUrlResponse(url=url, expires_in=SIGNED_URL_EXPIRES_IN)
