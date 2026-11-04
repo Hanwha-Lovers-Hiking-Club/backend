@@ -1,5 +1,6 @@
 # 기술명 정규화 모듈. 문서 인제스트, 챗봇, 지식카드 검색이 같은 규칙을 쓴다.
 from app.core.technology.normalizer import (
+    aliases_of,
     display_name,
     find_technologies,
     is_valid_id,
@@ -8,6 +9,7 @@ from app.core.technology.normalizer import (
 )
 
 __all__ = [
+    "aliases_of",
     "display_name",
     "find_technologies",
     "is_valid_id",

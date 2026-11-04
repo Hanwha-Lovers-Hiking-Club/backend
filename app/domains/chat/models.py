@@ -37,6 +37,24 @@ class Candidate(BaseModel):
     similarity: float
 
 
+class ChunkCandidate(BaseModel):
+    # 원문 검색 후보 하나 = document_chunks 한 행 + 검색 점수 + 맥락용 앞뒤 청크
+    id: str
+    document_id: str
+    document_title: str
+    chunk_index: int
+    location: str | None
+    content: str
+    # 같은 문서의 바로 앞/뒤 청크 본문. 답변 맥락을 넓히는 용도이고, 근거로 표시하는 것은
+    # content뿐이다
+    before: str | None = None
+    after: str | None = None
+    # 벡터·키워드 순위를 합친 RRF 점수
+    score: float
+    # 벡터 유사도. 키워드 검색으로만 들어온 청크는 None
+    similarity: float | None = None
+
+
 class CardJudgement(BaseModel):
     index: int = Field(description="후보 카드 번호 (프롬프트에 붙은 번호 그대로)")
     relevant: bool = Field(description="이 카드가 질문에 답하는 데 실제로 도움이 되는지")

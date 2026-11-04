@@ -42,3 +42,33 @@ as $$
   order by scored.distance
   limit match_count;
 $$;
+
+
+-- 챗봇 원문 검색용. 질문 벡터와 코사인 유사도가 높은 원문 청크를 돌려준다.
+-- 임베딩이 NULL인 청크는 제외된다. 걸러내는 일은 챗봇의 검증 단계가 맡으므로 하한은 낮게 둔다.
+-- 파이썬에서는 supabase.rpc("match_document_chunks", {...})로 호출한다.
+-- document_chunks 테이블(vector(1024))은 sql/2026-10-30_add_document_chunks.sql 참고.
+create or replace function match_document_chunks(
+  query_embedding vector(1024),
+  match_count int default 20,
+  min_similarity float default 0.0
+)
+returns table (
+  id uuid,
+  document_id uuid,
+  chunk_index integer,
+  similarity float
+)
+language sql stable
+as $$
+  select
+    document_chunks.id,
+    document_chunks.document_id,
+    document_chunks.chunk_index,
+    (1 - (document_chunks.embedding <=> query_embedding))::float as similarity
+  from document_chunks
+  where document_chunks.embedding is not null
+    and 1 - (document_chunks.embedding <=> query_embedding) >= min_similarity
+  order by document_chunks.embedding <=> query_embedding
+  limit match_count;
+$$;
