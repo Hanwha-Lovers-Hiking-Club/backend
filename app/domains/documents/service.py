@@ -1,6 +1,10 @@
 # 문서 도메인의 진입점 로직.
-# Storage 업로드 -> documents 행 생성 -> 파이프라인(LangGraph)을 백그라운드로 실행하고 진행 상황을 관리한다.
+# Storage 업로드 -> documents 행 생성 -> 파이프라인(LangGraph)을 백그라운드로 실행하고
+# 진행 상황을 관리한다.
 import asyncio
+import logging
+import threading
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -11,14 +15,20 @@ from postgrest.exceptions import APIError
 from storage3.exceptions import StorageException
 
 from app.config import settings
+from app.core.logging import job_log_context, summarize_error
 from app.core.sse import to_sse
 from app.domains.documents import jobs, repository
+from app.domains.documents.pipeline.graph import NODE_ORDER, build_graph
+from app.domains.documents.pipeline.nodes.parse import get_converter
+from app.domains.documents.pipeline.observe import finish_job_usage
 from app.domains.documents.schemas import (
     DocumentUrlResponse,
     JobCompletedEvent,
     JobFailedEvent,
     JobProgressEvent,
 )
+
+logger = logging.getLogger(__name__)
 
 # 확장자 -> Storage에 저장할 Content-Type.
 # 브라우저가 보낸 값(md는 보통 비어 있거나 octet-stream)을 쓰면 버킷의 허용 MIME 제한에 걸려서
@@ -44,8 +54,12 @@ SIGNED_URL_EXPIRES_IN = 600
 # (Storage 키가 uuid라 그냥 두면 uuid 파일명으로 받아진다)
 INLINE_EXTENSIONS = {".pdf", ".txt"}
 
-# 진행 단계(activeStep 0~5)별 progress 값. 프론트 processingSteps, 명세서 API-003 예시와 같다
-STEP_PROGRESS = [16, 32, 48, 66, 84, 100]
+# 진행 단계(activeStep 0~8)별 progress 값. 단계 하나가 그래프 노드 하나(pipeline.graph.NODE_ORDER와
+# 같은 순서, 같은 개수)다. activeStep=k는 "k번째 노드가 지금 실행 중"이라는 뜻.
+# 단계 문구는 프론트 processingSteps가 가지고, 백엔드는 번호만 보낸다.
+# ponytail: 값은 균등 분할이다. LLM 노드가 들어오면 훨씬 오래 걸리므로
+# 실제 문서 테스트의 노드별 소요 시간 로그를 보고 조정한다
+STEP_PROGRESS = [11, 22, 33, 44, 56, 67, 78, 89, 100]
 # 진행 상태 SSE가 작업 상태를 확인하는 간격(초)
 POLL_INTERVAL = 0.5
 
@@ -111,18 +125,122 @@ async def upload_documents(files: list[UploadFile]) -> dict:
         _remove_quietly([row["storage_path"] for row in rows])
         raise HTTPException(status_code=500, detail=STORE_FAILED_DETAIL)
 
+    # 파이프라인(parse 노드)이 Storage에서 파일을 내려받는 데 필요한 정보
+    documents = [
+        {
+            "id": document_id,
+            "storage_bucket": row["storage_bucket"],
+            "storage_path": row["storage_path"],
+            "original_filename": row["original_filename"],
+        }
+        for document_id, row in zip(document_ids, rows, strict=True)
+    ]
     jobs.create_job(
         job_id,
         {
             "status": "queued",
             "document_count": len(files),
-            # 파이프라인이 처리할 문서. 파이프라인 연결 시 여기서 꺼내 쓴다
-            "document_ids": document_ids,
+            "documents": documents,
             "active_step": 0,
             "progress": STEP_PROGRESS[0],
         },
     )
+    _start_pipeline(job_id, documents)
     return {"job_id": job_id, "document_count": len(files), "status": "queued"}
+
+
+def _warm_up_converter() -> None:
+    started = time.perf_counter()
+    try:
+        get_converter()
+    except Exception:
+        logger.exception("문서 변환기 미리 로딩 실패. 첫 업로드 때 다시 시도한다")
+        return
+    logger.info("문서 변환기 준비 완료 (%.1f초)", time.perf_counter() - started)
+
+
+def start_converter_warm_up() -> threading.Thread:
+    # 서버가 켜질 때 한 번 부른다. 문서 변환기(docling)를 불러오는 데 ~40초(개발 PC 기준)
+    # 걸려서 첫 업로드가 느려지지 않게 미리 불러 둔다. 서버 시작을 막지 않도록 따로 돌고,
+    # 서버를 끌 때 붙잡지 않도록 daemon으로 돌린다.
+    # 로딩 중에 업로드가 들어와도 get_converter의 잠금 덕에 한 번만 로딩한다
+    thread = threading.Thread(target=_warm_up_converter, name="converter-warm-up", daemon=True)
+    thread.start()
+    return thread
+
+
+# 백그라운드 task는 참조가 없으면 실행 도중 GC로 사라질 수 있어서 끝날 때까지 여기서 붙잡아 둔다
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _start_pipeline(job_id: UUID, documents: list[dict]) -> None:
+    # 업로드 응답은 기다리지 않고 바로 돌려주고, 분석은 같은 서버 프로세스에서 따로 돌린다.
+    # ponytail: 서버를 재시작하면 진행 중인 job은 사라진다(상태도 메모리라 같이 사라짐).
+    # 재시작에도 살아남아야 하면 작업 큐(별도 워커)와 job 테이블이 필요하다
+    task = asyncio.create_task(_run_pipeline(job_id, documents))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
+def _fail(job_id: UUID, message: str) -> None:
+    logger.error("작업 실패: %s", message)
+    jobs.update_job(job_id, status="failed", message=message)
+
+
+async def _run_graph(job_id: UUID, documents: list[dict]) -> dict:
+    # 노드가 하나 끝날 때마다 알림을 받아 진행 단계를 올리고, 그 결과를 모아 최종 state를 만든다
+    final: dict = {"job_id": job_id, "documents": documents}
+    async for update in build_graph().astream(dict(final), stream_mode="updates"):
+        for node, delta in update.items():
+            final.update(delta or {})
+            next_step = NODE_ORDER.index(node) + 1
+            if next_step < len(NODE_ORDER):
+                jobs.update_job(job_id, active_step=next_step, progress=STEP_PROGRESS[next_step])
+    return final
+
+
+async def _run_pipeline(job_id: UUID, documents: list[dict]) -> None:
+    # 어떤 경우에도 job이 completed나 failed로 끝나야 SSE가 멈추지 않는다.
+    # 노드 안의 오류는 그래프가 state["error"]로 바꿔 주고, 그래프 밖에서 나는 예외는 여기서 잡는다
+    with job_log_context(job_id):
+        jobs.update_job(job_id, status="running")
+        logger.info("작업 시작: 문서 %d개", len(documents))
+        try:
+            final = await _run_graph(job_id, documents)
+        except Exception as e:
+            logger.exception("작업 실행 중 예기치 못한 오류")
+            finish_job_usage(str(job_id))
+            _fail(job_id, f"문서 분석 중 오류가 발생했습니다: {summarize_error(e)}")
+            return
+
+        if final.get("error"):
+            _fail(job_id, final["error"])
+            return
+        # 카드가 0개여도(경험 없는 문서, 카드 생성 실패, 읽지 못한 문서가 있어 카드를 건너뜀)
+        # 원문 검색용 청크가 저장됐으면 실패가 아니다. 쓸 수 있는 결과(카드 또는 검색 가능한 문서)가
+        # 하나도 없을 때만 실패다. 그 구분과 사유(warnings)는 해커톤 범위에서는 프론트로 보내지 않고
+        # job과 로그에만 남긴다
+        card_count = final.get("saved_card_count", 0)
+        indexed = final.get("indexed_document_count", 0)
+        warnings = list(final.get("warnings", []))
+        if final.get("card_error"):
+            warnings.append(f"카드 생성 실패: {final['card_error']}")
+        if final.get("parse_failures"):
+            warnings.append("읽지 못한 문서가 있어 카드 생성을 건너뜀")
+        if card_count == 0 and indexed == 0:
+            reasons = " / ".join(warnings) or "저장된 결과 없음"
+            _fail(job_id, f"저장된 카드와 검색 가능한 문서가 없습니다: {reasons}"[:500])
+            return
+        logger.info(
+            "작업 완료: 카드 %d개 저장, 검색 가능 문서 %d/%d개 (경고 %d건)",
+            card_count,
+            indexed,
+            len(documents),
+            len(warnings),
+        )
+        jobs.update_job(
+            job_id, status="completed", created_card_count=card_count, warnings=warnings
+        )
 
 
 def get_job(job_id: UUID) -> dict:

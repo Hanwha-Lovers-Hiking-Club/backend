@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# 실제 문서 테스트 결과물 (scripts/doc_test_*.py 가 만든다)
+runs/

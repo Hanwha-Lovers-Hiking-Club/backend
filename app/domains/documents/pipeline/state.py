@@ -3,14 +3,15 @@
 #
 # 그래프는 job(업로드 요청) 1개당 1번 invoke한다. 문서 1건당 1번이 아닌 이유:
 # 문서 여러 개가 합쳐져 카드 1개가 되거나, 문서 1건에서 카드가 여러 개 나올 수 있어서(M:N)
-# extract/draft_card가 job에 속한 모든 문서의 청크를 한꺼번에 봐야 한다.
+# 카드를 만드는 단계가 job에 속한 모든 문서의 근거를 한꺼번에 봐야 한다.
 from typing import TypedDict
 from uuid import UUID
 
 from app.domains.documents.pipeline.models import (
     CardDraft,
     EmbeddedCard,
-    ExtractedElements,
+    EmbeddedChunk,
+    Experience,
     VerifiedCard,
 )
 
@@ -31,8 +32,9 @@ class ParsedDocument(TypedDict):
 
 # chunk 노드의 출력 타입. state.IngestionState.chunks에 쌓인다
 class Chunk(TypedDict):
-    id: str  # f"{document_id}:{index}" 형태. extract 결과가 어떤 청크에서 왔는지 역추적용
+    id: str  # f"{document_id}:{index}" 형태. 카드 근거가 어떤 청크에서 왔는지 역추적용
     document_id: UUID
+    index: int  # 문서 안에서의 순서(0부터). document_chunks.chunk_index로 저장된다
     text: str
     # 근거 표시용 원문 내 위치. 예: "2장 · 답변 근거와 지식 연결"
     # ponytail: parse 노드가 DoclingDocument(페이지/좌표 정보 있음)를 마크다운 문자열로 평평하게
@@ -41,17 +43,48 @@ class Chunk(TypedDict):
     location: str
 
 
+# parse가 만드는 원문 위치 목록의 원소 타입(positions.py). 항목 텍스트와 그 위치
+class Position(TypedDict):
+    text: str
+    location: str
+    # 청크 location과 같은 형식의 헤딩 경로.
+    # 같은 문구가 여러 곳에 있을 때 근거 청크와 같은 헤딩 아래의 것을 고른다
+    heading: str
+
+
 # 그래프 전체가 주고받는 state. graph.py가 job 1개당 1번 이 타입으로 invoke한다
 class IngestionState(TypedDict):
     job_id: UUID
     documents: list[DocumentInput]
     parsed_documents: list[ParsedDocument]
+    # 문서 id(문자열) -> 원문 위치 목록(positions.py). draft_card가 근거 인용의 정밀 위치를 찾는다
+    positions: dict[str, list[Position]]
+    # 읽지 못한 문서와 사유. 하나라도 있으면 카드 경로를 건너뛴다(반쪽 근거로 카드를 만들지 않음)
+    parse_failures: list[str]
     chunks: list[Chunk]
-    extracted_elements: list[ExtractedElements]
+    # extract 노드의 출력. 인용 검사와 근거 종류 필터를 통과한 경험만 들어 있다
+    experiences: list[Experience]
+    # draft_card 노드의 출력. 구조 검사를 통과한 카드 후보
     card_drafts: list[CardDraft]
+    # draft_card가 후보를 만들지 않은 경험과 그 사유. 잘못 버린 게 없는지 사람이 확인하는 용도
+    draft_skips: list[str]
+    # verify 노드의 출력. excluded/incomplete를 포함한 모든 판정(측정용). 저장은 status가 있는 것만
     verified_cards: list[VerifiedCard]
     # verified_cards 중 verdict == "pass"만 꺼내 임베딩까지 붙인 카드. save 노드가 이것만 저장한다
     embedded_cards: list[EmbeddedCard]
+    # save 노드가 실제로 저장한 카드 수. 일부 카드가 저장에 실패해도 나머지는 저장되므로
+    # len(embedded_cards)와 다를 수 있다. SSE completed의 created_card_count는 이 값을 쓴다
+    saved_card_count: int
+    # embed_chunks 노드의 출력. save_chunks 노드가 document_chunks에 저장한다.
+    # 카드 경로와 독립이라, 임베딩에 실패하면 비어 있고 error가 아니라 warnings에 사유가 남는다
+    embedded_chunks: list[EmbeddedChunk]
+    # 카드 생성은 성공했지만 보조 기능(청크 검색 인덱싱)이 실패했을 때의 사유.
+    # job은 completed로 끝난다
+    warnings: list[str]
     # documents/service.py의 STEP_PROGRESS 인덱스에 대응하는 그래프 진행 단계
     active_step: int
+    # 카드 경로(extract~save)의 오류. job을 실패시키지 않고 청크 인덱싱으로 넘어간다
+    card_error: str | None
+    # save_chunks가 청크를 저장한 문서 수. 원문 검색이 가능한 문서 수다
+    indexed_document_count: int
     error: str | None

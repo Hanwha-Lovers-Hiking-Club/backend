@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_ROLE_KEY: str
     SUPABASE_STORAGE_BUCKET: str = "documents"
     CORS_ORIGINS: str = "http://localhost:3000"
+    LOG_LEVEL: str = "INFO"
 
     OPENAI_API_KEY: str
     KURE_API_KEY: str

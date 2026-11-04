@@ -1,0 +1,167 @@
+# 기술명 별칭 사전. 항목 추가는 아래 TECHNOLOGIES에 한 줄 넣는 것으로 끝난다.
+#
+# 표준 ID -> (표시명, 별칭 목록).
+# - 표준 ID는 DB(knowledge_cards.technologies)에 저장되고 검색에 쓰인다.
+# - 표시명은 화면에 보여줄 공식 표기다.
+# - 별칭은 자연스러운 표기 그대로 적는다. 대소문자, 공백, `-`, `_`, `.` 차이는
+#   normalizer가 통일하므로 `NextJS`와 `Next JS`를 따로 적을 필요가 없다.
+# - 표준 ID와 표시명도 자동으로 별칭에 포함된다.
+# - 한글 표기는 팀이 실제로 부르는 이름으로 검토해서 고친다.
+#
+# 이 사전은 초안이다(주요 기술 약 100개). 인제스트 중 사전에 없던 기술명은 로그
+# ("technology: 사전에 없는 기술")로 남으니, 자주 나오는 것부터 여기에 추가한다.
+# 추가/수정하면 기존 카드에도 반영되도록
+# scripts/normalize_card_technologies.py를 다시 돌린다.
+TECHNOLOGIES: dict[str, tuple[str, tuple[str, ...]]] = {
+    # --- 언어 ---
+    "python": ("Python", ("파이썬",)),
+    "java": ("Java", ("자바",)),
+    "javascript": ("JavaScript", ("js", "자바스크립트", "ecmascript", "es6")),
+    "typescript": ("TypeScript", ("ts", "타입스크립트")),
+    "kotlin": ("Kotlin", ("코틀린",)),
+    "swift": ("Swift", ("스위프트",)),
+    "go": ("Go", ("golang", "고랭")),
+    "rust": ("Rust", ("러스트",)),
+    "c": ("C", ("c언어", "씨언어")),
+    "cpp": ("C++", ("cplusplus", "씨플플", "씨쁠쁠")),
+    "csharp": ("C#", ("씨샵", "c sharp")),
+    "php": ("PHP", ("피에이치피",)),
+    "ruby": ("Ruby", ("루비",)),
+    "dart": ("Dart", ("다트",)),
+    "sql": ("SQL", ("에스큐엘",)),
+    "html": ("HTML", ("html5", "에이치티엠엘")),
+    "css": ("CSS", ("css3", "씨에스에스")),
+    # --- 프론트엔드 ---
+    "react": ("React", ("react.js", "reactjs", "리액트", "리액트js")),
+    "nextjs": ("Next.js", ("next.js", "넥스트", "넥스트js", "넥스트제이에스")),
+    "vue": ("Vue.js", ("vue.js", "vuejs", "뷰", "뷰js")),
+    "nuxt": ("Nuxt", ("nuxt.js", "nuxtjs", "넉스트")),
+    "angular": ("Angular", ("angularjs", "앵귤러")),
+    "svelte": ("Svelte", ("sveltekit", "스벨트")),
+    "tailwindcss": ("Tailwind CSS", ("tailwind", "테일윈드")),
+    "vite": ("Vite", ()),
+    "webpack": ("webpack", ("웹팩",)),
+    "redux": ("Redux", ("리덕스", "redux toolkit")),
+    "reactquery": ("React Query", ("tanstack query", "react-query", "리액트쿼리", "리액트 쿼리")),
+    "zustand": ("Zustand", ("주스탄드",)),
+    "flutter": ("Flutter", ("플러터",)),
+    "reactnative": ("React Native", ("rn", "리액트네이티브", "리액트 네이티브")),
+    # --- 백엔드 ---
+    "nodejs": ("Node.js", ("node.js", "node", "노드", "노드js")),
+    "express": ("Express", ("express.js", "expressjs", "익스프레스")),
+    "nestjs": ("NestJS", ("nest.js", "nest", "네스트", "네스트js")),
+    "fastapi": ("FastAPI", ("패스트api", "패스트에이피아이")),
+    "django": ("Django", ("장고",)),
+    "flask": ("Flask", ("플라스크",)),
+    "spring": ("Spring", ("spring framework", "스프링")),
+    "springboot": ("Spring Boot", ("스프링부트", "스프링 부트")),
+    "dotnet": (".NET", ("net", "닷넷", "dotnet core")),
+    "aspnet": ("ASP.NET", ("asp.net core", "에이에스피닷넷")),
+    "rails": ("Ruby on Rails", ("ror", "레일즈", "루비온레일즈")),
+    "laravel": ("Laravel", ("라라벨",)),
+    "celery": ("Celery", ("셀러리",)),
+    "sqlalchemy": ("SQLAlchemy", ("sqlalchemy orm", "에스큐엘알케미")),
+    "pydantic": ("Pydantic", ("파이단틱",)),
+    # --- 데이터베이스 ---
+    "postgresql": (
+        "PostgreSQL",
+        ("postgres", "psql", "포스트그레스", "포스트그레sql", "포스트그레스큐엘"),
+    ),
+    "mysql": ("MySQL", ("마이sql", "마이에스큐엘")),
+    "mariadb": ("MariaDB", ("마리아db", "마리아디비")),
+    "mongodb": ("MongoDB", ("mongo", "몽고db", "몽고디비", "몽고")),
+    "redis": ("Redis", ("레디스",)),
+    "sqlite": ("SQLite", ("sqlite3", "에스큐라이트")),
+    "elasticsearch": ("Elasticsearch", ("elastic search", "엘라스틱서치", "엘라스틱")),
+    "supabase": ("Supabase", ("수파베이스", "슈파베이스")),
+    "firebase": ("Firebase", ("파이어베이스",)),
+    "dynamodb": ("DynamoDB", ("dynamo db", "다이나모db", "다이나모디비")),
+    "neo4j": ("Neo4j", ("네오포제이",)),
+    "pgvector": ("pgvector", ("pg vector", "피지벡터")),
+    "chroma": ("Chroma", ("chromadb", "크로마")),
+    "faiss": ("FAISS", ("파이스",)),
+    "pinecone": ("Pinecone", ("파인콘",)),
+    # --- 인프라 / 데브옵스 ---
+    "docker": ("Docker", ("도커", "docker compose", "도커컴포즈")),
+    "kubernetes": ("Kubernetes", ("k8s", "쿠버네티스", "쿠버")),
+    "nginx": ("Nginx", ("엔진엑스",)),
+    "aws": ("AWS", ("amazon web services", "아마존웹서비스", "아마존 웹 서비스")),
+    "gcp": ("GCP", ("google cloud", "google cloud platform", "구글클라우드", "구글 클라우드")),
+    "azure": ("Azure", ("microsoft azure", "애저")),
+    "terraform": ("Terraform", ("테라폼",)),
+    "ansible": ("Ansible", ("앤서블",)),
+    "jenkins": ("Jenkins", ("젠킨스",)),
+    "githubactions": ("GitHub Actions", ("깃허브액션", "깃허브 액션", "gh actions")),
+    "gitlabci": ("GitLab CI", ("gitlab ci/cd", "깃랩ci")),
+    "git": ("Git", ("깃",)),
+    "github": ("GitHub", ("깃허브",)),
+    "gitlab": ("GitLab", ("깃랩",)),
+    "linux": ("Linux", ("리눅스",)),
+    "ubuntu": ("Ubuntu", ("우분투",)),
+    "vercel": ("Vercel", ("버셀",)),
+    "cloudflare": ("Cloudflare", ("클라우드플레어",)),
+    "prometheus": ("Prometheus", ("프로메테우스",)),
+    "grafana": ("Grafana", ("그라파나",)),
+    "sentry": ("Sentry", ("센트리",)),
+    # --- 메시징 / API ---
+    "kafka": ("Kafka", ("apache kafka", "카프카")),
+    "rabbitmq": ("RabbitMQ", ("래빗mq", "래빗엠큐")),
+    "graphql": ("GraphQL", ("그래프큐엘",)),
+    "restapi": ("REST API", ("rest", "restful", "restful api", "레스트api", "레스트 api")),
+    "grpc": ("gRPC", ("지알피씨",)),
+    "websocket": ("WebSocket", ("web socket", "웹소켓")),
+    "sse": ("SSE", ("server-sent events", "server sent events", "서버센트이벤트")),
+    "oauth": ("OAuth", ("oauth2", "oauth 2.0", "오어스")),
+    "jwt": ("JWT", ("json web token", "제이더블유티")),
+    "swagger": ("Swagger", ("openapi", "오픈api", "스웨거")),
+    # --- AI / 데이터 ---
+    "openai": ("OpenAI", ("오픈ai", "오픈에이아이")),
+    "chatgpt": ("ChatGPT", ("챗gpt", "챗지피티")),
+    "claude": ("Claude", ("클로드",)),
+    "gemini": ("Gemini", ("제미나이",)),
+    "langchain": ("LangChain", ("랭체인",)),
+    "langgraph": ("LangGraph", ("랭그래프",)),
+    "llamaindex": ("LlamaIndex", ("llama index", "라마인덱스")),
+    "huggingface": ("Hugging Face", ("허깅페이스", "허깅 페이스")),
+    "pytorch": ("PyTorch", ("파이토치",)),
+    "tensorflow": ("TensorFlow", ("텐서플로", "텐서플로우")),
+    "scikitlearn": ("scikit-learn", ("sklearn", "사이킷런")),
+    "pandas": ("pandas", ("판다스",)),
+    "numpy": ("NumPy", ("넘파이",)),
+    "docling": ("Docling", ("도클링",)),
+    # --- 테스트 / 협업 도구 ---
+    "pytest": ("pytest", ("파이테스트",)),
+    "jest": ("Jest", ("제스트",)),
+    "junit": ("JUnit", ("제이유닛",)),
+    "selenium": ("Selenium", ("셀레니움",)),
+    "playwright": ("Playwright", ("플레이라이트",)),
+    "cypress": ("Cypress", ("사이프레스",)),
+    "postman": ("Postman", ("포스트맨",)),
+    "jira": ("Jira", ("지라",)),
+    "notion": ("Notion", ("노션",)),
+    "slack": ("Slack", ("슬랙",)),
+    "figma": ("Figma", ("피그마",)),
+}
+
+# 일반 단어와 겹쳐서 본문 속에서는 기술로 보기 어려운 이름.
+# 이름 하나를 정규화할 때(예: LLM이 뽑은 "Node")는 쓰지만,
+# 문장에서 기술을 찾을 때(find_technologies)는 제외한다. 값은 정규화된 별칭 키다.
+AMBIGUOUS_IN_TEXT: frozenset[str] = frozenset(
+    {
+        "go",
+        "c",
+        "node",
+        "net",
+        "rest",
+        "nest",
+        "es6",
+        "ts",
+        "js",
+        "rn",
+        "ror",
+        "뷰",
+        "노드",
+        "쿠버",
+        "몽고",
+    }
+)
