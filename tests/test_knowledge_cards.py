@@ -223,3 +223,47 @@ def test_search_filter_matches_technologies_by_standard_id():
 def test_technologies_are_returned_with_display_names():
     row = {"id": "1", "technologies": ["nextjs", "Supabase", "unknowntool"], "card_documents": []}
     assert service._to_card(row)["technologies"] == ["Next.js", "Supabase", "unknowntool"]
+
+
+def test_get_card_returns_camel_case_card_with_evidences(client, fake_db):
+    query = fake_db(data=[dict(CARD_ROW)])
+
+    response = client.get(f"/api/knowledge/cards/{CARD_ID}")
+
+    assert response.status_code == 200
+    card = response.json()
+    assert card["id"] == CARD_ID
+    assert card["qualityScore"] == 0.92
+    assert "card_documents" not in card
+    assert card["evidences"][0]["documentTitle"] == "검색 시스템 설계서"
+    assert query.called("select") == [((service.CARD_SELECT,), {})]
+    # 목록과 같은 기준: active 카드만 조회한다
+    assert query.called("eq") == [(("id", CARD_ID), {}), (("status", "active"), {})]
+
+
+def test_get_card_not_found(client, fake_db):
+    # 없는 카드와 active가 아닌 카드 모두 조회 결과가 비어 있다
+    fake_db(data=[])
+
+    response = client.get(f"/api/knowledge/cards/{CARD_ID}")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "지식카드를 찾을 수 없습니다."}
+
+
+def test_get_card_db_error(client, fake_db):
+    fake_db(fail_with=APIError({"code": "42703", "message": "column does not exist"}))
+
+    response = client.get(f"/api/knowledge/cards/{CARD_ID}")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "지식카드를 조회하지 못했습니다."}
+
+
+def test_get_card_invalid_id(client, fake_db):
+    query = fake_db()
+
+    response = client.get("/api/knowledge/cards/not-a-uuid")
+
+    assert response.status_code == 422
+    assert query.calls == []

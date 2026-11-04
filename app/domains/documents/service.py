@@ -21,7 +21,12 @@ from app.domains.documents import jobs, repository
 from app.domains.documents.pipeline.graph import NODE_ORDER, build_graph
 from app.domains.documents.pipeline.nodes.parse import get_converter
 from app.domains.documents.pipeline.observe import finish_job_usage
-from app.domains.documents.schemas import JobCompletedEvent, JobFailedEvent, JobProgressEvent
+from app.domains.documents.schemas import (
+    DocumentUrlResponse,
+    JobCompletedEvent,
+    JobFailedEvent,
+    JobProgressEvent,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +45,14 @@ MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
 
 STORE_FAILED_DETAIL = "문서를 저장하지 못했습니다."
 JOB_NOT_FOUND_DETAIL = "작업을 찾을 수 없습니다."
+DOCUMENT_NOT_FOUND_DETAIL = "문서를 찾을 수 없습니다."
+URL_FAILED_DETAIL = "원본 문서 주소를 만들지 못했습니다."
+
+# 원본 문서 서명 URL 유효 시간(초). 프론트는 클릭할 때마다 새로 받는다
+SIGNED_URL_EXPIRES_IN = 600
+# 브라우저가 바로 열 수 있는 형식. 나머지(docx/xlsx/md)는 원래 파일명으로 내려받게 한다
+# (Storage 키가 uuid라 그냥 두면 uuid 파일명으로 받아진다)
+INLINE_EXTENSIONS = {".pdf", ".txt"}
 
 # 진행 단계(activeStep 0~8)별 progress 값. 단계 하나가 그래프 노드 하나(pipeline.graph.NODE_ORDER와
 # 같은 순서, 같은 개수)다. activeStep=k는 "k번째 노드가 지금 실행 중"이라는 뜻.
@@ -266,3 +279,24 @@ async def job_events(job_id: UUID) -> AsyncIterator[ServerSentEvent]:
             yield to_sse("progress", JobProgressEvent(active_step=current[0], progress=current[1]))
             last_sent = current
         await _wait()
+
+
+def get_document_url(document_id: UUID) -> DocumentUrlResponse:
+    try:
+        document = repository.get_document(str(document_id))
+    except APIError:
+        raise HTTPException(status_code=500, detail=URL_FAILED_DETAIL)
+    if document is None:
+        raise HTTPException(status_code=404, detail=DOCUMENT_NOT_FOUND_DETAIL)
+
+    filename = document["original_filename"]
+    inline = Path(filename).suffix.lower() in INLINE_EXTENSIONS
+    try:
+        url = repository.create_signed_url(
+            document["storage_path"],
+            SIGNED_URL_EXPIRES_IN,
+            download=None if inline else filename,
+        )
+    except StorageException:
+        raise HTTPException(status_code=500, detail=URL_FAILED_DETAIL)
+    return DocumentUrlResponse(url=url, expires_in=SIGNED_URL_EXPIRES_IN)

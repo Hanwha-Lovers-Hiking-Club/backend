@@ -148,10 +148,10 @@ def test_upload_accepts_uppercase_extension(client, storage):
 def test_upload_rejects_unsupported_type(client, storage, started):
     fake = storage()
 
-    response = client.post(URL, files=[_file("a.pdf"), _file("tool.exe")])
+    response = client.post(URL, files=[_file("a.pdf"), _file("slides.ppt")])
 
     assert response.status_code == 400
-    assert response.json() == {"detail": "지원하지 않는 파일 형식입니다: tool.exe"}
+    assert response.json() == {"detail": "지원하지 않는 파일 형식입니다: slides.ppt"}
     assert fake.uploads == []
     assert jobs._jobs == {}
     assert started == []

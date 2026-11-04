@@ -32,3 +32,23 @@ def insert_chunks(rows: list[dict]) -> None:
 
 def delete_chunks(document_ids: list[str]) -> None:
     supabase.table("document_chunks").delete().in_("document_id", document_ids).execute()
+
+
+def get_document(document_id: str) -> dict | None:
+    # 없는 id일 수 있어서 .single() 대신 리스트로 받아 직접 확인한다
+    result = (
+        supabase.table("documents")
+        .select("storage_path, original_filename")
+        .eq("id", document_id)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def create_signed_url(path: str, expires_in: int, download: str | None = None) -> str:
+    # download에 파일명을 주면 브라우저가 열지 않고 그 이름으로 내려받는다
+    options = {"download": download} if download else None
+    result = supabase.storage.from_(settings.SUPABASE_STORAGE_BUCKET).create_signed_url(
+        path, expires_in, options
+    )
+    return result["signedURL"]
