@@ -19,13 +19,16 @@ _PROMPT = (Path(__file__).parent / "prompts" / "verify.md").read_text(encoding="
 UNVERIFIED_REASON = "질문과 의미가 가까운 카드로 검색됐습니다. (교차 검증은 진행하지 못했습니다.)"
 
 
+def _unverified_reason(candidate: Candidate) -> str:
+    if candidate.similarity is None:
+        return "질문과 관련된 원문에서 나온 카드입니다."
+    return f"질문과 의미가 가까운 카드입니다. (유사도 {candidate.similarity:.2f})"
+
+
 def unverified(candidates: list[Candidate]) -> list[VerifiedCandidate]:
     # 검증을 거치지 않은 후보를 그대로 참조로 쓸 때 사용한다
     return [
-        VerifiedCandidate(
-            candidate=candidate,
-            reason=f"질문과 의미가 가까운 카드입니다. (유사도 {candidate.similarity:.2f})",
-        )
+        VerifiedCandidate(candidate=candidate, reason=_unverified_reason(candidate))
         for candidate in candidates
     ]
 

@@ -34,7 +34,10 @@ class Intent(BaseModel):
 
 class Candidate(BaseModel):
     card: KnowledgeCard
-    similarity: float
+    # 벡터 유사도. 원문 청크와의 연결로만 찾은 카드는 None
+    similarity: float | None
+    # 이 카드의 근거 발췌문이 들어 있는 원문 후보 청크 id들
+    linked_chunk_ids: list[str] = Field(default_factory=list)
 
 
 class ChunkCandidate(BaseModel):
@@ -53,6 +56,12 @@ class ChunkCandidate(BaseModel):
     score: float
     # 벡터 유사도. 키워드 검색으로만 들어온 청크는 None
     similarity: float | None = None
+
+
+class Retrieval(BaseModel):
+    # 검색 단계 결과. 카드와 원문 후보를 각각 순위 순으로 담는다
+    cards: list[Candidate]
+    chunks: list[ChunkCandidate]
 
 
 class CardJudgement(BaseModel):

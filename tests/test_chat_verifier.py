@@ -120,3 +120,9 @@ def test_unverified_reason_shows_similarity(candidates):
 
     assert [v.candidate for v in result] == candidates
     assert "유사도 0.80" in result[0].reason
+
+
+def test_unverified_reason_for_card_found_only_through_source(make_card):
+    [result] = verifier.unverified([Candidate(card=make_card(), similarity=None)])
+
+    assert "원문" in result.reason and "유사도" not in result.reason
