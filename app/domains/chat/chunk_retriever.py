@@ -96,10 +96,13 @@ def _match(embedding: list[float]) -> list[dict]:
     return result.data or []
 
 
-def keyword_query(query: str) -> str:
-    # 질문에 나온 기술의 다른 표기를 덧붙인다. 같은 표기가 이미 있어도 BM25가 한 번만 센다
-    aliases = [alias for tech_id in find_technologies(query) for alias in aliases_of(tech_id)]
-    return " ".join([query, *aliases])
+def keyword_query(query: str, terms: list[str] | tuple[str, ...] = ()) -> str:
+    # 질문 분석이 뽑은 핵심 용어(다른 표기 포함)와, 질문·용어에 나온 기술의 사전 별칭을 덧붙인다.
+    # 사전은 기술명만 다루고, 개념의 다른 표기(optimistic update <-> 낙관적 업데이트)는 terms가
+    # 맡는다. 같은 표기가 여러 번 들어가도 BM25가 한 번만 센다
+    text = " ".join([query, *terms])
+    aliases = [alias for tech_id in find_technologies(text) for alias in aliases_of(tech_id)]
+    return " ".join([text, *aliases])
 
 
 def reciprocal_rank_fusion(
@@ -131,7 +134,9 @@ def _to_candidate(corpus: _Corpus, chunk: dict, score: float, similarity: float 
     )
 
 
-def _search_chunks(query: str, embedding: list[float]) -> list[ChunkCandidate]:
+def _search_chunks(
+    query: str, embedding: list[float], terms: list[str] | tuple[str, ...] = ()
+) -> list[ChunkCandidate]:
     vector_rows = _match(embedding)
     similarities = {row["id"]: row["similarity"] for row in vector_rows}
     corpus = _get_corpus(list(similarities))
@@ -139,7 +144,8 @@ def _search_chunks(query: str, embedding: list[float]) -> list[ChunkCandidate]:
         return []
 
     keyword_ids = [
-        corpus.chunks[i]["id"] for i, _ in corpus.index.top_k(keyword_query(query), KEYWORD_COUNT)
+        corpus.chunks[i]["id"]
+        for i, _ in corpus.index.top_k(keyword_query(query, terms), KEYWORD_COUNT)
     ]
     fused = reciprocal_rank_fusion([list(similarities), keyword_ids])
     return [
@@ -150,6 +156,8 @@ def _search_chunks(query: str, embedding: list[float]) -> list[ChunkCandidate]:
     ][:MAX_CHUNK_CANDIDATES]
 
 
-async def search_chunks(query: str, embedding: list[float]) -> list[ChunkCandidate]:
+async def search_chunks(
+    query: str, embedding: list[float], terms: list[str] | tuple[str, ...] = ()
+) -> list[ChunkCandidate]:
     # supabase 클라이언트가 동기라서 이벤트 루프를 막지 않도록 스레드에서 돌린다
-    return await asyncio.to_thread(_search_chunks, query, embedding)
+    return await asyncio.to_thread(_search_chunks, query, embedding, terms)

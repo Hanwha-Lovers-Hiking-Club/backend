@@ -10,7 +10,13 @@ pytestmark = pytest.mark.anyio
 
 def _intent(kind) -> Intent:
     return Intent(
-        kind=kind, search_query="질문", needs_clarification=False, clarifying_question=None
+        is_dev_domain=True,
+        kind=kind,
+        is_follow_up=False,
+        search_query="질문",
+        key_terms=["용어"],
+        needs_clarification=False,
+        clarifying_question=None,
     )
 
 
@@ -207,8 +213,8 @@ async def test_search_embeds_once_and_shares_embedding(monkeypatch, fake_db):
         calls["embedded"].append(text)
         return [0.3]
 
-    async def chunks(query, embedding):
-        calls["chunk_args"] = (query, embedding)
+    async def chunks(query, embedding, terms):
+        calls["chunk_args"] = (query, embedding, terms)
         return [_chunk(0, "근거 문장")]
 
     def match(embedding, kind):
@@ -223,7 +229,8 @@ async def test_search_embeds_once_and_shares_embedding(monkeypatch, fake_db):
     result = await retriever.search(_intent("solution"))
 
     assert calls["embedded"] == ["질문"]
-    assert calls["chunk_args"] == ("질문", [0.3])
+    # 질문 분석이 뽑은 핵심 용어도 원문 키워드 검색에 넘긴다
+    assert calls["chunk_args"] == ("질문", [0.3], ["용어"])
     assert calls["match_embeddings"] == [[0.3], [0.3]]
     assert [c.id for c in result.chunks] == ["chunk-0"]
     assert [c.linked_chunk_ids for c in result.cards] == [["chunk-0"]]
@@ -237,6 +244,7 @@ async def test_search_embeds_once_and_shares_embedding(monkeypatch, fake_db):
         ("solution", "solution"),
         ("similar_lesson", "lesson"),
         ("tech_stack", "situation"),
+        ("concept", "content"),
         ("general", "content"),
     ],
 )
@@ -247,7 +255,7 @@ async def test_intent_selects_embedding_kind(monkeypatch, kind, embedding_kind):
         received["kind"] = selected
         return {}
 
-    async def no_chunks(query, embedding):
+    async def no_chunks(query, embedding, terms):
         return []
 
     monkeypatch.setattr(retriever, "embed_query", lambda text: [0.0])

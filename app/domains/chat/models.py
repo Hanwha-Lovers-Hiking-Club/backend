@@ -7,22 +7,29 @@ from pydantic import BaseModel, Field
 from app.domains.knowledge_cards.schemas import KnowledgeCard
 
 # 명세서의 의도 예시(유사 프로젝트 / 비슷한 이슈 / 비슷한 교훈 / 비슷한 기술 스택 이슈)에
-# "해결 방법"과 "범위 밖 질문"을 더했다
+# "해결 방법"과 "개념 설명"을 더했다. 개발 도메인과 무관한 질문인지는 의도가 아니라
+# Intent.is_dev_domain으로 따로 판단한다
 IntentKind = Literal[
     "similar_project",
     "similar_issue",
     "solution",
     "similar_lesson",
     "tech_stack",
+    "concept",
     "general",
-    "off_topic",
 ]
 
 
 class Intent(BaseModel):
+    # 검색 결과와 상관없이 질문 자체만 보고 판단한다. 자료가 없는 개발 질문도 true다
+    is_dev_domain: bool = Field(description="질문이 소프트웨어 개발 도메인에 속하는지")
     kind: IntentKind = Field(description="질문의 의도 분류")
-    search_query: str = Field(
-        description="이전 대화 맥락을 풀어 쓴, 그 자체로 이해되는 지식카드 검색 문장"
+    is_follow_up: bool = Field(
+        description="마지막 질문이 이전 대화의 주제를 이어받는 후속 질문인지"
+    )
+    search_query: str = Field(description="이전 대화 맥락을 풀어 쓴, 그 자체로 이해되는 검색 문장")
+    key_terms: list[str] = Field(
+        description="질문의 핵심 기술 용어·개념과 그 다른 표기(영문/한글/약어). 최대 8개"
     )
     needs_clarification: bool = Field(
         description="정보가 너무 부족해 검색이 무의미해서 사용자에게 되물어야 하는지"

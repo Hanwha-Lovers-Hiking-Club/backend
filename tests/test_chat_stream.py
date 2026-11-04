@@ -13,8 +13,11 @@ URL = "/api/chat/stream"
 
 def _intent(**overrides) -> Intent:
     data = {
+        "is_dev_domain": True,
         "kind": "solution",
+        "is_follow_up": False,
         "search_query": "RAG 검색 정확도를 높인 방법",
+        "key_terms": ["RAG", "검색 정확도"],
         "needs_clarification": False,
         "clarifying_question": None,
         **overrides,
@@ -207,7 +210,7 @@ def test_clarification_flag_without_question_still_searches(client, pipeline, mo
 
 def test_off_topic_answers_with_notice_without_searching(client, pipeline, monkeypatch):
     async def chitchat(message, history):
-        return _intent(kind="off_topic")
+        return _intent(is_dev_domain=False, kind="general", key_terms=[])
 
     monkeypatch.setattr(service, "understand_intent", chitchat)
 

@@ -62,7 +62,8 @@ async def _answer_events(
 ) -> AsyncIterator[ServerSentEvent]:
     intent = await understand_intent(message, history)
 
-    if intent.kind == "off_topic":
+    # 개발 도메인 여부는 검색 결과와 상관없이 질문만 보고 판단한다 (자료가 없는 개발 질문과 구분)
+    if not intent.is_dev_domain:
         for event in _text_events(OFF_TOPIC_MESSAGE):
             yield event
         return

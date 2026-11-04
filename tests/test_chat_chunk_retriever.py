@@ -43,6 +43,16 @@ def test_keyword_query_adds_every_spelling_of_found_technologies():
     assert "웹소켓" in query
 
 
+def test_keyword_query_adds_key_terms_and_their_technology_aliases():
+    query = chunk_retriever.keyword_query(
+        "예약 완료 표시 문제", ["optimistic update", "낙관적 업데이트", "k8s"]
+    )
+
+    assert "optimistic update" in query and "낙관적 업데이트" in query
+    # 용어에 나온 기술도 사전 별칭으로 넓힌다
+    assert "쿠버네티스" in query
+
+
 def test_keyword_query_without_technologies_is_unchanged():
     assert chunk_retriever.keyword_query("정산 배치 중복 지급") == "정산 배치 중복 지급"
 

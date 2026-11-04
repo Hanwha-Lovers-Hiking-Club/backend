@@ -26,8 +26,8 @@ EMBEDDING_KIND_BY_INTENT: dict[IntentKind, str] = {
     "solution": "solution",
     "similar_lesson": "lesson",
     "tech_stack": "situation",
+    "concept": "content",
     "general": "content",
-    "off_topic": "content",
 }
 
 # 임베딩 종류별로 DB에서 가져올 개수. 두 종류를 합치면 중복이 생겨서 MAX_CANDIDATES보다 넉넉히
@@ -153,7 +153,7 @@ async def search(intent: Intent) -> Retrieval:
     embedding = await asyncio.to_thread(embed_query, intent.search_query)
     similarities, chunks = await asyncio.gather(
         asyncio.to_thread(_vector_similarities, embedding, EMBEDDING_KIND_BY_INTENT[intent.kind]),
-        search_chunks(intent.search_query, embedding),
+        search_chunks(intent.search_query, embedding, intent.key_terms),
     )
     cards = await asyncio.to_thread(_rank_cards, similarities, chunks)
     return Retrieval(cards=cards, chunks=chunks)
