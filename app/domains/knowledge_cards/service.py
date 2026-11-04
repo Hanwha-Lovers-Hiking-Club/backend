@@ -1,4 +1,6 @@
 # 지식카드 로직: Supabase 조회/저장과 DB 행 -> 응답 모양 변환.
+from uuid import UUID
+
 from fastapi import HTTPException
 from postgrest.exceptions import APIError
 
@@ -21,6 +23,8 @@ SORT_COLUMNS: dict[str, tuple[str, bool]] = {
 RANGE_NOT_SATISFIABLE = "PGRST103"
 
 LIST_FAILED_DETAIL = "지식카드 목록을 조회하지 못했습니다."
+GET_FAILED_DETAIL = "지식카드를 조회하지 못했습니다."
+CARD_NOT_FOUND_DETAIL = "지식카드를 찾을 수 없습니다."
 
 
 def _quote(value: str) -> str:
@@ -125,3 +129,21 @@ async def list_cards(q: str, sort: CardSort, page: int, page_size: int) -> dict:
         "items": [_to_card(row) for row in result.data],
         "total": result.count or 0,
     }
+
+
+async def get_card(card_id: UUID) -> dict:
+    # 목록과 같은 기준으로 active 카드만 보여준다. draft/flagged/archived는 없는 카드처럼 404.
+    # 없는 id일 수 있어서 .single() 대신 리스트로 받아 직접 확인한다
+    try:
+        result = (
+            supabase.table("knowledge_cards")
+            .select(CARD_SELECT)
+            .eq("id", str(card_id))
+            .eq("status", "active")
+            .execute()
+        )
+    except APIError:
+        raise HTTPException(status_code=500, detail=GET_FAILED_DETAIL)
+    if not result.data:
+        raise HTTPException(status_code=404, detail=CARD_NOT_FOUND_DETAIL)
+    return _to_card(result.data[0])
