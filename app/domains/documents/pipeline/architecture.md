@@ -4,9 +4,13 @@
 현재 로컬 Python 코드와 일반 설정을 기준으로 작성했다. 파이프라인의 현재 동작을 설명하며,
 평가 기준 문서에만 있는 정책을 구현 완료로 표시하지 않는다. 키·접속 비밀값은 포함하지 않는다.
 
-![HYUNGU 구현 구조](assets/pipeline_architecture.svg)
+![HYUNGU 세로 실행 흐름](assets/pipeline_flow_simple.svg)
 
-[확대 가능한 SVG 원본](assets/pipeline_architecture.svg)
+[주 실행 흐름 SVG](assets/pipeline_flow_simple.svg) · [분리한 Skill 패널 SVG](assets/pipeline_skills.svg) ·
+[예시와의 비교](architecture_comparison.md) · [이전 상세 구조도](assets/pipeline_architecture.svg)
+
+실행 흐름에는 단계와 주요 분기만 표시하고, Extract·Draft Card·Verify의 상세 지침은
+아래 S1/S2/S3로 분리했다. 라이브러리·옵션·입출력 계약은 이 문서의 기술 표를 참고한다.
 
 ## 색과 범위
 
@@ -15,11 +19,28 @@
 | 파랑 | HYUNGU에서 구현·보완·연결한 코드 | Parse, Normalize, Gate, 임베딩, 상위 업로드·Job 연결 |
 | 주황 | 구현은 있으나 추가 보완 또는 팀 합의·실환경 검증이 남음 | 교훈 단위 정렬, 통합 청킹, DB 저장 연결 |
 | 회색 | 현재 HYUNGU에 없는 단계 또는 사용자/UI·팀 운영 경계 | OCR, 원문 청크 임베딩·저장, DB 적용 |
-| 보라 | 생성 파이프라인 밖의 평가 준비 | 기준·정답표·판정자 조율·오류 진단 |
+| 보라 | 실행 단계에서 분리한 역할별 지침 패널 | S1 추출, S2 작성, S3 검증 |
 
 상위 업로드·Job 코드도 이전 작업에서 연결했으므로 구현 영역으로 표시했다.
 첨부 그림의 `embed_chunks`와 `save_chunks`는 현재 HYUNGU 노드가 아니며 실제 흐름에 연결하지 않았다.
 이 문서의 번호는 설명용이다. 실제 그래프에는 재처리·결과 보존용 보조 노드가 더 있다.
+
+## Extract · Draft Card · Verify의 지침 분리
+
+![역할별 지침 패널](assets/pipeline_skills.svg)
+
+여기서 Skill은 **현재 프롬프트와 Python 검사 로직을 역할별로 묶은 설명**이다.
+제품 LLM이 별도의 SKILL.md를 찾아 실행하는 기능을 새로 추가한 것이 아니다.
+개발용 CLAUDE.md/팀 스킬과, 실제 LLM 요청에 전달하는 `prompts/*.md`도 구분한다.
+
+| 패널 | 프롬프트의 역할 | 코드의 검사·연결 | 실제 파일 |
+|---|---|---|---|
+| S1 Extract | 사실 상태 구분, 정보 부재와 명시 부정 구분, 원인·결과 조작 금지, 입력 근거 ID 인용 | Pydantic 스키마, 청크 밖 ID 거부, 근거 레지스트리 연결 | [프롬프트](prompts/extract.md), [추출](extraction.py), [모델](models.py) |
+| S2 Draft Card | 추출값으로 제목·요약·교훈·키워드 작성, 가설 승격·없는 사실 생성 금지 | confirmed 본문 복사, 필드별 근거 보존, 파생 교훈 inferred 유지, 정보 부족 생략 | [프롬프트](prompts/draft_card.md), [작성](drafting.py), [모델](models.py) |
+| S3 Verify | 주장·근거·사실 상태 의미 대조, 복합 주장·부재 단정·수치/인과 검토, 이유 반환 | 구조·근거 위치 검사, LLM 판정 검증, 최종 판정·제한 재처리 결정 | [프롬프트](prompts/verify.md), [Gate](verification/gate.py), [규칙 검사](verification/evidence_checker.py), [의미 검사](verification/consistency_checker.py) |
+
+최신 평가 기준 문서가 위 프롬프트에 자동 반영되는 것은 아니다. 독립 교훈별 추출·작성 정렬은
+구현 보완 대상으로 남아 있으며, 이 작업에서는 그림과 설명만 변경했다.
 
 ## 1. 파일을 읽는 도구와 Parse 단위
 
