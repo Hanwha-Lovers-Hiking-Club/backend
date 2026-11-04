@@ -1,4 +1,6 @@
-# 지식카드를 LLM 프롬프트에 넣을 텍스트로 바꾼다. 검증 에이전트와 답변 생성이 같은 모양을 쓴다.
+# 지식카드와 원문 청크를 LLM 프롬프트에 넣을 텍스트로 바꾼다.
+# 검증 에이전트와 답변 생성이 같은 모양을 쓴다.
+from app.domains.chat.models import ChunkCandidate
 from app.domains.knowledge_cards.schemas import KnowledgeCard
 
 _FIELDS = (
@@ -33,3 +35,26 @@ def format_card(number: int, card: KnowledgeCard) -> str:
 def format_cards(cards: list[KnowledgeCard]) -> str:
     # 번호는 1부터. 검증 에이전트가 이 번호로 판단 결과를 돌려준다
     return "\n\n".join(format_card(i, card) for i, card in enumerate(cards, start=1))
+
+
+def format_chunk(number: int, chunk: ChunkCandidate, with_neighbors: bool = False) -> str:
+    header = f"[원문 {number}] 문서: {chunk.document_title}"
+    if chunk.location:
+        header += f" · 위치: {chunk.location}"
+    if not with_neighbors:
+        return f"{header}\n{chunk.content}"
+    # 답변 생성용. 앞뒤 청크는 맥락이라 근거 본문과 구분해서 넣는다
+    parts = [header]
+    if chunk.before:
+        parts.append(f"(앞 내용) {chunk.before}")
+    parts.append(chunk.content)
+    if chunk.after:
+        parts.append(f"(뒤 내용) {chunk.after}")
+    return "\n".join(parts)
+
+
+def format_chunks(chunks: list[ChunkCandidate], with_neighbors: bool = False) -> str:
+    # 번호는 1부터. 검증 에이전트가 이 번호로 판단 결과를 돌려준다
+    return "\n\n".join(
+        format_chunk(i, chunk, with_neighbors) for i, chunk in enumerate(chunks, start=1)
+    )

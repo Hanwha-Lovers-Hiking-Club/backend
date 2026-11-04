@@ -71,6 +71,11 @@ class Retrieval(BaseModel):
     chunks: list[ChunkCandidate]
 
 
+class ChunkJudgement(BaseModel):
+    index: int = Field(description="후보 원문 번호 (프롬프트에 붙은 번호 그대로)")
+    relevant: bool = Field(description="이 원문이 질문에 답하는 데 필요한 정보를 담고 있는지")
+
+
 class CardJudgement(BaseModel):
     index: int = Field(description="후보 카드 번호 (프롬프트에 붙은 번호 그대로)")
     relevant: bool = Field(description="이 카드가 질문에 답하는 데 실제로 도움이 되는지")
@@ -78,10 +83,30 @@ class CardJudgement(BaseModel):
 
 
 class VerificationOutput(BaseModel):
-    judgements: list[CardJudgement]
+    # 항목별 판단을 먼저 하고, 그 판단을 바탕으로 전체(답할 수 있는지, 상충)를 정하도록
+    # 이 순서로 둔다
+    chunk_judgements: list[ChunkJudgement]
+    card_judgements: list[CardJudgement]
+    answerable: bool = Field(
+        description="관련 있다고 판단한 원문·카드로 질문의 핵심에 답할 수 있는지 "
+        "(일부만 답해도 true)"
+    )
+    conflicts: str | None = Field(
+        description="관련 원문끼리 같은 대상에 대해 다른 사실·수치·결정을 말하면 그 내용. "
+        "없으면 null"
+    )
 
 
 class VerifiedCandidate(BaseModel):
     candidate: Candidate
     # 사용자에게 보여줄 "이 카드를 고른 이유" (ChatReference.reason)
     reason: str
+
+
+class Verification(BaseModel):
+    # 검증 단계 결과. 관련 있다고 판단한 원문과 카드만 검색 순위 그대로 담는다
+    chunks: list[ChunkCandidate]
+    cards: list[VerifiedCandidate]
+    # 자료로 질문에 답할 수 있는지. false면 "자료 없음" 안내로 답한다
+    answerable: bool
+    conflicts: str | None = None
