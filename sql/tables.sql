@@ -21,6 +21,15 @@ create table if not exists documents (
   unique (storage_bucket, storage_path)
 );
 
+-- knowledge_cards의 생성 컬럼이 쓰는 함수라서 테이블보다 먼저 만든다.
+-- array_to_string은 immutable이 아니라서 생성 컬럼에 바로 쓸 수 없다.
+-- 구분자가 줄바꿈이어서 서로 다른 두 원소에 걸쳐 검색어가 일치하지 않는다.
+create or replace function card_array_to_text(arr text[])
+returns text
+language sql
+immutable
+as $$ select pg_catalog.array_to_string(arr, E'\n') $$;
+
 -- ---------------------------------------------------------------
 -- knowledge_cards: 지식카드 본문 + 메타데이터
 -- ---------------------------------------------------------------
@@ -43,7 +52,11 @@ create table if not exists knowledge_cards (
   technologies         text[] not null default '{}',  -- 기술 스택 (WebSocket, Supabase 등)
   keywords             text[] not null default '{}',  -- 분야/주제어 (웹 개발, QA, 네트워크 등)
 
-  department           text,  -- 담당 부서. 식별 불가하면 NULL
+  -- 부분 일치 검색용. text[]는 PostgREST에서 ilike로 검색할 수 없어서 문자열로 합쳐 둔다
+  technologies_text    text generated always as (card_array_to_text(technologies)) stored,
+  keywords_text        text generated always as (card_array_to_text(keywords)) stored,
+
+  department          text,  -- 담당 부서. 식별 불가하면 NULL
   project_date         date,  -- 지식이 나온 프로젝트 시점. 식별 불가하면 NULL
 
   -- 메타데이터 (v1.0)

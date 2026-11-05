@@ -152,7 +152,7 @@ def test_list_cards_search_filter(client, fake_db):
         (
             (
                 'title.ilike."*RAG*",summary.ilike."*RAG*",context.ilike."*RAG*",'
-                'keywords.cs.{"RAG"},technologies.cs.{"rag"}',
+                'keywords_text.ilike."*RAG*",technologies_text.ilike."*rag*"',
             ),
             {},
         )
@@ -170,7 +170,7 @@ def test_list_cards_blank_search_is_ignored(client, fake_db):
 def test_search_filter_escapes_reserved_characters():
     assert service._build_search_filter('a,"b"') == (
         r'title.ilike."*a,\"b\"*",summary.ilike."*a,\"b\"*",context.ilike."*a,\"b\"*",'
-        r'keywords.cs.{"a,\"b\""}'
+        r'keywords_text.ilike."*a,\"b\"*"'
     )
 
 
@@ -213,11 +213,25 @@ def test_list_cards_db_error(client, fake_db):
 
 def test_search_filter_matches_technologies_by_standard_id():
     # 입력이 별칭("넥스트")이어도 저장된 표준 ID(nextjs)로 비교한다. 조사가 붙어도 찾는다
-    condition = "technologies.cs.{" + '"nextjs"' + "}"
+    condition = 'technologies_text.ilike."*nextjs*"'
     assert condition in service._build_search_filter("넥스트 장애").split(",")
     assert condition in service._build_search_filter("넥스트에서 장애").split(",")
     # 사전에 없는 기술도 같은 철자로 맞는다
-    assert 'technologies.cs.{"somenewtool"}' in service._build_search_filter("SomeNewTool")
+    assert 'technologies_text.ilike."*somenewtool*"' in service._build_search_filter("SomeNewTool")
+
+
+def test_search_filter_matches_part_of_keywords_and_technologies():
+    # 배열을 합친 생성 컬럼을 ilike로 찾아서, 원소의 일부만 입력해도 맞는다
+    conditions = service._build_search_filter("제어").split(",")
+    assert 'keywords_text.ilike."*제어*"' in conditions
+
+    # 기술 스택은 표준 ID의 일부로 찾는다("post" -> postgresql). 대문자로 입력해도 같다
+    assert 'technologies_text.ilike."*post*"' in service._build_search_filter("Post").split(",")
+
+
+def test_search_filter_no_longer_requires_exact_array_elements():
+    # 배열 원소 전체가 같아야 하는 조건(cs)이 남아 있으면 부분 일치가 다시 깨진다
+    assert ".cs." not in service._build_search_filter("넥스트 장애")
 
 
 def test_technologies_are_returned_with_display_names():

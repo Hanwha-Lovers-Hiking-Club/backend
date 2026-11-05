@@ -40,6 +40,8 @@
 | lesson | text | O | 재사용 가능한 교훈 |
 | technologies | text[] | O (빈 배열 가능) | 기술 스택. **정규화된 표준 ID로 저장**(`nextjs`, `postgresql`, 사전에 없는 기술은 소문자·구분기호 제거 값). 표기 통일 규칙과 사전은 `app/core/technology/`, 화면 표시명은 API 응답에서 변환. 기본값 `{}` |
 | keywords | text[] | O (빈 배열 가능) | 분야/주제어(웹 개발, QA, 네트워크 등). 기본값 `{}` |
+| technologies_text | text | 자동 생성 | `technologies`를 줄바꿈으로 합친 생성 컬럼. 부분 일치 검색 전용이며 직접 저장하지 않고 응답에도 내려주지 않음 |
+| keywords_text | text | 자동 생성 | `keywords`를 줄바꿈으로 합친 생성 컬럼. 부분 일치 검색 전용이며 직접 저장하지 않고 응답에도 내려주지 않음 |
 | department | text | X | 담당 부서. 식별 불가하면 NULL |
 | project_date | date | X | 지식이 나온 프로젝트 시점. 식별 불가하면 NULL |
 | project_name | text | X | LLM이 문서에서 추출한 프로젝트 이름. 표기가 달라도(플랜밍고/planmingo) 같은 프로젝트로 묶지 않음. 식별 불가하면 NULL |
@@ -63,6 +65,7 @@
 - 조건부 5개(`problem`, `cause`, `approach`, `rationale`, `outcome`) 중 최소 1개는 공백 아닌 값이 있어야 함 (CHECK).
 - `status`는 text + CHECK. 값이 늘면 제약만 교체하고, pydantic의 Literal/Enum도 같이 수정.
 - 카드의 `source`(근거 문서)는 컬럼이 아니라 `card_documents`로 연결. 카드당 문서 1개 이상은 DB가 아니라 앱 로직(service.py)에서 보장.
+- `technologies_text`, `keywords_text`는 함수 `card_array_to_text`로 DB가 자동 계산. 마이그레이션은 `sql/2026-11-05_add_card_search_text.sql`.
 
 ## card_documents
 
