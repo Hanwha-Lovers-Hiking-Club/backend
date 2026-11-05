@@ -15,7 +15,7 @@ router = APIRouter(prefix="/knowledge", tags=["knowledge_cards"])
     description="검색·정렬·페이지네이션 조건에 맞는 active 지식카드 목록과 전체 개수를 반환한다.",
 )
 async def list_cards(
-    q: str = Query("", description="검색어 (제목/요약/배경 부분일치, 키워드 정확일치)"),
+    q: str = Query("", description="검색어 (제목/요약/배경/키워드/기술 스택 부분일치)"),
     sort: CardSort = Query(
         "recent", description="recent: 최근 수정순 / created: 최신 생성순 / name: 제목순"
     ),
