@@ -95,7 +95,10 @@ async def _store_files(job_id: UUID, files: list[UploadFile]) -> list[dict]:
             # Storage 키에는 한글/일부 특수문자를 쓸 수 없어서 원래 파일명 대신 uuid로 저장한다
             path = f"{job_id}/{uuid4()}{extension}"
             content = await file.read()
-            repository.upload_file(path, content, ALLOWED_EXTENSIONS[extension])
+            # supabase 클라이언트가 동기라서 이벤트 루프를 막지 않도록 스레드에서 돌린다
+            await asyncio.to_thread(
+                repository.upload_file, path, content, ALLOWED_EXTENSIONS[extension]
+            )
             rows.append(
                 {
                     # 제목은 파이프라인에서 LLM이 뽑기 전까지 파일명(확장자 제외)으로 둔다
@@ -107,7 +110,7 @@ async def _store_files(job_id: UUID, files: list[UploadFile]) -> list[dict]:
                 }
             )
     except StorageException:
-        _remove_quietly([row["storage_path"] for row in rows])
+        await asyncio.to_thread(_remove_quietly, [row["storage_path"] for row in rows])
         raise internal_error(STORE_FAILED_DETAIL)
     return rows
 
@@ -121,9 +124,9 @@ async def upload_documents(files: list[UploadFile]) -> dict:
     rows = await _store_files(job_id, files)
     try:
         # 한 번의 insert로 넣어서 문서 행도 전부 들어가거나 하나도 안 들어간다
-        document_ids = repository.insert_documents(rows)
+        document_ids = await asyncio.to_thread(repository.insert_documents, rows)
     except APIError:
-        _remove_quietly([row["storage_path"] for row in rows])
+        await asyncio.to_thread(_remove_quietly, [row["storage_path"] for row in rows])
         raise internal_error(STORE_FAILED_DETAIL)
 
     # 파이프라인(parse 노드)이 Storage에서 파일을 내려받는 데 필요한 정보

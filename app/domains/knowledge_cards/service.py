@@ -1,4 +1,5 @@
 # 지식카드 로직: Supabase 조회/저장과 DB 행 -> 응답 모양 변환.
+import asyncio
 import logging
 from uuid import UUID
 
@@ -138,15 +139,17 @@ async def list_cards(q: str, sort: CardSort, page: int, page_size: int) -> dict:
     )
 
     try:
-        result = query.execute()
+        # supabase 클라이언트가 동기라서 이벤트 루프를 막지 않도록 스레드에서 돌린다
+        result = await asyncio.to_thread(query.execute)
     except APIError as e:
         if e.code != RANGE_NOT_SATISFIABLE:
             raise internal_error(LIST_FAILED_DETAIL)
         # 마지막 페이지를 넘긴 요청: 빈 목록 + 전체 개수를 돌려준다
+        count_query = _apply_filters(
+            supabase.table("knowledge_cards").select("id", count="exact", head=True), q
+        )
         try:
-            count_result = _apply_filters(
-                supabase.table("knowledge_cards").select("id", count="exact", head=True), q
-            ).execute()
+            count_result = await asyncio.to_thread(count_query.execute)
         except APIError:
             raise internal_error(LIST_FAILED_DETAIL)
         return {"items": [], "total": count_result.count or 0}
@@ -160,14 +163,14 @@ async def list_cards(q: str, sort: CardSort, page: int, page_size: int) -> dict:
 async def get_card(card_id: UUID) -> dict:
     # 목록과 같은 기준으로 active 카드만 보여준다. draft/flagged/archived는 없는 카드처럼 404.
     # 없는 id일 수 있어서 .single() 대신 리스트로 받아 직접 확인한다
+    query = (
+        supabase.table("knowledge_cards")
+        .select(CARD_SELECT)
+        .eq("id", str(card_id))
+        .eq("status", "active")
+    )
     try:
-        result = (
-            supabase.table("knowledge_cards")
-            .select(CARD_SELECT)
-            .eq("id", str(card_id))
-            .eq("status", "active")
-            .execute()
-        )
+        result = await asyncio.to_thread(query.execute)
     except APIError:
         raise internal_error(GET_FAILED_DETAIL)
     if not result.data:
