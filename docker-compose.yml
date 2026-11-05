@@ -1,0 +1,19 @@
+services:
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    # 비밀값은 이미지에 넣지 않고 실행할 때만 주입한다
+    env_file: .env
+    environment:
+      # .env에서 빈 값이면 허용 출처가 0개가 되어 프론트 호출이 전부 막히므로 여기서 고정한다
+      CORS_ORIGINS: http://localhost:3000
+
+  frontend:
+    build:
+      context: https://github.com/Hanwha-Lovers-Hiking-Club/frontend.git#main
+      args:
+        # 브라우저가 해석하는 주소라서 컨테이너 이름(backend)을 쓰면 안 된다
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
