@@ -168,11 +168,12 @@ def test_references_match_frontend_chat_reference(client, pipeline):
     assert reference["label"] == card["title"] == pipeline["card"].title
     assert {"projectName", "qualityScore", "createdAt", "evidences"} <= set(card)
 
-    [evidence] = card["evidences"]
+    [document] = card["evidences"]
+    [evidence] = document["items"]
     assert reference["id"] == evidence["id"]
     assert reference["document"] == {
-        "id": evidence["documentId"],
-        "documentTitle": evidence["documentTitle"],
+        "id": document["documentId"],
+        "documentTitle": document["documentTitle"],
         "location": evidence["location"],
         "excerpt": evidence["excerpt"],
     }

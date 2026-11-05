@@ -53,9 +53,11 @@ TRUNCATED_NOTICE = (
 
 
 def _to_reference(verified: VerifiedCandidate) -> ChatReference:
-    # 참조 하나 = 카드 하나 + 그 카드의 근거 하나. 근거가 여러 개면 첫 번째를 보여준다
+    # 참조 하나 = 카드 하나 + 그 카드의 근거 하나.
+    # 근거가 여러 개면 첫 번째 문서의 첫 번째 근거를 보여준다
     card = verified.candidate.card
-    evidence = card.evidences[0]
+    source_document = card.evidences[0]
+    evidence = source_document.items[0]
     return ChatReference(
         id=evidence.id,
         type="knowledge-card",
@@ -63,8 +65,8 @@ def _to_reference(verified: VerifiedCandidate) -> ChatReference:
         card=card,
         reason=verified.reason,
         document=ChatSourceDocument(
-            id=evidence.document_id,
-            document_title=evidence.document_title,
+            id=source_document.document_id,
+            document_title=source_document.document_title,
             location=evidence.location,
             excerpt=evidence.excerpt,
         ),
