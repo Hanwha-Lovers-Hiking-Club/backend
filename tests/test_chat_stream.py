@@ -179,6 +179,63 @@ def test_references_match_frontend_chat_reference(client, pipeline):
     }
 
 
+def _card_with_header_and_cause(make_card, document_id):
+    # 정렬 후 첫 번째 근거가 문서 첫머리이고, 두 번째 근거가 원인인 카드
+    return make_card(
+        evidences=[
+            {
+                "document_id": document_id,
+                "document_title": "점검 보고서",
+                "original_filename": "report.pdf",
+                "items": [
+                    {"id": uuid4(), "location": "머리말", "excerpt": "점검 보고서 작성자"},
+                    {"id": uuid4(), "location": "p.1 · 원인", "excerpt": "필드 의미가 바뀌었다"},
+                ],
+            }
+        ]
+    )
+
+
+def _use_search_result(monkeypatch, card, chunks):
+    async def fake_search(intent):
+        return Retrieval(cards=[Candidate(card=card, similarity=0.8)], chunks=chunks)
+
+    monkeypatch.setattr(service, "search", fake_search)
+
+
+def test_reference_shows_evidence_linked_to_answer_chunk(client, pipeline, monkeypatch, make_card):
+    document_id = uuid4()
+    card = _card_with_header_and_cause(make_card, document_id)
+    chunk = _chunk(1).model_copy(
+        update={"document_id": str(document_id), "content": "원인: 필드 의미가 바뀌었다."}
+    )
+    _use_search_result(monkeypatch, card, [chunk])
+
+    [reference] = _references(client.post(URL, json={"message": "질문"}))["items"]
+
+    cause = card.evidences[0].items[1]
+    assert reference["id"] == str(cause.id)
+    assert reference["document"] == {
+        "id": str(document_id),
+        "documentTitle": "점검 보고서",
+        "location": "p.1 · 원인",
+        "excerpt": "필드 의미가 바뀌었다",
+    }
+
+
+def test_reference_falls_back_to_first_evidence_without_linked_chunk(
+    client, pipeline, monkeypatch, make_card
+):
+    card = _card_with_header_and_cause(make_card, uuid4())
+    # 다른 문서의 청크라 카드 근거와 연결되지 않는다
+    _use_search_result(monkeypatch, card, [_chunk(1)])
+
+    [reference] = _references(client.post(URL, json={"message": "질문"}))["items"]
+
+    assert reference["id"] == str(card.evidences[0].items[0].id)
+    assert reference["document"]["location"] == "머리말"
+
+
 def test_sources_list_chunks_used_for_answer(client, pipeline):
     response = client.post(URL, json={"message": "질문"})
 

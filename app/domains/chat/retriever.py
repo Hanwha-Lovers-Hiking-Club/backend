@@ -16,7 +16,7 @@ from app.domains.documents.pipeline.embedding import (
     EMBEDDING_MODEL_NAME,
     get_embedding_client,
 )
-from app.domains.knowledge_cards.schemas import KnowledgeCard
+from app.domains.knowledge_cards.schemas import CardEvidence, CardEvidenceDocument, KnowledgeCard
 from app.domains.knowledge_cards.service import get_active_cards_by_ids
 
 # match_knowledge_cards의 embedding_kind 값 (sql/functions.sql)
@@ -119,6 +119,22 @@ def link_cards_to_chunks(chunks: list[ChunkCandidate]) -> dict[str, list[str]]:
                 if chunk.id not in chunk_ids:
                     chunk_ids.append(chunk.id)
     return links
+
+
+def find_linked_evidence(
+    card: KnowledgeCard, chunks: list[ChunkCandidate]
+) -> tuple[CardEvidenceDocument, CardEvidence] | None:
+    # 청크 순위 순서로 보고, 카드 근거 중 발췌문이 그 청크에 들어 있는 첫 번째 근거를 찾는다.
+    # 카드 근거의 맨 앞은 문서 첫머리(제목, 작성자)일 수 있어서,
+    # 답변에 쓴 청크의 근거를 우선 보여주기 위해 쓴다
+    for chunk in chunks:
+        for document in card.evidences:
+            if str(document.document_id) != chunk.document_id:
+                continue
+            for evidence in document.items:
+                if evidence.excerpt and _contains_excerpt(chunk.content, evidence.excerpt):
+                    return document, evidence
+    return None
 
 
 def _rank_cards(similarities: dict[str, float], chunks: list[ChunkCandidate]) -> list[Candidate]:
