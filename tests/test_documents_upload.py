@@ -189,6 +189,18 @@ def test_upload_failure_on_first_file_removes_nothing(client, storage):
     assert fake.removed == []
 
 
+def test_insert_failure_logs_original_error_after_cleanup(client, storage, caplog):
+    # 파일 정리를 스레드에서 기다린 뒤에도 삭제가 아니라 원래 insert 에러가 로그에 남아야 한다
+    fake = storage(fail_insert=True)
+    caplog.set_level("ERROR", logger="app")
+
+    response = client.post(URL, files=[_file("a.pdf")])
+
+    assert response.status_code == 500
+    assert fake.removed == [[fake.uploads[0][0]]]
+    assert [record.exc_info[0] for record in caplog.records] == [APIError]
+
+
 def test_upload_requires_files(client):
     response = client.post(URL)
 

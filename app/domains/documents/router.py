@@ -50,5 +50,6 @@ async def job_events(job_id: UUID, _job: dict = Depends(service.get_job)):
         "없는 문서 ID는 404."
     ),
 )
-async def get_document_url(document_id: UUID):
+def get_document_url(document_id: UUID):
+    # service가 동기 Supabase 호출을 하므로, FastAPI가 스레드에서 실행하도록 def로 둔다
     return service.get_document_url(document_id)
