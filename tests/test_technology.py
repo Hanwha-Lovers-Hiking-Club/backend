@@ -1,6 +1,7 @@
 import pytest
 
 from app.core.technology import (
+    aliases_of,
     display_name,
     find_technologies,
     is_valid_id,
@@ -68,6 +69,27 @@ def test_normalize_technologies_dedupes_by_standard_id_keeping_order(caplog):
 def test_display_name_uses_official_spelling_and_keeps_unknown_as_is():
     assert display_name("nextjs") == "Next.js" and display_name("Supabase") == "Supabase"
     assert display_name("postgres") == "PostgreSQL" and display_name("unknowntool") == "unknowntool"
+
+
+def test_aliases_of_returns_every_spelling_for_source_search():
+    # 원문에는 정규화 전 표기가 남아 있어서, 영문/한글/약어를 모두 돌려줘야 원문을 찾을 수 있다
+    assert aliases_of("websocket") == ["WebSocket", "web socket", "웹소켓"]
+    assert set(aliases_of("kubernetes")) >= {"Kubernetes", "k8s", "쿠버네티스"}
+
+
+def test_aliases_of_drops_spellings_that_differ_only_in_case():
+    names = aliases_of("nextjs")
+    assert len({name.casefold() for name in names}) == len(names)
+    assert names[0] == "Next.js"
+
+
+def test_aliases_of_unknown_id_is_empty():
+    assert aliases_of("unknowntool") == [] and aliases_of("") == []
+
+
+def test_aliases_of_every_alias_normalizes_back_to_its_id():
+    for tech_id in TECHNOLOGIES:
+        assert {normalize_technology(name) for name in aliases_of(tech_id)} == {tech_id}
 
 
 @pytest.mark.parametrize(

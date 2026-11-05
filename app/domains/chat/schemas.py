@@ -47,12 +47,28 @@ class ChatReference(CamelModel):
     document: ChatSourceDocument
 
 
+# 답변의 사실 근거로 쓴 원문 청크 하나 (document_chunks 한 행)
+class ChatSource(CamelModel):
+    # document_chunks.id
+    chunk_id: UUID
+    # documents.id
+    document_id: UUID
+    document_title: str
+    location: str | None
+    # 청크 본문 전체
+    excerpt: str
+
+
 class ChatReferencesEvent(CamelModel):
+    # 관련 지식카드. 비어 있으면 프론트는 카드 영역을 그리지 않는다 (원문만으로 답한 경우 포함)
     items: list[ChatReference]
+    # 답변 생성에 넘긴 원문 청크. 고정 문구로 답한 경우(범위 밖, 자료 없음, 되묻기)는 빈 목록
+    sources: list[ChatSource] = Field(default_factory=list)
 
 
 class ChatCompletedEvent(CamelModel):
-    pass
+    # 이 답변의 식별자. 피드백을 보낼 때 어떤 답변인지 가리킨다 (서버는 대화를 저장하지 않는다)
+    message_id: UUID
 
 
 class ChatErrorEvent(CamelModel):

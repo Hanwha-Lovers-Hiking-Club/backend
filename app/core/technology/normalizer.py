@@ -77,6 +77,19 @@ def display_name(tech: str) -> str:
     return _DISPLAY[tech_id] if tech_id else tech
 
 
+def aliases_of(tech_id: str) -> list[str]:
+    # 표준 ID의 모든 표기(표시명, 표준 ID, 별칭). 챗봇이 원문을 검색할 때 쓴다. 원문은 정규화 전
+    # 표기(웹소켓, K8s)로 쓰여 있어서 표준 ID 하나로는 못 찾는다. 대소문자만 다른 표기는 하나로
+    # 줄인다. 사전에 없는 ID면 빈 목록
+    if tech_id not in _DISPLAY:
+        return []
+    display_name_, aliases = TECHNOLOGIES[tech_id]
+    result: dict[str, str] = {}
+    for alias in (display_name_, tech_id, *aliases):
+        result.setdefault(alias.casefold(), alias)
+    return list(result.values())
+
+
 def is_valid_id(tech_id: str) -> bool:
     # 검색 조건에 그대로 넣어도 안전한 값인지
     return bool(_ID_CHARS.fullmatch(tech_id))
