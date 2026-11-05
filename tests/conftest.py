@@ -59,12 +59,16 @@ def make_card():
             "updated_at": "2026-10-24T09:00:00+00:00",
             "evidences": [
                 {
-                    "id": uuid4(),
                     "document_id": uuid4(),
                     "document_title": "검색 시스템 설계서",
                     "original_filename": "search-design.pdf",
-                    "location": "3장 검색 방식",
-                    "excerpt": "벡터 검색과 키워드 검색을 결합한다.",
+                    "items": [
+                        {
+                            "id": uuid4(),
+                            "location": "3장 검색 방식",
+                            "excerpt": "벡터 검색과 키워드 검색을 결합한다.",
+                        }
+                    ],
                 }
             ],
             **overrides,

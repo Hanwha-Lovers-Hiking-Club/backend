@@ -15,13 +15,18 @@ class CardEvidence(CamelModel):
     # card_documents.id. 한 카드가 같은 문서를 여러 번 근거로 삼을 수 있어서
     # 명세서의 "카드ID:문서ID" 복합키 대신 행마다 유일한 PK를 쓴다
     id: UUID
+    location: str | None
+    excerpt: str | None
+
+
+class CardEvidenceDocument(CamelModel):
+    # 근거 문서 하나와 그 문서에서 가져온 근거 목록. 한 카드 안에서 문서는 겹치지 않는다
     document_id: UUID
     document_title: str
     original_filename: str
-    location: str | None
-    excerpt: str | None
     # 원본 문서 열람 URL은 별도 API(/api/documents/{id}/url)로 발급 예정이라 지금은 항상 null
     url: str | None = None
+    items: list[CardEvidence]
 
 
 class KnowledgeCard(CamelModel):
@@ -46,7 +51,7 @@ class KnowledgeCard(CamelModel):
     project_date: date | None
     created_at: datetime
     updated_at: datetime
-    evidences: list[CardEvidence]
+    evidences: list[CardEvidenceDocument]
 
 
 class KnowledgeCardListResponse(CamelModel):

@@ -25,7 +25,7 @@ def format_card(number: int, card: KnowledgeCard) -> str:
         value = getattr(card, field)
         if value:
             lines.append(f"{label}: {value}")
-    excerpts = [e.excerpt for e in card.evidences if e.excerpt]
+    excerpts = [e.excerpt for document in card.evidences for e in document.items if e.excerpt]
     if excerpts:
         lines.append("근거 발췌문:")
         lines.extend(f"- {excerpt}" for excerpt in excerpts)

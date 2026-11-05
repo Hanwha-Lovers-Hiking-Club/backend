@@ -96,13 +96,17 @@ def test_list_cards_returns_camel_case_cards_with_evidences(client, fake_db):
     assert "card_documents" not in card
     assert card["evidences"] == [
         {
-            "id": EVIDENCE_ID,
             "documentId": DOCUMENT_ID,
             "documentTitle": "검색 시스템 설계서",
             "originalFilename": "search-design.pdf",
-            "location": "3장 검색 방식",
-            "excerpt": "벡터 검색과 키워드 검색을 결합한다.",
             "url": None,
+            "items": [
+                {
+                    "id": EVIDENCE_ID,
+                    "location": "3장 검색 방식",
+                    "excerpt": "벡터 검색과 키워드 검색을 결합한다.",
+                }
+            ],
         }
     ]
 
@@ -237,6 +241,113 @@ def test_search_filter_no_longer_requires_exact_array_elements():
 def test_technologies_are_returned_with_display_names():
     row = {"id": "1", "technologies": ["nextjs", "Supabase", "unknowntool"], "card_documents": []}
     assert service._to_card(row)["technologies"] == ["Next.js", "Supabase", "unknowntool"]
+
+
+def _evidence_row(evidence_id, document_id, location, excerpt="발췌문", title="문서"):
+    return {
+        "id": evidence_id,
+        "document_id": document_id,
+        "location": location,
+        "excerpt": excerpt,
+        "documents": {"title": title, "original_filename": f"{document_id}.pdf"},
+    }
+
+
+def test_evidences_of_same_document_are_grouped_without_losing_excerpts():
+    row = {
+        "id": "1",
+        "card_documents": [
+            _evidence_row("e1", "doc-a", "p.1", "첫 번째 발췌문"),
+            _evidence_row("e2", "doc-a", "p.2", "두 번째 발췌문"),
+            # 위치가 같아도 발췌문이 다르면 서로 다른 근거라 둘 다 남긴다
+            _evidence_row("e3", "doc-a", "p.2", "세 번째 발췌문"),
+        ],
+    }
+
+    [document] = service._to_card(row)["evidences"]
+
+    assert document["document_id"] == "doc-a"
+    assert document["original_filename"] == "doc-a.pdf"
+    assert document["url"] is None
+    # 위치가 같으면 발췌문 순서로 정렬한다
+    assert [item["excerpt"] for item in document["items"]] == [
+        "첫 번째 발췌문",
+        "두 번째 발췌문",
+        "세 번째 발췌문",
+    ]
+    assert [item["id"] for item in document["items"]] == ["e1", "e2", "e3"]
+
+
+def test_evidences_of_different_documents_are_separate_and_sorted_by_title():
+    row = {
+        "id": "1",
+        "card_documents": [
+            _evidence_row("e1", "doc-b", "p.1", title="나 문서"),
+            _evidence_row("e2", "doc-a", "p.1", title="가 문서"),
+            _evidence_row("e3", "doc-b", "p.2", title="나 문서"),
+        ],
+    }
+
+    evidences = service._to_card(row)["evidences"]
+
+    assert [d["document_title"] for d in evidences] == ["가 문서", "나 문서"]
+    assert [len(d["items"]) for d in evidences] == [1, 2]
+
+
+def test_evidence_locations_sort_numbers_as_numbers_and_missing_last():
+    row = {
+        "id": "1",
+        "card_documents": [
+            _evidence_row("e1", "doc-a", None),
+            _evidence_row("e2", "doc-a", "p.10"),
+            _evidence_row("e3", "doc-a", "p.2"),
+            _evidence_row("e4", "doc-a", "2장 설계"),
+        ],
+    }
+
+    [document] = service._to_card(row)["evidences"]
+
+    assert [item["location"] for item in document["items"]] == ["2장 설계", "p.2", "p.10", None]
+
+
+def test_evidence_order_does_not_depend_on_db_row_order():
+    rows = [
+        _evidence_row("e1", "doc-a", "p.1", "가"),
+        _evidence_row("e2", "doc-a", "p.1", "나"),
+        _evidence_row("e3", "doc-b", "p.1", title="다른 문서"),
+    ]
+
+    forward = service._to_card({"id": "1", "card_documents": rows})["evidences"]
+    backward = service._to_card({"id": "1", "card_documents": rows[::-1]})["evidences"]
+
+    assert forward == backward
+
+
+def test_card_without_evidences_returns_empty_list():
+    assert service._to_card({"id": "1", "card_documents": []})["evidences"] == []
+    assert service._to_card({"id": "1"})["evidences"] == []
+
+
+def test_grouped_card_passes_response_schema(client, fake_db):
+    row = {
+        **CARD_ROW,
+        "card_documents": [
+            {**CARD_ROW["card_documents"][0], "id": EVIDENCE_ID, "location": "p.2"},
+            {
+                **CARD_ROW["card_documents"][0],
+                "id": "1f3d7e52-5b1a-4c8e-9d11-7a2c4e6f8a90",
+                "location": "p.1",
+            },
+        ],
+    }
+    fake_db(data=[row])
+
+    response = client.get(f"/api/knowledge/cards/{CARD_ID}")
+
+    assert response.status_code == 200
+    [document] = response.json()["evidences"]
+    assert document["documentId"] == DOCUMENT_ID
+    assert [item["location"] for item in document["items"]] == ["p.1", "p.2"]
 
 
 def test_get_card_returns_camel_case_card_with_evidences(client, fake_db):
