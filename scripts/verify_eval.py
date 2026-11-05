@@ -225,7 +225,7 @@ def main() -> None:
             )
             lines_reason = " / ".join(v.reasons)[:400]
             print(
-                f"{'✓' if ok else '✗'} {case.name[:60]} -> {v.verdict} {v.cleared_fields} {lines_reason}",
+                f"{'✓' if ok else '✗'} {case.name[:60]} -> {v.verdict}/{v.status} {v.cleared_fields} {lines_reason}",
                 flush=True,
             )
 

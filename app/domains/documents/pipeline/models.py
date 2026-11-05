@@ -135,15 +135,37 @@ class ClaimCheck(BaseModel):
     judgement: ClaimJudgement
 
 
+ReuseKind = Literal["decision_criteria", "action", "diagnosis", "none"]
+
+
+# 다른 프로젝트에서 쓸 수 있는 경험 지식인지 본다. "재사용할 수 있는가" 같은 넓은 질문은 LLM이 거의
+# 항상 통과시켜서, 적용 상황·행동·확인 범위를 문구로 먼저 뽑은 뒤 유형을 고르게 한다
+class ReuseCheck(BaseModel):
+    situation: str
+    guidance: str
+    confirmed_scope: str
+    kind: ReuseKind
+
+
+# 쓰인 주장만 대조하면 빠뜨린 내용을 못 잡는다. 자유 서술로 받으면 사소한 내용까지 잡혀서
+# 근거 id를 먼저 고르게 하고, 코드가 결과(result) 근거를 지목한 것만 인정한다
+class OmittedLimit(BaseModel):
+    evidence_id: str
+    limit: str
+
+
 class ClaimChecks(BaseModel):
     checks: list[ClaimCheck]
+    omitted_limits: list[OmittedLimit]
+    reuse: ReuseCheck
 
 
 # 카드 검증 결과. 검증 판정(verdict)과 공개 상태(status)는 따로 기록한다
-# (결과 없는 결정 카드는 내용이 정확하면 passed지만 공개 정책상 draft다).
-#   passed: 모든 주장이 근거로 지지됨(문제 있던 조건부·선택 필드는 비운 뒤). outcome이 결과 미확정
-#           (result_unconfirmed)이면 내용은 맞으므로 passed지만 공개 상태는 draft다
-#   held: 필수 필드(title/summary/context/lesson)에 근거를 벗어난 주장이 있음 -> 사람 검토
+# (재사용 가치가 없는 카드는 내용이 정확하면 passed지만 공개 정책상 draft다).
+#   passed: 모든 주장이 근거로 지지됨(문제 있던 조건부·선택 필드는 비운 뒤). 재사용 가치가 부족하면
+#           내용은 맞으므로 passed지만 공개 상태는 draft다
+#   held: 필수 필드(title/summary/context/lesson)에 근거를 벗어난 주장이 있거나, 결론을 바꾸는
+#         한계를 카드가 빠뜨림 -> 사람 검토
 #   excluded: 문제 필드를 비우고 나니 카드 구조 조건이 깨짐 -> 저장 안 함
 #   incomplete: 호출 실패, 응답 파싱 실패, 값이 있는 필드의 판정 누락 -> 저장 안 함
 class VerificationResult(BaseModel):

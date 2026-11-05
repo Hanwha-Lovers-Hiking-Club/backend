@@ -29,8 +29,8 @@ def _to_card_dict(draft: CardDraft, embeddings: CardEmbeddings | None, status: s
         "project_name": draft.project_name,
         "department": draft.department,
         "project_date": draft.project_date.isoformat() if draft.project_date else None,
-        # verify가 정한 공개 상태. 결과가 확인된 통과 카드만 active이고, 결과 없는 결정 카드와
-        # 사람 검토가 필요한 카드는 draft(RAG 검색 제외)다
+        # verify가 정한 공개 상태. 재사용 가치가 있는 통과 카드는 active이고,
+        # 재사용 가치가 부족한 카드와 사람 검토가 필요한 카드는 draft(RAG 검색 제외)다
         "status": status,
         # draft 카드는 임베딩이 없다(NULL 허용 컬럼)
         **{
