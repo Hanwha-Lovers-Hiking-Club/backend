@@ -390,5 +390,81 @@
       "나머지 5개 프로젝트는 홀드아웃",
       "조율 문서는 ADR 0002와 docs/perf.md 두 후보 모두 사용"
     ]
+  },
+  "g0_raw_results": {
+    "recorded_on": "2026-11-05",
+    "timezone": "Asia/Seoul",
+    "root": "C:\\Users\\user\\Desktop\\judge-results\\g0",
+    "hash_algorithm": "SHA-256 of exact bytes",
+    "scope": "Raw file identities and user-supplied rater/correction metadata only; no result interpretation or G0 adjudication",
+    "result_contents_read_or_summarized": false,
+    "metadata_file_contents_read": false,
+    "raw_files_modified": false,
+    "markdown_escapes_preserved": true,
+    "raters": {
+      "A": {
+        "model_id": "claude-opus-5-5",
+        "model_display_name": "Opus 5.5",
+        "reasoning_effort": "높음",
+        "usage_path": "웹",
+        "service": "claude.ai",
+        "metadata_source": "user instruction"
+      },
+      "B": {
+        "model_id_as_provided": "GPT-5.6 Sol",
+        "model_display_name": "GPT-5.6 Sol",
+        "reasoning_effort": "높음",
+        "usage_path": "웹",
+        "service": "ChatGPT",
+        "metadata_source": "user instruction"
+      }
+    },
+    "files": [
+      {
+        "file": "tg-adr0002_g0_A-claude_raw.md",
+        "sha256": "385f836620907924b00192da98c43e9e5c2326060e94f32060d07d220c957f2d",
+        "rater": "A"
+      },
+      {
+        "file": "tg-adr0002_g0_B-gpt_raw.md",
+        "sha256": "e72eee950bd8e04f0596e52566da9745640497d00e464bfa432123eb4636be33",
+        "rater": "B"
+      },
+      {
+        "file": "tg-perf_g0_A-claude_raw.md",
+        "sha256": "58bb9c881d0629e6579cbf3060227000f006c9a3b2d866408bc9ee375234427f",
+        "rater": "A"
+      },
+      {
+        "file": "tg-perf_g0_B-gpt_raw.md",
+        "sha256": "4c7b7260f96be3b0044a7b5b77835537d7a7a107eaa8ba7ec1f248f9586671f0",
+        "rater": "B"
+      },
+      {
+        "file": "g0_meta.md",
+        "sha256": "53167571793a7935de8b60b1ccee9d8ce85f1d5f49bb9ed7f399b353d40b1ad1",
+        "role": "metadata_original_with_correction_preserved"
+      }
+    ],
+    "metadata_corrections": [
+      {
+        "metadata_file": "g0_meta.md",
+        "affected_result": "tg-adr0002_g0_B-gpt_raw.md",
+        "superseded_entry": {
+          "position": "first ADR 0002 B entry",
+          "model_display_name": "Opus 5.5",
+          "sha256_prefix": "385f8366",
+          "status": "incorrect"
+        },
+        "authoritative_entry": "final correction entry, as identified by the user",
+        "corrected_rater": "B",
+        "corrected_model_display_name": "GPT-5.6 Sol",
+        "corrected_reasoning_effort": "높음",
+        "corrected_usage_path": "ChatGPT 웹",
+        "corrected_result_sha256": "e72eee950bd8e04f0596e52566da9745640497d00e464bfa432123eb4636be33",
+        "correction_record_source": "user instruction; source file content not opened",
+        "treatment": "Apply corrected metadata in this manifest; preserve raw results and g0_meta.md byte-for-byte"
+      }
+    ]
   }
 }
