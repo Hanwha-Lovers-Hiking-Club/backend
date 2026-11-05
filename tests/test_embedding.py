@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
+from pydantic import SecretStr
 
 from app.domains.documents.pipeline import embedding as E
 
@@ -35,7 +36,8 @@ def test_dimension_mismatch_fails_with_clear_message(monkeypatch):
 
 
 def test_client_retries_transient_errors_itself(monkeypatch):
-    monkeypatch.setattr(E.settings, "KURE_API_KEY", "test")
+    # settings.KURE_API_KEY는 SecretStr이다
+    monkeypatch.setattr(E.settings, "KURE_API_KEY", SecretStr("test"))
     E.get_embedding_client.cache_clear()
     assert E.get_embedding_client().max_retries == E.EMBEDDING_MAX_RETRIES == 2
     E.get_embedding_client.cache_clear()
@@ -54,6 +56,6 @@ def test_more_inputs_than_kure_allows_fails_before_calling_api(monkeypatch):
 
 
 def test_chunk_embedding_batches_never_exceed_kure_limit():
-    from app.domains.documents.pipeline.nodes import embed_chunks as EC
+    from app.domains.documents.pipeline.search_index import embed_chunks as EC
 
     assert EC.BATCH_SIZE <= E.EMBEDDING_MAX_INPUTS == 8

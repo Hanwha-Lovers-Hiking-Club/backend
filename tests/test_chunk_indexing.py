@@ -1,9 +1,8 @@
 from uuid import uuid4
 
-from app.domains.documents.pipeline import graph as G
-from app.domains.documents.pipeline.models import EmbeddedChunk
-from app.domains.documents.pipeline.nodes import embed_chunks as EC
-from app.domains.documents.pipeline.nodes import save_chunks as SC
+from app.domains.documents.pipeline.search_index import embed_chunks as EC
+from app.domains.documents.pipeline.search_index import save_chunks as SC
+from app.domains.documents.pipeline.search_index.state import EmbeddedChunk
 
 DOC = uuid4()
 
@@ -103,9 +102,3 @@ def test_save_nothing_when_no_embedded_chunks(monkeypatch):
         SC.repository, "insert_chunks", lambda rows: (_ for _ in ()).throw(AssertionError)
     )
     assert SC.save_chunks({"embedded_chunks": []}) == {}
-
-
-def test_chunk_indexing_runs_after_card_save_in_graph():
-    assert G.NODE_ORDER[-3:] == ["save", "embed_chunks", "save_chunks"]
-    assert G._route_after("save")({"error": None}) == "embed_chunks"
-    assert G._route_after("save")({"error": "카드 저장 실패"}) == G.END

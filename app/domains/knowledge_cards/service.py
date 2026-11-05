@@ -1,22 +1,34 @@
 # 지식카드 로직: Supabase 조회/저장과 DB 행 -> 응답 모양 변환.
+# 문서 파이프라인의 카드 저장은 save_document_cards(문서 단위 원자 저장 RPC)를 거친다.
 import asyncio
 import logging
 from uuid import UUID
 
+import httpx
 from fastapi import HTTPException
 from postgrest.exceptions import APIError
+from pydantic import ValidationError
 
 from app.core.errors import internal_error
 from app.core.technology import display_name, find_technologies, is_valid_id, normalize_technology
 from app.core.text import strip_nul
 from app.db import supabase
+from app.domains.knowledge_cards.contracts import (
+    VECTOR_COLUMNS,
+    CardPersistenceError,
+    DocumentCardsReceipt,
+    DocumentCardsWrite,
+)
 from app.domains.knowledge_cards.schemas import CardSort
 
 logger = logging.getLogger(__name__)
 
 # 근거(card_documents)와 근거 문서(documents)를 한 번에 가져온다
 CARD_SELECT = (
-    "*, card_documents(id, document_id, location, excerpt, documents(title, original_filename))"
+    "id,title,summary,context,problem,cause,approach,rationale,outcome,lesson,"
+    "technologies,keywords,status,quality_score,last_verified_at,verification_version,"
+    "project_name,department,project_date,created_at,updated_at,"
+    "card_documents(id,document_id,location,excerpt,documents(title,original_filename))"
 )
 
 # (정렬 컬럼, 내림차순 여부)
@@ -32,6 +44,58 @@ RANGE_NOT_SATISFIABLE = "PGRST103"
 LIST_FAILED_DETAIL = "지식카드 목록을 조회하지 못했습니다."
 GET_FAILED_DETAIL = "지식카드를 조회하지 못했습니다."
 CARD_NOT_FOUND_DETAIL = "지식카드를 찾을 수 없습니다."
+
+
+async def save_document_cards(request: dict) -> dict:
+    """일반 dict로 문서별 pass 카드·근거·벡터를 받아 RPC 한 번으로 저장한다.
+
+    같은 문서 ID와 해시는 기존 결과를 반환하며 다른 카드 집합은 아직 지원하지 않는다.
+    main의 단건 create_card는 두 DB 호출이라 이 트랜잭션을 대신해 반복 호출하지 않는다.
+    """
+    from app.config import settings
+
+    try:
+        payload = DocumentCardsWrite.model_validate(request)
+        for card in payload.cards:
+            for column in VECTOR_COLUMNS:
+                vector = getattr(card, column)
+                if vector is not None and (
+                    len(vector) != settings.EMBEDDING_DIMENSIONS
+                    or not any(value != 0 for value in vector)
+                ):
+                    raise ValueError("Embedding does not match configured dimensions")
+    except (ValidationError, ValueError) as exc:
+        raise CardPersistenceError("Invalid document save request") from exc
+
+    rows = []
+    for card in payload.cards:
+        row = card.model_dump(mode="json")
+        row["evidences"] = [ref.model_dump(exclude={"document_id"}) for ref in card.evidences]
+        rows.append(row)
+    params = {
+        "p_document_id": str(payload.document_id),
+        "p_payload_hash": payload.payload_hash,
+        # create_card와 같은 이유로 NUL 문자를 저장 직전에 지운다(22P05 방지).
+        "p_cards": strip_nul(rows),
+    }
+    try:
+        result = await asyncio.to_thread(
+            lambda: supabase.rpc("save_document_cards", params).execute()
+        )
+    except (APIError, httpx.RequestError) as exc:
+        raise CardPersistenceError("Database did not confirm document save") from exc
+    try:
+        receipt = DocumentCardsReceipt.model_validate(result.data)
+        if (
+            receipt.document_id != payload.document_id
+            or receipt.payload_hash != payload.payload_hash
+            or len(receipt.card_ids) != len(payload.cards)
+            or len(set(receipt.card_ids)) != len(receipt.card_ids)
+        ):
+            raise ValueError("Save receipt does not match the requested cards")
+        return receipt.model_dump(mode="json")
+    except (ValidationError, ValueError, TypeError) as exc:
+        raise CardPersistenceError("Database returned an invalid save receipt") from exc
 
 
 def _quote(value: str) -> str:

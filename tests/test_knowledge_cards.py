@@ -113,6 +113,8 @@ def test_list_cards_default_query(client, fake_db):
     response = client.get("/api/knowledge/cards")
 
     assert response.json() == {"items": [], "total": 0}
+    selected = query.called("select")[0][0][0]
+    assert "content_embedding" not in selected and "*" not in selected
     assert query.called("eq") == [(("status", "active"), {})]
     assert query.called("or_") == []
     assert query.called("order") == [(("updated_at",), {"desc": True}), (("id",), {})]

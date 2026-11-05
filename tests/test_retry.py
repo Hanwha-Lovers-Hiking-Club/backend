@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from app.domains.documents.pipeline import retry as R
-from app.domains.documents.pipeline.nodes import parse as P
+from app.domains.documents.pipeline.search_index import parse as P
 
 
 @pytest.fixture(autouse=True)
@@ -78,7 +78,8 @@ def test_async_version():
 def test_parse_retries_the_download(monkeypatch):
     calls = {"n": 0}
 
-    def flaky_download(_path):
+    # repository.download_file은 async 함수다(HYUNGU 저장소 계약)
+    async def flaky_download(_path):
         calls["n"] += 1
         if calls["n"] < 3:
             raise RuntimeError("storage down")

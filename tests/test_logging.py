@@ -1,4 +1,3 @@
-import asyncio
 import io
 import logging
 
@@ -9,7 +8,6 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 from app.core import logging as app_logging
 from app.core.logging import job_log_context, setup_logging, summarize_error
-from app.domains.documents.pipeline import graph as G
 from app.domains.documents.pipeline import observe as U
 
 JOB = "3f2a9c1e-aaaa-bbbb-cccc-000000000001"
@@ -145,73 +143,3 @@ def test_llm_callback_logs_failure_with_short_message(captured):
     assert "[경고]" in captured.getvalue()
     assert "LLM 호출 실패" in captured.getvalue()
     assert "llm down" in captured.getvalue()
-
-
-def _state():
-    return {"job_id": JOB, "documents": []}
-
-
-def test_node_run_logs_start_done_and_final_summary(captured):
-    node = G._safe("save_chunks", lambda state: {})
-
-    with job_log_context(None):
-        node(_state())
-
-    lines = captured.getvalue().splitlines()
-    assert any("save_chunks 시작" in line and "[job=3f2a9c1e]" in line for line in lines)
-    assert any("save_chunks 완료" in line for line in lines)
-    assert any("작업 완료: 총" in line and "노드별(초) save_chunks" in line for line in lines)
-    assert U.finish_job_usage(JOB) is None  # 요약하면서 정리됨
-
-
-def test_node_run_logs_error_and_summary_when_node_returns_error(captured):
-    node = G._safe("extract", lambda state: {"error": "요소 추출 실패: " + "x" * 500})
-
-    result = node(_state())
-
-    text = captured.getvalue()
-    assert result["error"].startswith("요소 추출 실패")
-    assert "[오류]" in text and "extract 실패" in text
-    assert "작업 오류로 중단" in text
-    assert U.finish_job_usage(JOB) is None
-
-
-def test_node_run_turns_exception_into_short_error(captured):
-    def boom(state):
-        raise ValueError("문서 내용 " * 200)
-
-    result = G._safe("verify", boom)(_state())
-
-    assert result["error"].startswith("verify 단계에서 예기치 못한 오류")
-    assert len(result["error"]) < 300
-    assert "작업 오류로 중단" in captured.getvalue()
-    U.finish_job_usage(JOB)
-
-
-def test_node_without_job_id_still_runs_without_tracking(captured):
-    result = G._safe("parse", lambda state: {"x": 1})({"documents": []})
-
-    assert result == {"x": 1}
-    assert "[job=-]" in captured.getvalue()
-
-
-def test_job_id_follows_logs_through_real_graph(monkeypatch, captured):
-    # 동기 노드(스레드에서 실행됨)와 비동기 노드가 섞여 있어도 모든 줄에 job_id가 붙는다
-    async def async_node(state):
-        logging.getLogger("app.test").info("비동기 노드 안")
-        return {}
-
-    def sync_node(state):
-        logging.getLogger("app.test").info("동기 노드 안")
-        return {}
-
-    nodes = {name: sync_node for name in G.NODE_ORDER}
-    nodes["parse"] = async_node
-    monkeypatch.setattr(G, "_NODES", nodes)
-
-    asyncio.run(G.build_graph().ainvoke(_state()))
-
-    inner = [line for line in captured.getvalue().splitlines() if "노드 안" in line]
-    assert len(inner) == len(G.NODE_ORDER)
-    assert all("[job=3f2a9c1e]" in line for line in inner)
-    assert "작업 완료" in captured.getvalue()

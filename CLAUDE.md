@@ -23,7 +23,9 @@ MVP 범위 (지금 구현 대상):
 # 로컬 실행 방법
 
 1. 의존성 설치: `uv sync`
-2. 환경변수 설정: `cp .env.example .env` 후 Supabase 값 채우기
+2. 환경변수 설정: 로컬 `.env`에 `SUPABASE_URL` 등 일반 설정을 준비하고,
+   비밀키는 Windows 사용자 환경변수로 제공한다. `.env`는 Git에서 제외되어 새 clone에는 없다.
+   설정 예시와 키 이름은 [파이프라인 실행 안내](app/domains/documents/pipeline/devtools/README.md#환경-설정)를 참고한다.
 3. 서버 실행: `uv run uvicorn app.main:app --reload`
 4. 확인: http://localhost:8000/health
 

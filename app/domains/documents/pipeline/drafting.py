@@ -1,0 +1,127 @@
+# 카드 생성 요건을 충족하는 독립 경험마다 검증 전 지식카드 초안을 작성한다.
+
+from app.domains.documents.pipeline.extraction import experience_id, prompt_text
+from app.domains.documents.pipeline.llm import (
+    RetryingGenerator,
+    StructuredGenerator,
+    generate_structured,
+)
+from app.domains.documents.pipeline.models import (
+    FACT_FIELDS,
+    DraftProposal,
+    DraftSkip,
+    KnowledgeCardDraft,
+)
+from app.domains.documents.pipeline.processing import ProcessingOptions
+from app.domains.documents.pipeline.state import IngestionState
+from app.domains.documents.pipeline.verification.reset import reset_verification
+
+
+def _skip_reason(source):
+    if source.context.status != "confirmed":
+        return "NO_CONFIRMED_CONTEXT", "Confirmed context is required to write a card"
+    if not any(getattr(source, name).status == "confirmed" for name in FACT_FIELDS[1:-1]):
+        return "NO_EXPERIENCE_FACTS", "No confirmed problem-solving information"
+    if source.lesson.status not in {"confirmed", "inferred"} and not (
+        source.approach.status == "confirmed"
+        and (source.outcome.status == "confirmed" or source.rationale.status == "confirmed")
+    ):
+        return (
+            "NO_SUPPORTED_LESSON",
+            "Need a supported lesson or confirmed approach with rationale or observed outcome",
+        )
+    return None
+
+
+async def draft_state(
+    state: IngestionState, generator: StructuredGenerator, *, max_input_chars: int = 48000
+) -> dict:
+    options = ProcessingOptions.model_validate(state.get("processing_options", ProcessingOptions()))
+    generator = RetryingGenerator(
+        generator,
+        max_attempts=options.max_call_attempts,
+        delay_seconds=options.retry_delay_seconds,
+        max_wait_seconds=options.max_retry_wait_seconds,
+    )
+    drafts, skipped, seen = [], [], set()
+    for source in state["extraction_result"].experiences:
+        key = experience_id(source)
+        if key in seen:
+            continue
+        seen.add(key)
+        reason = _skip_reason(source)
+        if reason is None:
+            proposal = await generate_structured(
+                generator,
+                instructions=prompt_text("draft_card"),
+                output_type=DraftProposal,
+                max_input_chars=max_input_chars,
+                payload={
+                    "experience_id": key,
+                    "extraction": source.model_dump(mode="json"),
+                    "retry_feedback": [
+                        item.model_dump(mode="json")
+                        for item in state.get("retry_feedback", [])
+                        if item.target_node == "draft_card" and item.experience_id == key
+                    ],
+                },
+            )
+            if proposal.draft is None:
+                reason = ("MODEL_DECLINED", proposal.skip_reason)
+        if reason is not None:
+            skipped.append(
+                DraftSkip(
+                    experience_id=key,
+                    code=reason[0],
+                    reason=reason[1],
+                    source_extraction=source.model_copy(deep=True),
+                )
+            )
+            continue
+        text = proposal.draft
+        body = {
+            name: fact.value if fact.status == "confirmed" else None
+            for name in FACT_FIELDS[:-1]
+            for fact in [getattr(source, name)]
+        }
+        field_refs = {
+            name: list(getattr(source, name).evidence_refs) if body[name] is not None else []
+            for name in FACT_FIELDS[:-1]
+        }
+        all_refs = sorted(source.evidence_index)
+        if source.lesson.status == "confirmed" and text.lesson == source.lesson.value:
+            lesson_refs = source.lesson.evidence_refs
+        else:
+            # A generalized lesson may rely on the confirmed experience, not just a
+            # single lesson sentence. Keep those source links for the semantic gate.
+            lesson_refs = sorted(
+                {
+                    ref
+                    for name in FACT_FIELDS
+                    for fact in [getattr(source, name)]
+                    if fact.status == "confirmed"
+                    or (name == "lesson" and fact.status == "inferred")
+                    for ref in fact.evidence_refs
+                }
+            )
+        field_refs.update(title=all_refs, summary=all_refs, lesson=list(lesson_refs))
+        drafts.append(
+            KnowledgeCardDraft(
+                experience_id=key,
+                source_extraction=source.model_copy(deep=True),
+                field_evidence_refs=field_refs,
+                lesson_status=(
+                    "confirmed"
+                    if source.lesson.status == "confirmed" and text.lesson == source.lesson.value
+                    else "inferred"
+                ),
+                **body,
+                title=text.title,
+                summary=text.summary,
+                lesson=text.lesson,
+                technologies=list(source.technologies),
+                keywords=list(dict.fromkeys(source.keywords + text.keywords)),
+            )
+        )
+    # Leave extraction_result intact; the verification gate needs the original assertions.
+    return {**reset_verification(), "drafts": drafts, "draft_skips": skipped}

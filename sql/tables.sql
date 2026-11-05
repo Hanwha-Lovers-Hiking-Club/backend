@@ -4,6 +4,7 @@
 -- 접근 방식: RLS를 켜고 정책은 만들지 않는다.
 -- anon/authenticated 키로는 접근 불가, 백엔드의 service role 키만 접근 가능(RLS 우회).
 -- 회원 시스템이 생기면 user_id 컬럼과 정책을 추가한다.
+create extension if not exists vector;
 
 create extension if not exists vector;
 
@@ -12,7 +13,7 @@ create extension if not exists vector;
 -- ---------------------------------------------------------------
 create table if not exists documents (
   id                uuid primary key default gen_random_uuid(),
-  title             text not null check (length(trim(title)) > 0),  -- LLM이 문서에서 추출
+  title             text not null check (length(trim(title)) > 0),  -- 현재 원래 파일명
   original_filename text not null check (length(trim(original_filename)) > 0),  -- 사용자가 올린 원래 파일명
   size_bytes        bigint not null check (size_bytes >= 0),  -- 파일 용량(바이트)
   storage_bucket    text not null check (length(trim(storage_bucket)) > 0),
@@ -54,15 +55,14 @@ create table if not exists knowledge_cards (
   quality_score        numeric,
   last_verified_at     timestamptz,
   verification_version text,
-  created_at           timestamptz not null default now(),
-  updated_at           timestamptz not null default now(),
-
   -- 검색용 임베딩 4종 (임베딩 설계 가이드 참고). 차원 1024는 kure-v3 정확도 손실이 적은 선에서
   -- pgvector 인덱스 상한선(2,000차원)보다 여유 있게 잡은 값. 인덱스는 아직 안 걺(필요해지면 추가)
   content_embedding    vector(1024),
   situation_embedding  vector(1024),
   solution_embedding   vector(1024),
   lesson_embedding     vector(1024),
+  created_at           timestamptz not null default now(),
+  updated_at           timestamptz not null default now(),
 
   constraint knowledge_cards_conditional_fields_check check (
     coalesce(
@@ -111,6 +111,37 @@ create table if not exists card_documents (
 create index if not exists card_documents_card_id_idx on card_documents (card_id);
 create index if not exists card_documents_document_id_idx on card_documents (document_id);
 
+-- 문서별 저장 요청의 완료 확인과 재시도 중복 방지.
+create table if not exists document_save_receipts (
+  document_id uuid primary key references documents (id) on delete cascade,
+  payload_hash text not null check (payload_hash ~ '^[0-9a-f]{64}$'),
+  card_ids uuid[] not null default '{}',
+  created_at timestamptz not null default now()
+);
+grant select, insert, update on document_save_receipts to service_role;
+
+-- 업로드 후 실행되는 작업과 재접속 가능한 SSE 이력.
+create table if not exists document_jobs (
+  id uuid primary key,
+  document_ids uuid[] not null check (array_length(document_ids, 1) > 0),
+  status text not null default 'queued'
+    check (status in ('queued', 'running', 'completed', 'partial', 'failed')),
+  result jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create table if not exists document_job_events (
+  id bigint generated always as identity primary key,
+  job_id uuid not null references document_jobs (id) on delete cascade,
+  event_type text not null,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists document_job_events_job_id_id_idx
+  on document_job_events (job_id, id);
+grant select on document_jobs, document_job_events to service_role;
+grant usage, select on sequence document_job_events_id_seq to service_role;
+
 -- ---------------------------------------------------------------
 -- document_chunks: 문서를 잘라 만든 청크 + 임베딩 (챗봇의 원문 검색용)
 -- 문서 1개에 청크 N개. 카드와 직접 연결되지 않는다 (카드의 근거는 card_documents).
@@ -134,3 +165,6 @@ alter table documents enable row level security;
 alter table knowledge_cards enable row level security;
 alter table card_documents enable row level security;
 alter table document_chunks enable row level security;
+alter table document_save_receipts enable row level security;
+alter table document_jobs enable row level security;
+alter table document_job_events enable row level security;

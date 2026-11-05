@@ -221,3 +221,10 @@ __marimo__/
 
 # 실제 문서 테스트 결과물 (scripts/doc_test_*.py 가 만든다)
 runs/
+
+# Local document pipeline instructions (keep the shared root CLAUDE.md tracked)
+/app/domains/documents/pipeline/CLAUDE.md
+
+# LangGraph local development checkpoints and logs
+/.langgraph_api/
+/.local/

@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.domains.documents import service
-from app.domains.documents.pipeline.nodes import parse as P
+from app.domains.documents.pipeline.search_index import parse as P
 from app.main import app
 
 
