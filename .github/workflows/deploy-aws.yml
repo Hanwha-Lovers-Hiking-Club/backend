@@ -1,0 +1,46 @@
+# main에 머지되면 EC2 서버에 자동 배포한다. 배포 내용은 scripts/deploy_aws.sh에 있다.
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [main]
+    # 재시작하면 분석 중인 문서 작업이 사라지므로 서버에 영향이 있는 변경만 배포한다
+    paths:
+      - "app/**"
+      - "Dockerfile"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "docker-compose.aws.yml"
+      - "Caddyfile"
+      - "scripts/deploy_aws.sh"
+      - "scripts/download_models.py"
+      - ".github/workflows/deploy-aws.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-aws
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EC2_HOST: job-knowledge.duckdns.org
+      # 다른 서버로 연결되는 것을 막기 위해 서버 공개키를 고정한다 (공개 정보)
+      EC2_HOST_KEY: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILVyw5HJl4+AYav3CJZVqUznt6ZrDZiAf5tP8LEXwo9I
+    steps:
+      - name: Prepare SSH
+        env:
+          EC2_DEPLOY_KEY: ${{ secrets.EC2_DEPLOY_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$EC2_DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s %s\n' "$EC2_HOST" "$EC2_HOST_KEY" > ~/.ssh/known_hosts
+
+      - name: Deploy
+        # 이 키는 서버에서 scripts/deploy_aws.sh만 실행할 수 있다
+        run: ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ServerAliveInterval=30 "ubuntu@$EC2_HOST"
