@@ -12,9 +12,15 @@ create extension if not exists vector;
 -- 같은 이름의 프로젝트도 별개로 유지하므로 name에 유니크를 걸지 않는다.
 -- ---------------------------------------------------------------
 create table if not exists projects (
-  id         uuid primary key default gen_random_uuid(),
-  name       text not null check (length(trim(name)) > 0),
-  created_at timestamptz not null default now()
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null check (length(trim(name)) > 0),
+  domain      text constraint projects_domain_check
+                check (domain in ('ai', 'frontend', 'backend', 'data', 'app')),  -- 분야. 폴더 색과 아이콘을 정한다
+  team        text,  -- 담당 팀
+  period      text,  -- 진행 기간. 화면 표기 그대로 저장 (예: 2026.05 – 07)
+  description text,  -- 프로젝트 한 줄 설명
+  stack       text[] not null default '{}',  -- 대표 기술. 화면 표기 그대로 저장
+  created_at  timestamptz not null default now()
 );
 
 -- ---------------------------------------------------------------
