@@ -25,7 +25,7 @@
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | id | uuid | PK |
-| project_id | uuid | FK → projects.id. 기존 행을 채우기 전까지 NULL 허용 |
+| project_id | uuid | FK → projects.id (필수) |
 | title | text | 문서 제목. LLM이 문서에서 추출 (필수, 빈 문자열 불가) |
 | original_filename | text | 사용자가 올린 원래 파일명 (필수). 확장자는 여기서 잘라 응답에 내려준다 |
 | size_bytes | bigint | 파일 용량(바이트) (필수, 0 이상) |
@@ -56,7 +56,7 @@
 | department | text | X | 담당 부서. 식별 불가하면 NULL |
 | project_date | date | X | 지식이 나온 프로젝트 시점. 식별 불가하면 NULL |
 | project_name | text | X | 더 이상 쓰지 않음. 프로젝트 이름은 `projects.name`에서 읽는다. 값을 저장하지 않으며 이전 검증 후 삭제 예정 |
-| project_id | uuid | 조건부 | FK → projects.id. 기존 행을 채우기 전까지 NULL 허용 |
+| project_id | uuid | O | FK → projects.id. 근거 문서와 같은 프로젝트다 |
 | status | text | O | `draft`(기본) / `active` / `flagged` / `archived`. RAG 검색 포함 여부 판단 기준 |
 | quality_score | numeric | X | 카드 품질 내부 평가 점수 |
 | last_verified_at | timestamptz | X | 마지막 검증 시각 |
