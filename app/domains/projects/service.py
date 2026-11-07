@@ -11,6 +11,7 @@ from app.db import supabase
 from app.domains.documents import repository as documents_repository
 from app.domains.knowledge_cards import service as knowledge_cards_service
 from app.domains.knowledge_cards.service import ACTIVE_STATUS
+from app.domains.projects.schemas import ProjectSort
 
 LIST_FAILED_DETAIL = "프로젝트 목록을 조회하지 못했습니다."
 GET_FAILED_DETAIL = "프로젝트를 조회하지 못했습니다."
@@ -40,20 +41,36 @@ def _to_summary(row: dict) -> dict:
     }
 
 
-async def list_projects() -> dict:
+async def list_projects(q: str, sort: ProjectSort, page: int, page_size: int) -> dict:
+    q = q.strip()
+    start = (page - 1) * page_size
     query = (
         supabase.table("projects")
-        .select("id, name, created_at, documents(count), knowledge_cards(count)")
+        .select("id, name, created_at, documents(count), knowledge_cards(count)", count="exact")
+        .ilike("name", f"%{q}%")
         .eq("knowledge_cards.status", ACTIVE_STATUS)
-        .order("created_at", desc=True)
+        .order("name" if sort == "name" else "created_at", desc=sort != "name")
         # 이전 데이터처럼 생성 시각이 같아도 순서가 바뀌지 않도록 id로 한 번 더 정렬
         .order("id")
+        .range(start, start + page_size - 1)
     )
     try:
         result = await asyncio.to_thread(query.execute)
-    except APIError:
-        raise internal_error(LIST_FAILED_DETAIL)
-    return {"items": [_to_summary(row) for row in result.data]}
+    except APIError as e:
+        if e.code != knowledge_cards_service.RANGE_NOT_SATISFIABLE:
+            raise internal_error(LIST_FAILED_DETAIL)
+        # 범위를 벗어나도 검색 결과의 전체 개수는 유지한다 (기존 카드 목록과 같은 동작).
+        count_query = (
+            supabase.table("projects")
+            .select("id", count="exact", head=True)
+            .ilike("name", f"%{q}%")
+        )
+        try:
+            result = await asyncio.to_thread(count_query.execute)
+        except APIError:
+            raise internal_error(LIST_FAILED_DETAIL)
+        return {"items": [], "total": result.count or 0}
+    return {"items": [_to_summary(row) for row in result.data], "total": result.count or 0}
 
 
 def _get_project(project_id: str) -> dict | None:
