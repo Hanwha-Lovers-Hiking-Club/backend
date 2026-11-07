@@ -45,6 +45,19 @@ class Experiences(BaseModel):
     project_name: str | None
 
 
+# 프로젝트 소개 정보의 LLM 구조화 출력 타입(project_meta.py)
+class ProjectMetaDraft(BaseModel):
+    # 같은 문서의 분류가 실행마다 미분류와 오가지 않도록 null을 허용하지 않는다
+    domain: Literal["ai", "frontend", "backend", "data", "app"]
+    team: str | None
+    # 기간을 옮겨 온 원문 구절. 원문에서 확인되지 않으면 기간을 버린다
+    period_quote: str | None
+    # YYYY-MM
+    period_start: str | None
+    period_end: str | None
+    description: str | None
+
+
 # CardDraft.evidences의 원소 타입
 class CardEvidenceDraft(BaseModel):
     document_id: UUID

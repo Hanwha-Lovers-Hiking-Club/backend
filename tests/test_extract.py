@@ -1,9 +1,17 @@
 from uuid import uuid4
 
+import pytest
+
 from app.domains.documents.pipeline.models import Evidence, Experience, Experiences
 from app.domains.documents.pipeline.nodes import extract as EX
 
 DOC1, DOC2 = uuid4(), uuid4()
+
+
+@pytest.fixture(autouse=True)
+def fake_project_meta(monkeypatch):
+    # 소개 정보는 test_project_meta.py에서 따로 본다
+    monkeypatch.setattr(EX, "describe_project", lambda _message, _chunks: {"team": "결제팀"})
 
 
 def _state() -> dict:
@@ -148,6 +156,11 @@ def test_project_name_found_in_source_is_kept_as_written(monkeypatch):
 def test_project_name_missing_from_source_is_dropped(monkeypatch):
     result, _ = _run(monkeypatch, project_name="없는 프로젝트")
     assert result["project_name"] is None
+
+
+def test_project_meta_is_returned_with_experiences(monkeypatch):
+    result, _ = _run(monkeypatch)
+    assert result["project_meta"] == {"team": "결제팀"}
 
 
 def test_project_name_can_be_absent(monkeypatch):

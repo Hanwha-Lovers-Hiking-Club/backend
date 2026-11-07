@@ -19,6 +19,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.core.logging import summarize_error
 from app.domains.documents.pipeline.llm import get_llm, invoke_with_retry
 from app.domains.documents.pipeline.models import Evidence, Experience, Experiences
+from app.domains.documents.pipeline.project_meta import describe_project
 from app.domains.documents.pipeline.quotes import plain, quote_pieces
 from app.domains.documents.pipeline.state import Chunk, IngestionState
 
@@ -121,4 +122,8 @@ def extract(state: IngestionState) -> dict:
     project_name = _ground_project_name(result.project_name, chunks)
     if result.project_name and project_name is None:
         logger.warning("extract: 원문에 없는 프로젝트 이름 제거 (%s)", result.project_name)
-    return {"experiences": experiences, "project_name": project_name}
+    return {
+        "experiences": experiences,
+        "project_name": project_name,
+        "project_meta": describe_project(message, chunks),
+    }

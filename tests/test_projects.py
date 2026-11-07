@@ -10,6 +10,14 @@ PROJECT_A = "11111111-1111-1111-1111-111111111111"
 PROJECT_B = "22222222-2222-2222-2222-222222222222"
 DOCUMENT_ID = "33333333-3333-3333-3333-333333333333"
 CREATED_AT = "2026-11-08T00:00:00+00:00"
+META = {
+    "domain": "frontend",
+    "team": "국제화제품팀",
+    "period": "2026.01 – 04",
+    "description": "다국어 화면 정비",
+    "stack": ["i18n", "CI"],
+}
+EMPTY_META = {"domain": None, "team": None, "period": None, "description": None, "stack": []}
 
 
 class FakeQuery:
@@ -41,8 +49,9 @@ def fake_db(monkeypatch):
     return install
 
 
-def _row(project_id: str, name: str, documents: int, cards: int) -> dict:
+def _row(project_id: str, name: str, documents: int, cards: int, meta=None) -> dict:
     return {
+        **(meta or EMPTY_META),
         "id": project_id,
         "name": name,
         "created_at": CREATED_AT,
@@ -52,7 +61,7 @@ def _row(project_id: str, name: str, documents: int, cards: int) -> dict:
 
 
 def test_same_name_projects_stay_separate(client, fake_db):
-    fake_db([_row(PROJECT_A, "말결화면", 6, 4), _row(PROJECT_B, "말결화면", 2, 0)])
+    fake_db([_row(PROJECT_A, "말결화면", 6, 4, META), _row(PROJECT_B, "말결화면", 2, 0)])
 
     response = client.get("/api/projects")
 
@@ -65,6 +74,7 @@ def test_same_name_projects_stay_separate(client, fake_db):
             "documentCount": 6,
             "cardCount": 4,
             "createdAt": "2026-11-08T00:00:00Z",
+            **META,
         },
         {
             "id": PROJECT_B,
@@ -72,6 +82,7 @@ def test_same_name_projects_stay_separate(client, fake_db):
             "documentCount": 2,
             "cardCount": 0,
             "createdAt": "2026-11-08T00:00:00Z",
+            **EMPTY_META,
         },
     ]
 
@@ -153,7 +164,7 @@ def test_project_list_failure_is_500(client, fake_db):
 
 
 def test_project_detail_has_documents(client, fake_db, monkeypatch):
-    fake_db([{"id": PROJECT_A, "name": "말결화면", "created_at": CREATED_AT}])
+    fake_db([{"id": PROJECT_A, "name": "말결화면", "created_at": CREATED_AT, **META}])
     document = {
         "id": DOCUMENT_ID,
         "title": "설계서",
@@ -171,6 +182,7 @@ def test_project_detail_has_documents(client, fake_db, monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert body["name"] == "말결화면" and body["cards"] == []
+    assert {key: body[key] for key in META} == META
     assert body["documents"][0]["originalFilename"] == "설계서.pdf"
 
 

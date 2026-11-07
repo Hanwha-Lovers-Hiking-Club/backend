@@ -14,9 +14,13 @@ from app.domains.knowledge_cards.schemas import CardSort
 
 logger = logging.getLogger(__name__)
 
-# 근거(card_documents)와 근거 문서(documents)를 한 번에 가져온다
+# 근거(card_documents)와 근거 문서(documents)를 한 번에 가져온다.
+# 임베딩 4개는 카드당 1024차원씩이라 응답에 쓰지 않는데도 읽지 않도록 컬럼을 직접 지정한다
 CARD_SELECT = (
-    "*, projects(name), "
+    "id, title, summary, context, problem, cause, approach, rationale, outcome, lesson, "
+    "technologies, keywords, status, quality_score, last_verified_at, verification_version, "
+    "project_id, department, project_date, created_at, updated_at, "
+    "projects(name, domain), "
     "card_documents(id, document_id, location, excerpt, documents(title, original_filename))"
 )
 
@@ -108,6 +112,7 @@ def _to_card(row: dict) -> dict:
     return {
         **row,
         "project_name": project.get("name"),
+        "project_domain": project.get("domain"),
         "technologies": technologies,
         "evidences": evidences,
     }

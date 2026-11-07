@@ -4,13 +4,18 @@
 # knowledge_cards.service.create_card()를 거친다. pydantic 모델을 그대로 넘기지 않고 plain dict로
 # 변환해서 넘긴다(두 도메인이 서로의 내부 타입을 몰라도 되게).
 import logging
+from collections import Counter
 
 from app.core.logging import summarize_error
+from app.core.technology import display_name
 from app.domains.documents.pipeline.models import CardDraft, CardEmbeddings
 from app.domains.documents.pipeline.state import IngestionState
 from app.domains.knowledge_cards import service as knowledge_cards_service
 
 logger = logging.getLogger(__name__)
+
+# 프로젝트 폴더에 보여 줄 대표 기술 수
+MAX_PROJECT_STACK = 5
 
 
 def _to_card_dict(
@@ -67,6 +72,8 @@ def save(state: IngestionState) -> dict:
     saved = 0
     active = 0
     failures: list[str] = []
+    # 폴더의 카드 수와 같은 기준으로 active 카드의 기술만 센다. 많이 나온 기술이 대표 기술이다
+    technologies: Counter[str] = Counter()
     project_id = state["project_id"]
     # 카드의 프로젝트와 근거 문서의 프로젝트가 어긋나지 않도록 이 업로드의 문서만 근거로 받는다
     document_ids = {str(document["id"]) for document in state["documents"]}
@@ -86,12 +93,18 @@ def save(state: IngestionState) -> dict:
             failures.append(f"카드 저장 실패 '{embedded.draft.title}': {summarize_error(e)}")
             continue
         saved += 1
-        active += embedded.status == "active"
+        if embedded.status == "active":
+            active += 1
+            technologies.update(embedded.draft.technologies)
 
     logger.info("save: 카드 %d개 저장, %d개 실패", saved, len(failures))
     if failures and saved == 0:
         return {"saved_card_count": 0, "error": failures[0]}
     update: dict = {"saved_card_count": saved, "active_card_count": active}
+    if technologies:
+        update["project_stack"] = [
+            display_name(tech) for tech, _ in technologies.most_common(MAX_PROJECT_STACK)
+        ]
     if failures:
         update["warnings"] = [*state.get("warnings", []), *failures]
     return update
