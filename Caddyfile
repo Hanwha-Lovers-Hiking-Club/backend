@@ -1,0 +1,4 @@
+# Vercel(https)에서 호출하므로 백엔드도 https여야 한다. 인증서 발급/갱신은 Caddy가 자동으로 한다.
+job-knowledge.duckdns.org {
+	reverse_proxy backend:8000
+}
