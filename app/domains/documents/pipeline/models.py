@@ -41,6 +41,8 @@ class Experience(BaseModel):
 # extract 노드의 LLM structured output 루트 타입. 리스트를 바로 루트로 못 받아서 감싸는 래퍼
 class Experiences(BaseModel):
     experiences: list[Experience]
+    # 업로드 묶음 전체의 프로젝트 이름. 경험 추출 결과가 달라지지 않도록 experiences 뒤에 둔다
+    project_name: str | None
 
 
 # CardDraft.evidences의 원소 타입

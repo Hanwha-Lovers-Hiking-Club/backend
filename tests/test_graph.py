@@ -36,7 +36,7 @@ def env(monkeypatch):
         (),
         {
             "with_structured_output": lambda self, _s: self,
-            "invoke": lambda self, _m: Experiences(experiences=[]),
+            "invoke": lambda self, _m: Experiences(experiences=[], project_name=None),
         },
     )()
     monkeypatch.setattr(EX, "get_llm", lambda: llm)

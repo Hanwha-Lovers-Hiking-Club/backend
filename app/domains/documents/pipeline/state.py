@@ -64,6 +64,8 @@ class IngestionState(TypedDict):
     chunks: list[Chunk]
     # extract 노드의 출력. 인용 검사와 근거 종류 필터를 통과한 경험만 들어 있다
     experiences: list[Experience]
+    # extract 노드가 뽑은 프로젝트 이름. 원문에서 확인되지 않으면 None
+    project_name: str | None
     # draft_card 노드의 출력. 구조 검사를 통과한 카드 후보
     card_drafts: list[CardDraft]
     # draft_card가 후보를 만들지 않은 경험과 그 사유. 잘못 버린 게 없는지 사람이 확인하는 용도
