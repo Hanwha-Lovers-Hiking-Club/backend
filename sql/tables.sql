@@ -17,7 +17,7 @@ create table if not exists projects (
   domain      text constraint projects_domain_check
                 check (domain in ('ai', 'frontend', 'backend', 'data', 'app')),  -- 분야. 폴더 색과 아이콘을 정한다
   team        text,  -- 담당 팀
-  period      text,  -- 진행 기간. 화면 표기 그대로 저장 (예: 2026.05 – 07)
+  period      text,  -- 진행 기간. 형식은 YYYY.MM – YYYY.MM (예: 2026.05 – 2026.07)
   description text,  -- 프로젝트 한 줄 설명
   stack       text[] not null default '{}',  -- 대표 기술. 화면 표기 그대로 저장
   created_at  timestamptz not null default now()
