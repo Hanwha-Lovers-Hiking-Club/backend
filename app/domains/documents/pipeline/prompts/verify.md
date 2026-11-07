@@ -9,7 +9,7 @@
 값이 있는 모든 필드를 빠짐없이 검사한다. 필드의 문장을 주장 단위로 나누고(한 문장에 주장이 둘이면 둘로),
 주장마다 checks에 하나씩 쓴다. 한 필드에 주장이 하나뿐이어도 반드시 하나 이상 쓴다.
 - field: 필드 이름(title, summary, context, problem, cause, approach, rationale, outcome, lesson,
-  technologies, project_name, department, project_date)
+  technologies, department, project_date)
 - claim: 그 주장
 - evidence_ids: 대조한 근거 id. 카드가 인용한 근거만 보지 말고, 경험의 근거 전체와 청크 원문에서
   그 주장의 범위를 제한하는 기록(다른 환경의 실패, 남은 실패, 관찰 기간, 표본 수, 미확인 사항)이 있는지도 본다.

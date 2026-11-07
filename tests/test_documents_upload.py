@@ -9,16 +9,34 @@ from storage3.exceptions import StorageApiError
 from app.domains.documents import jobs, repository, service
 
 URL = "/api/documents/upload"
+PROJECT_ID = "11111111-1111-1111-1111-111111111111"
 
 
 class FakeRepository:
-    def __init__(self, fail_on: int | None = None, fail_insert: bool = False):
+    def __init__(
+        self,
+        fail_on: int | None = None,
+        fail_insert: bool = False,
+        fail_project: bool = False,
+    ):
+        self.projects: list[str] = []
+        self.deleted_projects: list[str] = []
+        self.fail_project = fail_project
         self.uploads: list[tuple[str, bytes, str]] = []
         self.removed: list[list[str]] = []
         self.inserted: list[dict] = []
         # 몇 번째(0부터) 업로드에서 실패할지
         self.fail_on = fail_on
         self.fail_insert = fail_insert
+
+    def create_project(self, name: str) -> str:
+        if self.fail_project:
+            raise APIError({"code": "500", "message": "project insert failed"})
+        self.projects.append(name)
+        return PROJECT_ID
+
+    def delete_project(self, project_id: str) -> None:
+        self.deleted_projects.append(project_id)
 
     def upload_file(self, path: str, content: bytes, content_type: str) -> None:
         if len(self.uploads) == self.fail_on:
@@ -50,8 +68,12 @@ def started(monkeypatch) -> list:
 
 @pytest.fixture
 def storage(monkeypatch):
-    def install(fail_on: int | None = None, fail_insert: bool = False) -> FakeRepository:
-        fake = FakeRepository(fail_on, fail_insert)
+    def install(
+        fail_on: int | None = None, fail_insert: bool = False, fail_project: bool = False
+    ) -> FakeRepository:
+        fake = FakeRepository(fail_on, fail_insert, fail_project)
+        monkeypatch.setattr(service.projects_service, "create_project", fake.create_project)
+        monkeypatch.setattr(service.projects_service, "delete_project", fake.delete_project)
         monkeypatch.setattr(repository, "upload_file", fake.upload_file)
         monkeypatch.setattr(repository, "remove_files", fake.remove_files)
         monkeypatch.setattr(repository, "insert_documents", fake.insert_documents)
@@ -71,6 +93,7 @@ def test_upload_returns_job(client, storage, started):
 
     assert response.status_code == 202
     body = response.json()
+    assert body["projectId"] == PROJECT_ID
     assert body["documentCount"] == 3
     assert body["status"] == "queued"
     documents = [
@@ -91,7 +114,7 @@ def test_upload_returns_job(client, storage, started):
         "progress": service.STEP_PROGRESS[0],
     }
     # 그래프에 넘길 문서 정보와 함께 파이프라인 시작이 요청된다
-    assert started == [(job_id, documents)]
+    assert started == [(job_id, PROJECT_ID, documents)]
 
 
 def test_upload_inserts_document_rows(client, storage):
@@ -104,6 +127,7 @@ def test_upload_inserts_document_rows(client, storage):
         "title": "검색 설계서.v2",
         "original_filename": "검색 설계서.v2.pdf",
         "size_bytes": 5,
+        "project_id": PROJECT_ID,
         "storage_bucket": "documents",
         "storage_path": fake.uploads[0][0],
     }
@@ -118,8 +142,35 @@ def test_upload_insert_failure_removes_stored_files(client, storage, started):
     assert response.status_code == 500
     assert response.json() == {"detail": "문서를 저장하지 못했습니다."}
     assert fake.removed == [[path for path, _, _ in fake.uploads]]
+    assert fake.deleted_projects == [PROJECT_ID]
     assert jobs._jobs == {}
     assert started == []
+
+
+def test_project_failure_removes_stored_files(client, storage, started):
+    fake = storage(fail_project=True)
+
+    response = client.post(URL, files=[_file("a.pdf"), _file("b.md")])
+
+    assert response.status_code == 500
+    assert fake.removed == [[path for path, _, _ in fake.uploads]]
+    assert fake.inserted == [] and started == []
+
+
+def test_temporary_project_name_is_first_file_by_name(client, storage):
+    fake = storage()
+
+    client.post(URL, files=[_file("b 문서.pdf"), _file("a 문서.v2.md"), _file("c.txt")])
+
+    assert fake.projects == ["a 문서.v2"]
+
+
+def test_documents_are_stored_with_the_new_project(client, storage):
+    fake = storage()
+
+    client.post(URL, files=[_file("a.pdf"), _file("b.md")])
+
+    assert {row["project_id"] for row in fake.inserted} == {PROJECT_ID}
 
 
 def test_upload_stores_files_under_job(client, storage):

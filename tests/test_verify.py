@@ -75,8 +75,7 @@ def _draft(title="한글 입력 유실 해결", outcome="Chrome 시험 20회 통
         lesson="교훈",
         technologies=["chrome"],
         keywords=[],
-        project_name="케어링크",
-        department=None,
+        department="케어링크",
         project_date=None,
         evidences=evidences,
         field_sources={
@@ -86,7 +85,7 @@ def _draft(title="한글 입력 유실 해결", outcome="Chrome 시험 20회 통
             "approach": [0],
             "outcome": [1],
             "lesson": [0, 1],
-            "project_name": [2],
+            "department": [2],
         },
         experience_index=0,
     )
@@ -169,7 +168,7 @@ def test_verifier_sees_all_evidence_of_the_experience_not_only_the_cited_ones(mo
     assert (
         "Safari 실패" in message and QUOTES["safari"][1] in message
     )  # 카드가 인용하지 않은 근거와 청크
-    assert "H1 [문서 머리말]" in message and "project_name: 케어링크  [근거: H1]" in message
+    assert "H1 [문서 머리말]" in message and "department: 케어링크  [근거: H1]" in message
     assert "같은 문자열로 찾지 못했다" in message and ": 30" in message  # 수치 신호(자동 탈락 아님)
 
 

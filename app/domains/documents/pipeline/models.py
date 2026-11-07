@@ -51,7 +51,7 @@ class CardEvidenceDraft(BaseModel):
     location: str | None
     excerpt: str | None
     # 검증 노드가 원문(표의 조건 등)을 다시 보려고 쓰는 값. DB에는 저장하지 않는다.
-    # kind는 extract의 근거 종류이고, 문서 머리말에서 온 근거(프로젝트명 등)는 None이다
+    # kind는 extract의 근거 종류이고, 문서 머리말에서 온 근거(부서명 등)는 None이다
     chunk_id: str | None = None
     kind: str | None = None
 
@@ -83,7 +83,6 @@ class CardComposition(BaseModel):
     lesson: SourcedText
     technologies: list[str]
     keywords: list[str]
-    project_name: OptionalSourcedText
     department: OptionalSourcedText
     # 원문의 날짜 표현 그대로. 연-월-일이 모두 있고 원문에 있을 때만 draft_card가 date로 바꾼다
     project_date: OptionalSourcedText
@@ -102,7 +101,6 @@ class CardDraft(BaseModel):
     lesson: str
     technologies: list[str]
     keywords: list[str]
-    project_name: str | None
     department: str | None
     project_date: date | None
     # 카드당 근거 1개 이상 (docs/schema.md 제약). DB가 아니라 파이프라인이 보장한다

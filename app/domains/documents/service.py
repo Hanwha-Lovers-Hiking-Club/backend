@@ -28,6 +28,7 @@ from app.domains.documents.schemas import (
     JobFailedEvent,
     JobProgressEvent,
 )
+from app.domains.projects import service as projects_service
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,20 @@ async def _store_files(job_id: UUID, files: list[UploadFile]) -> list[dict]:
     return rows
 
 
+def _temporary_project_name(rows: list[dict]) -> str:
+    # extract가 이름을 뽑기 전까지, 또는 뽑지 못했을 때 쓰는 이름. 어디서 읽어도 같은 값이 나오도록
+    # 조회 때 계산하지 않고 생성할 때 한 번 정해서 저장한다
+    return min(rows, key=lambda row: row["original_filename"])["title"]
+
+
+def _delete_project_quietly(project_id: str) -> None:
+    # 문서 없는 프로젝트가 폴더 목록에 남지 않도록 지운다 (삭제 실패는 응답에 영향 주지 않음)
+    try:
+        projects_service.delete_project(project_id)
+    except Exception:
+        logger.exception("문서 저장 실패 후 프로젝트 정리도 실패 (project_id=%s)", project_id)
+
+
 async def upload_documents(files: list[UploadFile]) -> dict:
     # 하나라도 통과하지 못하면 아무것도 접수하지 않도록 먼저 전부 검증한다
     for file in files:
@@ -122,11 +137,22 @@ async def upload_documents(files: list[UploadFile]) -> dict:
 
     job_id = uuid4()
     rows = await _store_files(job_id, files)
+    paths = [row["storage_path"] for row in rows]
+    try:
+        project_id = await asyncio.to_thread(
+            projects_service.create_project, _temporary_project_name(rows)
+        )
+    except APIError:
+        await asyncio.to_thread(_remove_quietly, paths)
+        raise internal_error(STORE_FAILED_DETAIL)
     try:
         # 한 번의 insert로 넣어서 문서 행도 전부 들어가거나 하나도 안 들어간다
-        document_ids = await asyncio.to_thread(repository.insert_documents, rows)
+        document_ids = await asyncio.to_thread(
+            repository.insert_documents, [{**row, "project_id": project_id} for row in rows]
+        )
     except APIError:
-        await asyncio.to_thread(_remove_quietly, [row["storage_path"] for row in rows])
+        await asyncio.to_thread(_remove_quietly, paths)
+        await asyncio.to_thread(_delete_project_quietly, project_id)
         raise internal_error(STORE_FAILED_DETAIL)
 
     # 파이프라인(parse 노드)이 Storage에서 파일을 내려받는 데 필요한 정보
@@ -149,8 +175,13 @@ async def upload_documents(files: list[UploadFile]) -> dict:
             "progress": STEP_PROGRESS[0],
         },
     )
-    _start_pipeline(job_id, documents)
-    return {"job_id": job_id, "document_count": len(files), "status": "queued"}
+    _start_pipeline(job_id, project_id, documents)
+    return {
+        "job_id": job_id,
+        "project_id": project_id,
+        "document_count": len(files),
+        "status": "queued",
+    }
 
 
 def _warm_up_converter() -> None:
@@ -177,11 +208,11 @@ def start_converter_warm_up() -> threading.Thread:
 _background_tasks: set[asyncio.Task] = set()
 
 
-def _start_pipeline(job_id: UUID, documents: list[dict]) -> None:
+def _start_pipeline(job_id: UUID, project_id: str, documents: list[dict]) -> None:
     # 업로드 응답은 기다리지 않고 바로 돌려주고, 분석은 같은 서버 프로세스에서 따로 돌린다.
     # ponytail: 서버를 재시작하면 진행 중인 job은 사라진다(상태도 메모리라 같이 사라짐).
     # 재시작에도 살아남아야 하면 작업 큐(별도 워커)와 job 테이블이 필요하다
-    task = asyncio.create_task(_run_pipeline(job_id, documents))
+    task = asyncio.create_task(_run_pipeline(job_id, project_id, documents))
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
 
@@ -191,26 +222,37 @@ def _fail(job_id: UUID, message: str) -> None:
     jobs.update_job(job_id, status="failed", message=message)
 
 
-async def _run_graph(job_id: UUID, documents: list[dict]) -> dict:
+async def _save_project_name(project_id: str, name: str) -> None:
+    # 이름은 임시 이름으로 이미 채워져 있으므로, 저장에 실패해도 분석은 계속한다
+    try:
+        await asyncio.to_thread(projects_service.rename_project, project_id, name)
+    except Exception as e:
+        logger.warning("프로젝트 이름 저장 실패, 임시 이름을 유지함: %s", summarize_error(e))
+
+
+async def _run_graph(job_id: UUID, project_id: str, documents: list[dict]) -> dict:
     # 노드가 하나 끝날 때마다 알림을 받아 진행 단계를 올리고, 그 결과를 모아 최종 state를 만든다
-    final: dict = {"job_id": job_id, "documents": documents}
+    final: dict = {"job_id": job_id, "project_id": project_id, "documents": documents}
     async for update in build_graph().astream(dict(final), stream_mode="updates"):
         for node, delta in update.items():
             final.update(delta or {})
+            # 뒤 단계가 실패해도 이름이 남도록 끝까지 기다리지 않고 extract 직후에 저장한다
+            if node == "extract" and final.get("project_name"):
+                await _save_project_name(project_id, final["project_name"])
             next_step = NODE_ORDER.index(node) + 1
             if next_step < len(NODE_ORDER):
                 jobs.update_job(job_id, active_step=next_step, progress=STEP_PROGRESS[next_step])
     return final
 
 
-async def _run_pipeline(job_id: UUID, documents: list[dict]) -> None:
+async def _run_pipeline(job_id: UUID, project_id: str, documents: list[dict]) -> None:
     # 어떤 경우에도 job이 completed나 failed로 끝나야 SSE가 멈추지 않는다.
     # 노드 안의 오류는 그래프가 state["error"]로 바꿔 주고, 그래프 밖에서 나는 예외는 여기서 잡는다
     with job_log_context(job_id):
         jobs.update_job(job_id, status="running")
         logger.info("작업 시작: 문서 %d개", len(documents))
         try:
-            final = await _run_graph(job_id, documents)
+            final = await _run_graph(job_id, project_id, documents)
         except Exception as e:
             logger.exception("작업 실행 중 예기치 못한 오류")
             finish_job_usage(str(job_id))
@@ -243,7 +285,11 @@ async def _run_pipeline(job_id: UUID, documents: list[dict]) -> None:
             len(warnings),
         )
         jobs.update_job(
-            job_id, status="completed", created_card_count=card_count, warnings=warnings
+            job_id,
+            status="completed",
+            created_card_count=card_count,
+            active_card_count=final.get("active_card_count", 0),
+            warnings=warnings,
         )
 
 
@@ -271,6 +317,7 @@ async def job_events(job_id: UUID) -> AsyncIterator[ServerSentEvent]:
                     job_id=job_id,
                     status="completed",
                     created_card_count=job["created_card_count"],
+                    active_card_count=job["active_card_count"],
                 ),
             )
             return

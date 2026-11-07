@@ -59,7 +59,6 @@ _FIELDS = (
     "outcome",
     "lesson",
     "technologies",
-    "project_name",
     "department",
     "project_date",
 )

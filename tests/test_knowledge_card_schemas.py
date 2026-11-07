@@ -17,6 +17,7 @@ CARD = {
     "quality_score": 0.92,
     "last_verified_at": None,
     "verification_version": None,
+    "project_id": None,
     "project_name": "AI Knowledge Platform",
     "department": None,
     "project_date": "2026-10-20",

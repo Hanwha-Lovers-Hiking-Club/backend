@@ -52,6 +52,7 @@ def make_card():
             "quality_score": None,
             "last_verified_at": None,
             "verification_version": None,
+            "project_id": None,
             "project_name": "AI Knowledge Platform",
             "department": None,
             "project_date": None,

@@ -9,6 +9,8 @@ CARD_ID = "8d482ad2-63a9-42f4-a9fb-fab341ef6d25"
 EVIDENCE_ID = "0b9a5c1e-1f0d-4d4b-9a51-3c7a3f0e8b21"
 DOCUMENT_ID = "4c10a229-9b3a-40bc-8611-e2f787540f03"
 
+PROJECT_ID = "11111111-1111-1111-1111-111111111111"
+
 CARD_ROW = {
     "id": CARD_ID,
     "title": "RAG 검색 정확도 개선",
@@ -24,7 +26,10 @@ CARD_ROW = {
     "keywords": ["RAG", "Hybrid Search"],
     "department": None,
     "project_date": "2026-10-20",
-    "project_name": "AI Knowledge Platform",
+    "project_id": PROJECT_ID,
+    # 기존 컬럼의 값은 쓰지 않고 projects에서 읽는다
+    "project_name": "지난 추출값",
+    "projects": {"name": "AI Knowledge Platform"},
     "status": "active",
     "quality_score": 0.92,
     "last_verified_at": None,
@@ -281,3 +286,23 @@ def test_get_card_invalid_id(client, fake_db):
 
     assert response.status_code == 422
     assert query.calls == []
+
+
+def test_card_project_name_comes_from_projects_table(client, fake_db):
+    fake_db(data=[dict(CARD_ROW)], count=1)
+
+    item = client.get("/api/knowledge/cards").json()["items"][0]
+
+    assert item["projectId"] == PROJECT_ID
+    assert item["projectName"] == "AI Knowledge Platform"
+    assert "projects" not in item
+
+
+def test_list_project_cards_uses_same_active_filter_as_card_list(fake_db):
+    query = fake_db(data=[dict(CARD_ROW)])
+
+    cards = service.list_project_cards(PROJECT_ID)
+
+    assert [card["project_name"] for card in cards] == ["AI Knowledge Platform"]
+    assert (("status", service.ACTIVE_STATUS), {}) in query.called("eq")
+    assert (("project_id", PROJECT_ID), {}) in query.called("eq")

@@ -53,6 +53,7 @@ def env(monkeypatch):
 def _run() -> dict:
     state = {
         "job_id": uuid4(),
+        "project_id": "project-1",
         "documents": [
             {
                 "id": uuid4(),
@@ -108,6 +109,7 @@ def test_unexpected_exception_in_a_node_becomes_an_error_instead_of_raising(env,
 def _run_docs(*paths: str) -> dict:
     state = {
         "job_id": uuid4(),
+        "project_id": "project-1",
         "documents": [
             {
                 "id": uuid4(),

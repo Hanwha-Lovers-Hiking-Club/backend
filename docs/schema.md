@@ -15,7 +15,7 @@
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | id | uuid | PK. 프론트는 이름이 아니라 이 값으로 그룹화한다 |
-| name | text | 프로젝트 이름 (필수, 빈 문자열 불가). 유니크 아님: 같은 이름의 프로젝트도 별개로 유지한다 |
+| name | text | 프로젝트 이름 (필수, 빈 문자열 불가). 업로드 때 파일명 오름차순 첫 파일의 이름으로 만들고 extract가 찾으면 바꾼다. 유니크 아님: 같은 이름의 프로젝트도 별개로 유지한다 |
 | created_at | timestamptz | 생성 시각 |
 
 ## documents
@@ -55,7 +55,7 @@
 | keywords_text | text | 자동 생성 | `keywords`를 줄바꿈으로 합친 생성 컬럼. 부분 일치 검색 전용이며 직접 저장하지 않고 응답에도 내려주지 않음 |
 | department | text | X | 담당 부서. 식별 불가하면 NULL |
 | project_date | date | X | 지식이 나온 프로젝트 시점. 식별 불가하면 NULL |
-| project_name | text | X | LLM이 문서에서 추출한 프로젝트 이름. 표기가 달라도(플랜밍고/planmingo) 같은 프로젝트로 묶지 않음. 식별 불가하면 NULL |
+| project_name | text | X | 더 이상 쓰지 않음. 프로젝트 이름은 `projects.name`에서 읽는다. 값을 저장하지 않으며 이전 검증 후 삭제 예정 |
 | project_id | uuid | 조건부 | FK → projects.id. 기존 행을 채우기 전까지 NULL 허용 |
 | status | text | O | `draft`(기본) / `active` / `flagged` / `archived`. RAG 검색 포함 여부 판단 기준 |
 | quality_score | numeric | X | 카드 품질 내부 평가 점수 |
