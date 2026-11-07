@@ -17,6 +17,8 @@ LIST_FAILED_DETAIL = "프로젝트 목록을 조회하지 못했습니다."
 GET_FAILED_DETAIL = "프로젝트를 조회하지 못했습니다."
 PROJECT_NOT_FOUND_DETAIL = "프로젝트를 찾을 수 없습니다."
 
+PROJECT_COLUMNS = "id, name, domain, team, period, description, stack, created_at"
+
 
 def create_project(name: str) -> str:
     result = supabase.table("projects").insert({"name": name}).execute()
@@ -33,9 +35,7 @@ def delete_project(project_id: str) -> None:
 
 def _to_summary(row: dict) -> dict:
     return {
-        "id": row["id"],
-        "name": row["name"],
-        "created_at": row["created_at"],
+        **row,
         "document_count": row["documents"][0]["count"],
         "card_count": row["knowledge_cards"][0]["count"],
     }
@@ -46,7 +46,7 @@ async def list_projects(q: str, sort: ProjectSort, page: int, page_size: int) ->
     start = (page - 1) * page_size
     query = (
         supabase.table("projects")
-        .select("id, name, created_at, documents(count), knowledge_cards(count)", count="exact")
+        .select(f"{PROJECT_COLUMNS}, documents(count), knowledge_cards(count)", count="exact")
         .ilike("name", f"%{q}%")
         .eq("knowledge_cards.status", ACTIVE_STATUS)
         .order("name" if sort == "name" else "created_at", desc=sort != "name")
@@ -75,9 +75,7 @@ async def list_projects(q: str, sort: ProjectSort, page: int, page_size: int) ->
 
 def _get_project(project_id: str) -> dict | None:
     # 없는 id일 수 있어서 .single() 대신 리스트로 받아 직접 확인한다
-    result = (
-        supabase.table("projects").select("id, name, created_at").eq("id", project_id).execute()
-    )
+    result = supabase.table("projects").select(PROJECT_COLUMNS).eq("id", project_id).execute()
     if not result.data:
         return None
     return {

@@ -29,7 +29,7 @@ CARD_ROW = {
     "project_id": PROJECT_ID,
     # 기존 컬럼의 값은 쓰지 않고 projects에서 읽는다
     "project_name": "지난 추출값",
-    "projects": {"name": "AI Knowledge Platform"},
+    "projects": {"name": "AI Knowledge Platform", "domain": "ai"},
     "status": "active",
     "quality_score": 0.92,
     "last_verified_at": None,
@@ -295,7 +295,13 @@ def test_card_project_name_comes_from_projects_table(client, fake_db):
 
     assert item["projectId"] == PROJECT_ID
     assert item["projectName"] == "AI Knowledge Platform"
+    assert item["projectDomain"] == "ai"
     assert "projects" not in item
+
+
+def test_card_select_does_not_read_embeddings():
+    assert "*" not in service.CARD_SELECT
+    assert "embedding" not in service.CARD_SELECT
 
 
 def test_list_project_cards_uses_same_active_filter_as_card_list(fake_db):
