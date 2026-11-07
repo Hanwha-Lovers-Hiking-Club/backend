@@ -8,10 +8,21 @@
 create extension if not exists vector;
 
 -- ---------------------------------------------------------------
+-- projects: 문서와 지식카드를 묶는 프로젝트. 업로드 1회가 프로젝트 1개다.
+-- 같은 이름의 프로젝트도 별개로 유지하므로 name에 유니크를 걸지 않는다.
+-- ---------------------------------------------------------------
+create table if not exists projects (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null check (length(trim(name)) > 0),
+  created_at timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------
 -- documents: 원본 문서 메타. 실제 파일은 Supabase Storage에 있다.
 -- ---------------------------------------------------------------
 create table if not exists documents (
   id                uuid primary key default gen_random_uuid(),
+  project_id        uuid references projects (id),  -- 기존 행을 채운 뒤 NOT NULL로 바꾼다
   title             text not null check (length(trim(title)) > 0),  -- LLM이 문서에서 추출
   original_filename text not null check (length(trim(original_filename)) > 0),  -- 사용자가 올린 원래 파일명
   size_bytes        bigint not null check (size_bytes >= 0),  -- 파일 용량(바이트)
@@ -61,6 +72,7 @@ create table if not exists knowledge_cards (
 
   -- 메타데이터 (v1.0)
   project_name         text,  -- LLM이 문서에서 추출한 프로젝트 이름. 식별 불가하면 NULL
+  project_id           uuid references projects (id),  -- 기존 행을 채운 뒤 NOT NULL로 바꾼다
   status               text not null default 'draft'
                          constraint knowledge_cards_status_check
                          check (status in ('draft', 'active', 'flagged', 'archived')),
@@ -88,6 +100,8 @@ create table if not exists knowledge_cards (
   )
 );
 
+create index if not exists documents_project_id_idx on documents (project_id);
+create index if not exists knowledge_cards_project_id_idx on knowledge_cards (project_id);
 create index if not exists knowledge_cards_status_idx on knowledge_cards (status);
 create index if not exists knowledge_cards_technologies_idx on knowledge_cards using gin (technologies);
 create index if not exists knowledge_cards_keywords_idx on knowledge_cards using gin (keywords);
@@ -143,6 +157,7 @@ create table if not exists document_chunks (
 -- ---------------------------------------------------------------
 -- RLS: 켜기만 하고 정책은 만들지 않음 (백엔드 service role 전용)
 -- ---------------------------------------------------------------
+alter table projects enable row level security;
 alter table documents enable row level security;
 alter table knowledge_cards enable row level security;
 alter table card_documents enable row level security;

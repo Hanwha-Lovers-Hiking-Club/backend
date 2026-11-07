@@ -8,6 +8,7 @@ from app.core.schemas import CamelModel
 
 class UploadResponse(CamelModel):
     job_id: UUID
+    project_id: UUID
     document_count: int
     # 접수 직후 상태. 진행 상태는 작업 이벤트(SSE)로 따로 받는다
     status: Literal["queued"]
@@ -23,6 +24,8 @@ class JobCompletedEvent(CamelModel):
     job_id: UUID
     status: Literal["completed"]
     created_card_count: int
+    # 프로젝트 폴더에 보이는 카드 수(active). created_card_count에는 draft도 포함된다
+    active_card_count: int
 
 
 class JobFailedEvent(CamelModel):

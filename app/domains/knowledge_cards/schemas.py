@@ -41,6 +41,7 @@ class KnowledgeCard(CamelModel):
     quality_score: float | None
     last_verified_at: datetime | None
     verification_version: str | None
+    project_id: UUID | None
     project_name: str | None
     department: str | None
     project_date: date | None

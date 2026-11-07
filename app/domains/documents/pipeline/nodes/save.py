@@ -13,7 +13,9 @@ from app.domains.knowledge_cards import service as knowledge_cards_service
 logger = logging.getLogger(__name__)
 
 
-def _to_card_dict(draft: CardDraft, embeddings: CardEmbeddings | None, status: str) -> dict:
+def _to_card_dict(
+    draft: CardDraft, embeddings: CardEmbeddings | None, status: str, project_id: str
+) -> dict:
     return {
         "title": draft.title,
         "summary": draft.summary,
@@ -26,7 +28,7 @@ def _to_card_dict(draft: CardDraft, embeddings: CardEmbeddings | None, status: s
         "lesson": draft.lesson,
         "technologies": draft.technologies,
         "keywords": draft.keywords,
-        "project_name": draft.project_name,
+        "project_id": project_id,
         "department": draft.department,
         "project_date": draft.project_date.isoformat() if draft.project_date else None,
         # verify가 정한 공개 상태. 재사용 가치가 있는 통과 카드는 active이고,
@@ -63,10 +65,20 @@ def save(state: IngestionState) -> dict:
     # 저장하려던 카드가 전부 실패했을 때만 error로 job을 실패시킨다.
     # 카드가 하나도 없는 것(embedded_cards가 빈 목록)은 정상이다.
     saved = 0
+    active = 0
     failures: list[str] = []
+    project_id = state["project_id"]
+    # 카드의 프로젝트와 근거 문서의 프로젝트가 어긋나지 않도록 이 업로드의 문서만 근거로 받는다
+    document_ids = {str(document["id"]) for document in state["documents"]}
     for embedded in state["embedded_cards"]:
-        card = _to_card_dict(embedded.draft, embedded.embeddings, embedded.status)
+        card = _to_card_dict(embedded.draft, embedded.embeddings, embedded.status, project_id)
         evidences = _to_evidence_dicts(embedded.draft)
+        if any(evidence["document_id"] not in document_ids for evidence in evidences):
+            logger.warning("save: 다른 업로드의 문서를 근거로 한 카드 %r", embedded.draft.title)
+            failures.append(
+                f"카드 저장 실패 '{embedded.draft.title}': 근거 문서가 프로젝트 밖에 있음"
+            )
+            continue
         try:
             knowledge_cards_service.create_card(card, evidences)
         except Exception as e:
@@ -74,11 +86,12 @@ def save(state: IngestionState) -> dict:
             failures.append(f"카드 저장 실패 '{embedded.draft.title}': {summarize_error(e)}")
             continue
         saved += 1
+        active += embedded.status == "active"
 
     logger.info("save: 카드 %d개 저장, %d개 실패", saved, len(failures))
     if failures and saved == 0:
         return {"saved_card_count": 0, "error": failures[0]}
-    update: dict = {"saved_card_count": saved}
+    update: dict = {"saved_card_count": saved, "active_card_count": active}
     if failures:
         update["warnings"] = [*state.get("warnings", []), *failures]
     return update

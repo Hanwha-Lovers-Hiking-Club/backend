@@ -19,7 +19,6 @@ def _verified(status: str | None) -> VerifiedCard:
         lesson="l",
         technologies=[],
         keywords=[],
-        project_name=None,
         department=None,
         project_date=None,
         evidences=[],

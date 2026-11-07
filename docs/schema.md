@@ -8,6 +8,16 @@
 
 생성 SQL은 `sql/tables.sql`. 모든 테이블은 RLS 켜짐 + 정책 없음 (백엔드 service role 키로만 접근).
 
+## projects
+
+문서와 지식카드를 묶는 프로젝트. 업로드 1회가 프로젝트 1개다. 마이그레이션은 `sql/2026-11-08_add_projects.sql`.
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| id | uuid | PK. 프론트는 이름이 아니라 이 값으로 그룹화한다 |
+| name | text | 프로젝트 이름 (필수, 빈 문자열 불가). 업로드 때 파일명 오름차순 첫 파일의 이름으로 만들고 extract가 찾으면 바꾼다. 유니크 아님: 같은 이름의 프로젝트도 별개로 유지한다 |
+| created_at | timestamptz | 생성 시각 |
+
 ## documents
 
 원본 문서 메타. 실제 파일은 Supabase Storage에 있고, 여기에는 위치만 저장.
@@ -15,6 +25,7 @@
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
 | id | uuid | PK |
+| project_id | uuid | FK → projects.id. 기존 행을 채우기 전까지 NULL 허용 |
 | title | text | 문서 제목. LLM이 문서에서 추출 (필수, 빈 문자열 불가) |
 | original_filename | text | 사용자가 올린 원래 파일명 (필수). 확장자는 여기서 잘라 응답에 내려준다 |
 | size_bytes | bigint | 파일 용량(바이트) (필수, 0 이상) |
@@ -44,7 +55,8 @@
 | keywords_text | text | 자동 생성 | `keywords`를 줄바꿈으로 합친 생성 컬럼. 부분 일치 검색 전용이며 직접 저장하지 않고 응답에도 내려주지 않음 |
 | department | text | X | 담당 부서. 식별 불가하면 NULL |
 | project_date | date | X | 지식이 나온 프로젝트 시점. 식별 불가하면 NULL |
-| project_name | text | X | LLM이 문서에서 추출한 프로젝트 이름. 표기가 달라도(플랜밍고/planmingo) 같은 프로젝트로 묶지 않음. 식별 불가하면 NULL |
+| project_name | text | X | 더 이상 쓰지 않음. 프로젝트 이름은 `projects.name`에서 읽는다. 값을 저장하지 않으며 이전 검증 후 삭제 예정 |
+| project_id | uuid | 조건부 | FK → projects.id. 기존 행을 채우기 전까지 NULL 허용 |
 | status | text | O | `draft`(기본) / `active` / `flagged` / `archived`. RAG 검색 포함 여부 판단 기준 |
 | quality_score | numeric | X | 카드 품질 내부 평가 점수 |
 | last_verified_at | timestamptz | X | 마지막 검증 시각 |
@@ -106,4 +118,3 @@
 - 카드 유형(`type`): 추출 결과를 보고 분류가 정해지면 `type text` + CHECK 제약으로 추가.
 - 문서 요약(`documents.summary`): 필요해지면 추가.
 - 중복 업로드 정책: 같은 내용의 카드가 쌓이는 것은 현재 허용. 임베딩 도입 후 카드 유사도로 판별(`status = 'flagged'` 활용) 검토.
-- `project_id`: 프로젝트 테이블이 생기면 다시 추가.

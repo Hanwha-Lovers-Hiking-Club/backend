@@ -95,7 +95,6 @@ def _composition(**overrides) -> CardComposition:
         lesson=_s(["E2", "E3"], "교훈"),
         technologies=[],
         keywords=["데이터 정합성"],
-        project_name=_o(["H1"], "로컬픽 정산"),
         department=_o(["H1"], "재무팀"),  # 머리말에 없는 값
         project_date=_o(["E1"], "2026-08-12"),
     )
@@ -142,11 +141,8 @@ def test_card_cites_only_given_sources_and_keeps_field_level_mapping(monkeypatch
         "배포 후 5회 배치에서 중복 0건.",
         "2026-08-12 두 pod가 배치를 각각 실행해 312건이 중복 지급됐다.",
     ]
-    # 머리말에서 온 값은 그 값이 있는 줄을 근거로 남기고, 머리말에 없는 값은 비운다
-    assert draft.project_name == "로컬픽 정산" and draft.department is None
-    assert (
-        draft.evidences[draft.field_sources["project_name"][0]].excerpt == "프로젝트: 로컬픽 정산"
-    )
+    # 머리말에 없는 값은 비운다
+    assert draft.department is None
     assert draft.project_date == date(2026, 8, 12)
     assert result["draft_skips"] == []
 
@@ -235,3 +231,11 @@ def test_evidence_location_uses_the_precise_position_when_found(monkeypatch):
     # 위치 목록에 없는 문서는 지금처럼 청크의 헤딩 경로를 쓴다
     assert locations["배포 후 5회 배치에서 중복 0건."] == "절1"
     assert "회의.docx · 절1" in llm.messages[0]  # 프롬프트 입력은 그대로(청크 위치)
+
+
+def test_value_from_header_cites_the_line_it_came_from(monkeypatch):
+    composition = _composition(department=_o(["H1"], "로컬픽 정산"))
+    result, _ = _run(monkeypatch, {"중복 지급": composition}, _experience())
+    draft = result["card_drafts"][0]
+    assert draft.department == "로컬픽 정산"
+    assert draft.evidences[draft.field_sources["department"][0]].excerpt == "프로젝트: 로컬픽 정산"

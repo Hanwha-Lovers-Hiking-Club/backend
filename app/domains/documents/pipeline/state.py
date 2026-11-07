@@ -55,6 +55,8 @@ class Position(TypedDict):
 # 그래프 전체가 주고받는 state. graph.py가 job 1개당 1번 이 타입으로 invoke한다
 class IngestionState(TypedDict):
     job_id: UUID
+    # 업로드에서 만든 프로젝트. 문서와 카드가 모두 이 값을 쓴다
+    project_id: str
     documents: list[DocumentInput]
     parsed_documents: list[ParsedDocument]
     # 문서 id(문자열) -> 원문 위치 목록(positions.py). draft_card가 근거 인용의 정밀 위치를 찾는다
@@ -64,6 +66,8 @@ class IngestionState(TypedDict):
     chunks: list[Chunk]
     # extract 노드의 출력. 인용 검사와 근거 종류 필터를 통과한 경험만 들어 있다
     experiences: list[Experience]
+    # extract 노드가 뽑은 프로젝트 이름. 원문에서 확인되지 않으면 None
+    project_name: str | None
     # draft_card 노드의 출력. 구조 검사를 통과한 카드 후보
     card_drafts: list[CardDraft]
     # draft_card가 후보를 만들지 않은 경험과 그 사유. 잘못 버린 게 없는지 사람이 확인하는 용도
@@ -75,6 +79,8 @@ class IngestionState(TypedDict):
     # save 노드가 실제로 저장한 카드 수. 일부 카드가 저장에 실패해도 나머지는 저장되므로
     # len(embedded_cards)와 다를 수 있다. SSE completed의 created_card_count는 이 값을 쓴다
     saved_card_count: int
+    # saved_card_count 중 active 카드 수. 목록과 프로젝트 폴더에 보이는 카드 수와 같다
+    active_card_count: int
     # embed_chunks 노드의 출력. save_chunks 노드가 document_chunks에 저장한다.
     # 카드 경로와 독립이라, 임베딩에 실패하면 비어 있고 error가 아니라 warnings에 사유가 남는다
     embedded_chunks: list[EmbeddedChunk]

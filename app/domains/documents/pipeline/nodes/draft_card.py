@@ -194,7 +194,7 @@ def compose_one(
         return None, f"{label}: 조건부 필드(problem~outcome)가 모두 비어 있음"
 
     # 선택 필드는 인용한 근거의 원문에 그 값이 실제로 있을 때만 쓴다
-    for name in ("project_name", "department", "project_date"):
+    for name in ("department", "project_date"):
         field = getattr(c, name)
         text, ids = _text(field), sources.valid(field.source_ids)
         value = plain(text) if text else ""
@@ -218,7 +218,6 @@ def compose_one(
         lesson=values["lesson"],
         technologies=normalize_technologies(c.technologies),
         keywords=[k.strip() for k in c.keywords if k.strip()],
-        project_name=values["project_name"],
         department=values["department"],
         project_date=project_date,
         evidences=evidences,

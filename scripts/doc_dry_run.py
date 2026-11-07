@@ -82,6 +82,7 @@ def render(folder: Path, state: dict, usage: dict, seconds: float) -> list[str]:
         "",
         f"- 경험 {len(experiences)}개 -> 카드 후보 {len(drafts)}개, 미생성 {len(state.get('draft_skips', []))}개",
         f"- LLM {usage['calls']}회, 입력 {usage['input']:,} / 출력 {usage['output']:,} 토큰, {seconds:.0f}초",
+        f"- 프로젝트 이름: {state.get('project_name') or '찾지 못함'}",
         f"- 오류: {state.get('error') or '없음'}",
     ]
     lines += [f"- 경고: {w}" for w in state.get("warnings", [])]
@@ -117,7 +118,7 @@ def render(folder: Path, state: dict, usage: dict, seconds: float) -> list[str]:
             )
             lines.append(f"- **{field}**: {value}  _[{refs}]_")
         lines.append(
-            f"- **선택 필드**: 기술 {d.technologies} / 키워드 {d.keywords} / 프로젝트 {d.project_name}"
+            f"- **선택 필드**: 기술 {d.technologies} / 키워드 {d.keywords}"
             f" / 부서 {d.department} / 시점 {d.project_date}"
         )
         lines += ["", "근거:"]

@@ -13,6 +13,7 @@ from app.domains.chat.router import router as chat_router
 from app.domains.documents import service as documents_service
 from app.domains.documents.router import router as documents_router
 from app.domains.knowledge_cards.router import router as knowledge_cards_router
+from app.domains.projects.router import router as projects_router
 
 setup_logging()
 
@@ -37,6 +38,7 @@ app.include_router(agent_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
 app.include_router(documents_router, prefix="/api")
 app.include_router(knowledge_cards_router, prefix="/api")
+app.include_router(projects_router, prefix="/api")
 
 
 @app.get("/health")
