@@ -22,7 +22,7 @@ create table if not exists projects (
 -- ---------------------------------------------------------------
 create table if not exists documents (
   id                uuid primary key default gen_random_uuid(),
-  project_id        uuid references projects (id),  -- 기존 행을 채운 뒤 NOT NULL로 바꾼다
+  project_id        uuid not null references projects (id),
   title             text not null check (length(trim(title)) > 0),  -- LLM이 문서에서 추출
   original_filename text not null check (length(trim(original_filename)) > 0),  -- 사용자가 올린 원래 파일명
   size_bytes        bigint not null check (size_bytes >= 0),  -- 파일 용량(바이트)
@@ -72,7 +72,7 @@ create table if not exists knowledge_cards (
 
   -- 메타데이터 (v1.0)
   project_name         text,  -- LLM이 문서에서 추출한 프로젝트 이름. 식별 불가하면 NULL
-  project_id           uuid references projects (id),  -- 기존 행을 채운 뒤 NOT NULL로 바꾼다
+  project_id           uuid not null references projects (id),
   status               text not null default 'draft'
                          constraint knowledge_cards_status_check
                          check (status in ('draft', 'active', 'flagged', 'archived')),
