@@ -17,25 +17,14 @@ from app.domains.documents.pipeline.state import Chunk
 logger = logging.getLogger(__name__)
 
 _PROMPT = (Path(__file__).parent / "prompts" / "project_meta.md").read_text(encoding="utf-8")
-_MONTH = re.compile(r"(\d{4})-(0[1-9]|1[0-2])")
+_MONTH = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
 
 
 def format_period(start: str | None, end: str | None) -> str | None:
-    # 프로젝트 폴더의 기간 표기: "2026.05 – 07", "2025.12 – 2026.02", 진행 중이면 "2026.04 –"
-    start_match = _MONTH.fullmatch(start or "")
-    if not start_match:
+    # 프로젝트 폴더의 기간 표기는 항상 "2026.05 – 2026.07"이다. 종료된 프로젝트만 기간을 둔다
+    if not (_MONTH.fullmatch(start or "") and _MONTH.fullmatch(end or "")) or end < start:
         return None
-    start_year, start_month = start_match.groups()
-    first = f"{start_year}.{start_month}"
-    if not end:
-        return f"{first} –"
-    end_match = _MONTH.fullmatch(end)
-    if not end_match or end < start:
-        return None
-    if end == start:
-        return first
-    end_year, end_month = end_match.groups()
-    return f"{first} – {end_month if end_year == start_year else f'{end_year}.{end_month}'}"
+    return f"{start.replace('-', '.')} – {end.replace('-', '.')}"
 
 
 def _to_fields(draft: ProjectMetaDraft, chunks: dict[str, Chunk]) -> dict[str, str]:

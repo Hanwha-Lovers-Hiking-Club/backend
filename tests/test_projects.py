@@ -13,7 +13,7 @@ CREATED_AT = "2026-11-08T00:00:00+00:00"
 META = {
     "domain": "frontend",
     "team": "국제화제품팀",
-    "period": "2026.01 – 04",
+    "period": "2026.01 – 2026.04",
     "description": "다국어 화면 정비",
     "stack": ["i18n", "CI"],
 }

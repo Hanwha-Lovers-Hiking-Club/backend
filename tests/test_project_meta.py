@@ -40,10 +40,10 @@ def _describe(monkeypatch, llm: _LLM) -> dict:
 @pytest.mark.parametrize(
     ("start", "end", "expected"),
     [
-        ("2026-05", "2026-07", "2026.05 – 07"),
+        ("2026-05", "2026-07", "2026.05 – 2026.07"),
         ("2025-12", "2026-02", "2025.12 – 2026.02"),
-        ("2026-04", None, "2026.04 –"),
-        ("2026-05", "2026-05", "2026.05"),
+        ("2026-04", None, None),
+        ("2026-05", "2026-05", "2026.05 – 2026.05"),
         ("2026-07", "2026-05", None),
         (None, "2026-05", None),
         ("2026-13", None, None),
@@ -59,7 +59,7 @@ def test_confirmed_fields_become_project_columns(monkeypatch):
     assert _describe(monkeypatch, _LLM(_draft())) == {
         "domain": "frontend",
         "team": "국제화제품팀",
-        "period": "2026.01 – 04",
+        "period": "2026.01 – 2026.04",
         "description": "번역 키 누락을 막는 다국어 화면 정비",
     }
 

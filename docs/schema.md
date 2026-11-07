@@ -10,7 +10,7 @@
 
 ## projects
 
-문서와 지식카드를 묶는 프로젝트. 업로드 1회가 프로젝트 1개다. 마이그레이션은 `sql/2026-11-08_add_projects.sql`, 표시 정보 컬럼은 `sql/2026-11-08_add_project_meta.sql`, 유형 코드 변경은 `sql/2026-11-08_rename_project_domains.sql`.
+문서와 지식카드를 묶는 프로젝트. 업로드 1회가 프로젝트 1개다. 마이그레이션은 `sql/2026-11-08_add_projects.sql`, 표시 정보 컬럼은 `sql/2026-11-08_add_project_meta.sql`, 유형 코드 변경은 `sql/2026-11-08_rename_project_domains.sql`, 기간 표기 통일은 `sql/2026-11-08_unify_project_period.sql`.
 
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
@@ -18,7 +18,7 @@
 | name | text | 프로젝트 이름 (필수, 빈 문자열 불가). 업로드 때 파일명 오름차순 첫 파일의 이름으로 만들고 extract가 찾으면 바꾼다. 유니크 아님: 같은 이름의 프로젝트도 별개로 유지한다 |
 | domain | text | 분야. `ai` / `frontend` / `backend` / `data` / `app` (CHECK). 폴더와 카드의 색·아이콘을 정한다. NULL이면 미분류 |
 | team | text | 담당 팀. 업로드 때 문서에서 뽑고 원문에 없으면 NULL |
-| period | text | 진행 기간. 화면 표기 그대로 저장 (예: `2026.05 – 07`). 문서에 프로젝트 기간이 없으면 NULL |
+| period | text | 진행 기간. 형식은 `YYYY.MM – YYYY.MM`이고 연도가 같아도 줄이지 않는다 (예: `2026.05 – 2026.07`). 문서에서 시작과 종료를 모두 확인하지 못하면 NULL |
 | description | text | 프로젝트 한 줄 설명. 업로드 때 LLM이 문서를 요약한 값이며 NULL 허용 |
 | stack | text[] | 대표 기술 (빈 배열 가능). 업로드 때 active 카드의 기술을 많이 나온 순으로 5개까지 모은다. `knowledge_cards.technologies`와 달리 화면 표기 그대로 저장한다. 기본값 `{}` |
 | created_at | timestamptz | 생성 시각 |
