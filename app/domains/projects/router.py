@@ -1,9 +1,9 @@
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from app.domains.projects import service
-from app.domains.projects.schemas import ProjectDetail, ProjectListResponse
+from app.domains.projects.schemas import ProjectDetail, ProjectListResponse, ProjectSort
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -12,10 +12,18 @@ router = APIRouter(prefix="/projects", tags=["projects"])
     "",
     response_model=ProjectListResponse,
     summary="프로젝트 목록 조회",
-    description="프로젝트별 문서 수와 active 지식카드 수를 최신 생성순으로 반환한다.",
+    description=(
+        "프로젝트 이름 검색·정렬·페이지네이션 결과와 전체 개수를 반환한다. "
+        "카드 수는 active 기준이다."
+    ),
 )
-async def list_projects():
-    return await service.list_projects()
+async def list_projects(
+    q: str = Query("", description="프로젝트 이름 부분일치 검색"),
+    sort: ProjectSort = Query("created", description="created: 최신 생성순 / name: 이름순"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(12, alias="pageSize", ge=1, le=100),
+):
+    return await service.list_projects(q, sort, page, page_size)
 
 
 @router.get(

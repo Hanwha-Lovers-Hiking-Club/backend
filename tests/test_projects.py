@@ -13,8 +13,9 @@ CREATED_AT = "2026-11-08T00:00:00+00:00"
 
 
 class FakeQuery:
-    def __init__(self, data=None, error=None):
+    def __init__(self, data=None, error=None, count=None):
         self.data, self.error = data or [], error
+        self.count = len(self.data) if count is None else count
         self.calls: list[tuple] = []
 
     def __getattr__(self, name):
@@ -27,13 +28,13 @@ class FakeQuery:
     def execute(self):
         if self.error:
             raise self.error
-        return SimpleNamespace(data=self.data)
+        return SimpleNamespace(data=self.data, count=self.count)
 
 
 @pytest.fixture
 def fake_db(monkeypatch):
-    def install(data=None, error=None) -> FakeQuery:
-        query = FakeQuery(data, error)
+    def install(data=None, error=None, count=None) -> FakeQuery:
+        query = FakeQuery(data, error, count)
         monkeypatch.setattr(service, "supabase", SimpleNamespace(table=lambda _name: query))
         return query
 
@@ -56,6 +57,7 @@ def test_same_name_projects_stay_separate(client, fake_db):
     response = client.get("/api/projects")
 
     assert response.status_code == 200
+    assert response.json()["total"] == 2
     assert response.json()["items"] == [
         {
             "id": PROJECT_A,
@@ -80,6 +82,65 @@ def test_project_list_counts_only_active_cards(client, fake_db):
     client.get("/api/projects")
 
     assert ("eq", ("knowledge_cards.status", service.ACTIVE_STATUS)) in query.calls
+
+
+def test_project_search_sort_and_page_are_applied_in_database(client, fake_db):
+    query = fake_db([_row(PROJECT_A, "말결화면", 6, 4)], count=25)
+
+    response = client.get(
+        "/api/projects",
+        params={
+            "q": "  말결  ",
+            "sort": "name",
+            "page": 2,
+            "pageSize": 12,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 25
+    assert len(response.json()["items"]) == 1
+    assert ("ilike", ("name", "%말결%")) in query.calls
+    assert ("order", ("name",)) in query.calls
+    assert ("order", ("id",)) in query.calls
+    assert ("range", (12, 23)) in query.calls
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"page": 0},
+        {"pageSize": 0},
+        {"pageSize": 101},
+        {"sort": "invalid"},
+    ],
+)
+def test_invalid_project_list_parameters_are_rejected(client, fake_db, params):
+    query = fake_db()
+    assert client.get("/api/projects", params=params).status_code == 422
+    assert query.calls == []
+
+
+def test_project_page_out_of_range_keeps_filtered_total(client, monkeypatch):
+    page = FakeQuery(error=APIError({"code": "PGRST103", "message": "out of range"}))
+    count = FakeQuery(count=3)
+    queries = iter([page, count])
+    monkeypatch.setattr(service, "supabase", SimpleNamespace(table=lambda _: next(queries)))
+
+    response = client.get("/api/projects", params={"q": "말결", "page": 99})
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "total": 3}
+    assert ("ilike", ("name", "%말결%")) in count.calls
+
+
+def test_project_page_out_of_range_count_failure_is_500(client, monkeypatch):
+    page = FakeQuery(error=APIError({"code": "PGRST103", "message": "out of range"}))
+    count = FakeQuery(error=APIError({"code": "500", "message": "db down"}))
+    queries = iter([page, count])
+    monkeypatch.setattr(service, "supabase", SimpleNamespace(table=lambda _: next(queries)))
+
+    assert client.get("/api/projects", params={"page": 99}).status_code == 500
 
 
 def test_project_list_failure_is_500(client, fake_db):
