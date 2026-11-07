@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from postgrest.exceptions import APIError
 
 from app.core.errors import internal_error
+from app.core.text import strip_nul
 from app.db import supabase
 from app.domains.documents import repository as documents_repository
 from app.domains.knowledge_cards import service as knowledge_cards_service
@@ -25,8 +26,8 @@ def create_project(name: str) -> str:
     return result.data[0]["id"]
 
 
-def rename_project(project_id: str, name: str) -> None:
-    supabase.table("projects").update({"name": name}).eq("id", project_id).execute()
+def update_project(project_id: str, fields: dict) -> None:
+    supabase.table("projects").update(strip_nul(fields)).eq("id", project_id).execute()
 
 
 def delete_project(project_id: str) -> None:

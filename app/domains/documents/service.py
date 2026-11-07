@@ -222,12 +222,22 @@ def _fail(job_id: UUID, message: str) -> None:
     jobs.update_job(job_id, status="failed", message=message)
 
 
-async def _save_project_name(project_id: str, name: str) -> None:
-    # 이름은 임시 이름으로 이미 채워져 있으므로, 저장에 실패해도 분석은 계속한다
+async def _save_project_fields(project_id: str, fields: dict) -> None:
+    # 프로젝트 행은 업로드 때 임시 이름으로 이미 있으므로, 저장에 실패해도 분석은 계속한다
     try:
-        await asyncio.to_thread(projects_service.rename_project, project_id, name)
+        await asyncio.to_thread(projects_service.update_project, project_id, fields)
     except Exception as e:
-        logger.warning("프로젝트 이름 저장 실패, 임시 이름을 유지함: %s", summarize_error(e))
+        logger.warning("프로젝트 정보 저장 실패, 기존 값을 유지함: %s", summarize_error(e))
+
+
+def _fields_after(node: str, state: dict) -> dict:
+    # 이 노드가 끝나고 projects에 저장할 값
+    if node == "extract":
+        name = state.get("project_name")
+        return {**state.get("project_meta", {}), **({"name": name} if name else {})}
+    if node == "save" and state.get("project_stack"):
+        return {"stack": state["project_stack"]}
+    return {}
 
 
 async def _run_graph(job_id: UUID, project_id: str, documents: list[dict]) -> dict:
@@ -236,9 +246,9 @@ async def _run_graph(job_id: UUID, project_id: str, documents: list[dict]) -> di
     async for update in build_graph().astream(dict(final), stream_mode="updates"):
         for node, delta in update.items():
             final.update(delta or {})
-            # 뒤 단계가 실패해도 이름이 남도록 끝까지 기다리지 않고 extract 직후에 저장한다
-            if node == "extract" and final.get("project_name"):
-                await _save_project_name(project_id, final["project_name"])
+            # 뒤 단계가 실패해도 이름이 남도록 끝까지 기다리지 않고 노드 직후에 저장한다
+            if fields := _fields_after(node, final):
+                await _save_project_fields(project_id, fields)
             next_step = NODE_ORDER.index(node) + 1
             if next_step < len(NODE_ORDER):
                 jobs.update_job(job_id, active_step=next_step, progress=STEP_PROGRESS[next_step])

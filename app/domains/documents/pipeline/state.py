@@ -68,6 +68,10 @@ class IngestionState(TypedDict):
     experiences: list[Experience]
     # extract 노드가 뽑은 프로젝트 이름. 원문에서 확인되지 않으면 None
     project_name: str | None
+    # extract 노드가 뽑은 프로젝트 소개 정보(projects 컬럼 이름 -> 값). 확인된 항목만 들어 있다
+    project_meta: dict[str, str]
+    # save 노드가 active 카드의 기술을 모은 프로젝트 대표 기술. 화면 표기로 들어 있다
+    project_stack: list[str]
     # draft_card 노드의 출력. 구조 검사를 통과한 카드 후보
     card_drafts: list[CardDraft]
     # draft_card가 후보를 만들지 않은 경험과 그 사유. 잘못 버린 게 없는지 사람이 확인하는 용도

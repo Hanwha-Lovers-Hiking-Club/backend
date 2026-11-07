@@ -231,7 +231,7 @@ def test_start_pipeline_keeps_task_reference_until_done(monkeypatch):
 def renames(monkeypatch) -> list[tuple]:
     calls: list[tuple] = []
     monkeypatch.setattr(
-        service.projects_service, "rename_project", lambda *args: calls.append(args)
+        service.projects_service, "update_project", lambda *args: calls.append(args)
     )
     return calls
 
@@ -240,16 +240,16 @@ def test_project_name_is_saved_right_after_extract(monkeypatch, renames):
     job_id = _new_job()
     renamed_when: list[int] = []
 
-    def rename(project_id, name):
-        renames.append((project_id, name))
+    def rename(project_id, fields):
+        renames.append((project_id, fields))
         renamed_when.append(len(seen))
 
-    monkeypatch.setattr(service.projects_service, "rename_project", rename)
+    monkeypatch.setattr(service.projects_service, "update_project", rename)
     seen = _patch_nodes(monkeypatch, job_id, {"extract": {"project_name": "말결화면"}})
 
     _run(job_id)
 
-    assert renames == [(PROJECT_ID, "말결화면")]
+    assert renames == [(PROJECT_ID, {"name": "말결화면"})]
     assert renamed_when == [G.NODE_ORDER.index("extract") + 1]
 
 
@@ -265,7 +265,7 @@ def test_project_name_survives_card_step_failure(monkeypatch, renames):
     job = _run(job_id)
 
     assert job["status"] == "failed"
-    assert renames == [(PROJECT_ID, "말결화면")]
+    assert renames == [(PROJECT_ID, {"name": "말결화면"})]
 
 
 def test_project_name_survives_exception_after_extract(monkeypatch, renames):
@@ -280,14 +280,35 @@ def test_project_name_survives_exception_after_extract(monkeypatch, renames):
     job = _run(job_id)
 
     assert job["status"] == "failed"
-    assert renames == [(PROJECT_ID, "말결화면")]
+    assert renames == [(PROJECT_ID, {"name": "말결화면"})]
+
+
+def test_project_meta_is_saved_with_name_right_after_extract(monkeypatch, renames):
+    job_id = _new_job()
+    meta = {"domain": "frontend", "team": "국제화제품팀"}
+    _patch_nodes(
+        monkeypatch, job_id, {"extract": {"project_name": "말결화면", "project_meta": meta}}
+    )
+
+    _run(job_id)
+
+    assert renames == [(PROJECT_ID, {**meta, "name": "말결화면"})]
+
+
+def test_project_stack_is_saved_after_save_node(monkeypatch, renames):
+    job_id = _new_job()
+    _patch_nodes(monkeypatch, job_id, {"save": {"project_stack": ["React", "PostgreSQL"]}})
+
+    _run(job_id)
+
+    assert renames == [(PROJECT_ID, {"stack": ["React", "PostgreSQL"]})]
 
 
 def test_failed_project_name_save_does_not_fail_the_job(monkeypatch):
     def fail(*_args):
         raise RuntimeError("db down")
 
-    monkeypatch.setattr(service.projects_service, "rename_project", fail)
+    monkeypatch.setattr(service.projects_service, "update_project", fail)
     job_id = _new_job()
     _patch_nodes(monkeypatch, job_id, {"extract": {"project_name": "말결화면"}})
 

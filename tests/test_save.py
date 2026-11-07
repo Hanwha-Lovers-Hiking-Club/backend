@@ -21,7 +21,9 @@ def _state(*cards, **extra) -> dict:
     }
 
 
-def _embedded(title: str, status="active", document_id=DOCUMENT_ID) -> EmbeddedCard:
+def _embedded(
+    title: str, status="active", document_id=DOCUMENT_ID, technologies=()
+) -> EmbeddedCard:
     draft = CardDraft(
         title=title,
         summary="s",
@@ -32,7 +34,7 @@ def _embedded(title: str, status="active", document_id=DOCUMENT_ID) -> EmbeddedC
         rationale=None,
         outcome=None,
         lesson="l",
-        technologies=[],
+        technologies=list(technologies),
         keywords=[],
         department=None,
         project_date=None,
@@ -109,3 +111,27 @@ def test_active_count_excludes_draft_cards(monkeypatch):
     _patch_create(monkeypatch, set())
     result = S.save(_state(_embedded("a"), _embedded("b", status="draft")))
     assert result["saved_card_count"] == 2 and result["active_card_count"] == 1
+
+
+def test_project_stack_counts_saved_active_cards_only(monkeypatch):
+    _patch_create(monkeypatch, {"failed"})
+
+    result = S.save(
+        _state(
+            _embedded("a", technologies=["postgresql", "somenewtool"]),
+            _embedded("b", technologies=["postgresql"]),
+            _embedded("draft", status="draft", technologies=["react"]),
+            _embedded("failed", technologies=["vue"]),
+        )
+    )
+
+    assert result["project_stack"] == ["PostgreSQL", "somenewtool"]
+
+
+def test_project_stack_is_limited(monkeypatch):
+    _patch_create(monkeypatch, set())
+    technologies = [f"tool{i}" for i in range(S.MAX_PROJECT_STACK + 1)]
+
+    result = S.save(_state(_embedded("a", technologies=technologies)))
+
+    assert len(result["project_stack"]) == S.MAX_PROJECT_STACK
