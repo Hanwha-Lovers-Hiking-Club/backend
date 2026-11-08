@@ -85,5 +85,8 @@ checks를 끝낸 뒤 omitted_limits, reuse, technology_checks를 쓴다(아래 �
   - inferred_only: 컴포넌트 이름이나 코드 패턴만 보고 짐작한 기술이다(예: DatePicker, useState만 보고 React).
   - not_a_technology: 다른 프로젝트에서 같은 이름으로 쓰는 기술이 아니다. 이 프로젝트·서비스·모듈 자체의 이름,
     직접 만든 함수·도구·엔드포인트·테이블·설정 키, 브라우저·언어의 내장 API(Date.now() 등), 표준 값과 형식 이름
-    (Asia/Seoul 같은 타임존, UTF-8·CP949 같은 인코딩, ISO 8601), 인덱스·캐시·API 같은 일반 개념이 여기에 해당한다. 언어, 프레임워크, 라이브러리, 데이터베이스, 인프라·플랫폼,
-    외부 제품·서비스, 데이터 형식·프로토콜(SQL, WebSocket, GeoJSON 등)은 기술이다.
+    (Asia/Seoul 같은 타임존, UTF-8·CP949 같은 인코딩, ISO 8601), 인덱스·캐시·API 같은 일반 개념,
+    파일·데이터 형식과 일반 통신 방식(PDF, CSV, JSON, GeoJSON, HTTP, TCP, SFTP, SSO), 브라우저와 OS(Safari, iOS 등),
+    거래하는 외부 업체와 서비스 채널(메시지 발송 대행사, PG사, 택배사, 카카오 알림톡 같은 메시지 채널)이 여기에 해당한다.
+    언어, 프레임워크, 라이브러리, 데이터베이스, 인프라·클라우드, 개발에 직접 쓰는 플랫폼·SDK·SaaS
+    (SQL, WebSocket, AWS, Firebase, Sentry 등)는 기술이다.

@@ -26,14 +26,18 @@
 ## 사용 기술(technologies)
 경험마다 이 경험에서 실제로 사용한 기술을 뽑는다. 경험의 근거 청크뿐 아니라 입력 문서 전체에서 찾는다
 (코드 블록, 설정 파일, 아키텍처 설명, 문서 머리말의 기술 스택 등).
-- 기술: 언어, 프레임워크, 라이브러리, 데이터베이스, 인프라·플랫폼, 외부 제품·서비스, 데이터 형식·프로토콜처럼
+- 기술: 언어, 프레임워크, 라이브러리, 데이터베이스, 인프라·클라우드, 개발에 쓰는 도구·SaaS처럼
   다른 프로젝트에서도 같은 이름으로 쓰이는 고유명사다. 예: Python, TypeScript, React, PostgreSQL, SQL, Redis,
-  Kubernetes, WebSocket, GeoJSON.
+  Kubernetes, AWS, WebSocket, Sentry.
 - 기술이 아닌 것(넣지 않는다):
   - 이 프로젝트·서비스·모듈 자체의 이름
   - 직접 만든 함수, 도구, 엔드포인트, 테이블, 설정 키의 이름(예: create_ticket, /api/time, settlement_ledger)
   - 브라우저·언어의 내장 API(예: Date.now(), visibilitychange, document.fonts.ready, localStorage)
   - 표준 값과 형식 이름(예: Asia/Seoul 같은 타임존, UTF-8·CP949 같은 인코딩, ISO 8601)
+  - 파일·데이터 형식과 일반 통신 방식(예: PDF, CSV, JSON, GeoJSON, HTTP, TCP, SFTP, SSO)
+  - 브라우저와 OS(예: Safari, Chrome, iOS, Android). 문제가 난 환경이면 키워드로 쓴다
+  - 거래하는 외부 업체와 서비스 채널(예: 메시지 발송 대행사, PG사, 택배사, 카카오 알림톡 같은 메시지 채널).
+    개발에 직접 쓰는 플랫폼·SDK·클라우드(AWS, Firebase, Slack API 등)는 기술이다
   - 인덱스, 캐시, API, 배치, 큐 같은 일반 개념
   - 검토했지만 채택하지 않은 대안의 기술, 테스트에만 쓴 환경(브라우저, 기기)
 - name: 원문 표기 그대로의 기술 이름.
