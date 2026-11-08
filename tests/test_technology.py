@@ -4,12 +4,13 @@ from app.core.technology import (
     aliases_of,
     display_name,
     find_technologies,
+    is_technology,
     is_valid_id,
     normalize_technologies,
     normalize_technology,
 )
 from app.core.technology import normalizer as N
-from app.core.technology.aliases import AMBIGUOUS_IN_TEXT, TECHNOLOGIES
+from app.core.technology.aliases import AMBIGUOUS_IN_TEXT, NOT_TECHNOLOGIES, TECHNOLOGIES
 
 
 @pytest.mark.parametrize(
@@ -146,3 +147,19 @@ def test_ambiguous_keys_are_real_aliases():
 
 def test_dictionary_has_around_a_hundred_entries():
     assert 90 <= len(TECHNOLOGIES) <= 150
+
+
+@pytest.mark.parametrize(
+    "name", ["PDF", "csv", "JSON", "GeoJSON", "JPEG", "엑셀", "HTTP", "TCP", "SFTP", "SSO", "UTF-8"]
+)
+def test_file_formats_and_protocols_are_not_technologies(name):
+    assert not is_technology(name)
+
+
+def test_normalize_technologies_drops_names_that_are_not_technologies():
+    assert normalize_technologies(["Python", "PDF", "http", "Safari"]) == ["python", "safari"]
+
+
+def test_not_technologies_are_normalized_keys_outside_the_dictionary():
+    assert all(N._key(name) == name for name in NOT_TECHNOLOGIES)
+    assert not NOT_TECHNOLOGIES & set(N._ALIAS_TO_ID)

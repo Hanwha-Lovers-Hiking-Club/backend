@@ -18,7 +18,7 @@ import tiktoken
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.logging import summarize_error
-from app.core.technology import find_technologies, normalize_technology
+from app.core.technology import find_technologies, is_technology, normalize_technology
 from app.domains.documents.pipeline.llm import get_llm, invoke_with_retry
 from app.domains.documents.pipeline.models import (
     Evidence,
@@ -95,7 +95,8 @@ def _ground_technology(tech: TechnologyUse, chunks: dict[str, Chunk]) -> Technol
     # 이름이나 코드로 식별할 수 있는 근거만 남긴다. 판단이 필요한 부분(채택 여부, 기술인지)은
     # verify가 원문을 보고 판정한다
     name = tech.name.strip()
-    if not name:
+    # 파일 형식·통신 방식처럼 이름만으로 기술 스택이 아님을 알 수 있으면 verify까지 보내지 않는다
+    if not name or not is_technology(name):
         return None
     grounded = _ground(tech.model_copy(update={"name": name}), chunks)
     if grounded is None:

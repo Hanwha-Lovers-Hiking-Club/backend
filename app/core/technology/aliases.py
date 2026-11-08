@@ -44,6 +44,10 @@ TECHNOLOGIES: dict[str, tuple[str, tuple[str, ...]]] = {
     "redux": ("Redux", ("리덕스", "redux toolkit")),
     "reactquery": ("React Query", ("tanstack query", "react-query", "리액트쿼리", "리액트 쿼리")),
     "zustand": ("Zustand", ("주스탄드",)),
+    "reacthookform": ("React Hook Form", ("리액트 훅 폼",)),
+    "axios": ("Axios", ("액시오스",)),
+    "npm": ("npm", ()),
+    "indexeddb": ("IndexedDB", ("indexed db", "인덱스드db")),
     "flutter": ("Flutter", ("플러터",)),
     "reactnative": ("React Native", ("rn", "리액트네이티브", "리액트 네이티브")),
     # --- 백엔드 ---
@@ -132,6 +136,9 @@ TECHNOLOGIES: dict[str, tuple[str, tuple[str, ...]]] = {
     # --- 테스트 / 협업 도구 ---
     "pytest": ("pytest", ("파이테스트",)),
     "jest": ("Jest", ("제스트",)),
+    "eslint": ("ESLint", ("이에스린트",)),
+    "webpagetest": ("WebPageTest", ()),
+    "chromedevtools": ("Chrome DevTools", ("devtools", "크롬 개발자 도구", "크롬 개발자도구")),
     "junit": ("JUnit", ("제이유닛",)),
     "selenium": ("Selenium", ("셀레니움",)),
     "playwright": ("Playwright", ("플레이라이트",)),
@@ -142,6 +149,39 @@ TECHNOLOGIES: dict[str, tuple[str, tuple[str, ...]]] = {
     "slack": ("Slack", ("슬랙",)),
     "figma": ("Figma", ("피그마",)),
 }
+
+# 기술 스택이 아닌 이름. 문서에 이름이 그대로 나와도 카드 기술과 프로젝트 stack에 넣지 않는다.
+# 파일·데이터 형식과 통신 방식·표준은 "무엇으로 만들었나"가 아니라 다루는 대상이라서다.
+# 판단이 갈리는 브라우저·OS(Safari, iOS)와 외부 서비스 이름은 넣지 않았다. 값은 정규화된 키다.
+NOT_TECHNOLOGIES: frozenset[str] = frozenset(
+    {
+        # 파일·데이터 형식
+        "pdf",
+        "csv",
+        "tsv",
+        "json",
+        "geojson",
+        "xml",
+        "jpeg",
+        "jpg",
+        "png",
+        "gif",
+        "xlsx",
+        "xls",
+        "docx",
+        "엑셀",
+        # 통신 방식·표준
+        "http",
+        "https",
+        "tcp",
+        "udp",
+        "ftp",
+        "sftp",
+        "sso",
+        "utf8",
+        "iso8601",
+    }
+)
 
 # 일반 단어와 겹쳐서 본문 속에서는 기술로 보기 어려운 이름.
 # 이름 하나를 정규화할 때(예: LLM이 뽑은 "Node")는 쓰지만,
