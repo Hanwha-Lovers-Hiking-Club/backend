@@ -9,6 +9,8 @@
 #
 # 입력은 그 경험의 근거(E1..)와 근거가 나온 문서의 첫 청크(머리말 H1..: 프로젝트명·부서 등)뿐이다.
 # 원문 전체를 주지 않는 것은 근거 밖 내용이 카드에 들어오는 통로를 줄이기 위해서다.
+# 기술(technologies)은 LLM에게 쓰게 하지 않는다. 짧은 인용만 보는 여기서는 코드 블록이나 다른 문단의
+# 기술명을 볼 수 없어서, 문서 전체를 보는 extract가 근거와 함께 뽑은 경험의 기술을 그대로 쓴다.
 # 경험끼리는 독립이라 병렬로 호출한다.
 import logging
 import re
@@ -79,6 +81,26 @@ class _Sources:
         }
         self.names = names
         self.experience = experience
+
+    def technologies(self) -> tuple[list[str], dict[str, list[CardEvidenceDraft]]]:
+        # extract가 근거와 함께 확인한 기술을 그대로 쓴다. 표기가 달라도 같은 기술이면 근거를 합친다
+        sources: dict[str, list[CardEvidenceDraft]] = {}
+        for tech in self.experience.technologies:
+            # 사전에 없는 기술은 normalize_technologies가 로그로 남긴다(aliases.py 참고)
+            tech_id = next(iter(normalize_technologies([tech.name])), None)
+            c = self.chunks.get(tech.chunk_id)
+            if not tech_id or c is None:
+                continue
+            sources.setdefault(tech_id, []).append(
+                CardEvidenceDraft(
+                    document_id=c["document_id"],
+                    location=self._locate(tech.quote, c),
+                    excerpt=tech.quote,
+                    chunk_id=c["id"],
+                    kind=f"technology:{tech.basis}",
+                )
+            )
+        return list(sources), sources
 
     def _locate(self, quote: str, chunk: Chunk) -> str | None:
         found = locate(quote, self.positions.get(str(chunk["document_id"]), []), chunk["location"])
@@ -206,6 +228,7 @@ def compose_one(
     project_date = _full_date(values["project_date"]) if values["project_date"] else None
     if project_date is None:
         field_sources.pop("project_date", None)
+    technologies, technology_sources = sources.technologies()
     draft = CardDraft(
         title=values["title"],
         summary=values["summary"],
@@ -216,12 +239,13 @@ def compose_one(
         rationale=values["rationale"],
         outcome=values["outcome"],
         lesson=values["lesson"],
-        technologies=normalize_technologies(c.technologies),
+        technologies=technologies,
         keywords=[k.strip() for k in c.keywords if k.strip()],
         department=values["department"],
         project_date=project_date,
         evidences=evidences,
         field_sources=field_sources,
+        technology_sources=technology_sources,
         experience_index=index,
     )
     return draft, None

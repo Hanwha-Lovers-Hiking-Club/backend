@@ -95,6 +95,8 @@ def render(folder: Path, state: dict, usage: dict, seconds: float) -> list[str]:
         lines.append(f"{i}. **{e.title}** — {', '.join(docs)}")
         for v in e.evidences:
             lines.append(f"   - [{v.kind}] {v.statement}")
+        for t in e.technologies:
+            lines.append(f"   - [기술:{t.basis}] {t.name} — {t.quote}")
 
     verified = state.get("verified_cards", [])
     lines += ["", "## 검증 결과", ""]

@@ -72,7 +72,7 @@ def test_only_recent_history_is_used():
 
 async def test_understand_intent_sends_prompt_and_conversation(monkeypatch):
     llm = FakeLLM()
-    monkeypatch.setattr(intent, "get_llm", lambda: llm)
+    monkeypatch.setattr(intent, "get_chat_llm", lambda: llm)
 
     result = await intent.understand_intent("그 다음 버전은?", [])
 

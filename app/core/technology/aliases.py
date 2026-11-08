@@ -16,8 +16,8 @@ TECHNOLOGIES: dict[str, tuple[str, tuple[str, ...]]] = {
     # --- 언어 ---
     "python": ("Python", ("파이썬",)),
     "java": ("Java", ("자바",)),
-    "javascript": ("JavaScript", ("js", "자바스크립트", "ecmascript", "es6")),
-    "typescript": ("TypeScript", ("ts", "타입스크립트")),
+    "javascript": ("JavaScript", ("js", "jsx", "자바스크립트", "ecmascript", "es6")),
+    "typescript": ("TypeScript", ("ts", "tsx", "타입스크립트")),
     "kotlin": ("Kotlin", ("코틀린",)),
     "swift": ("Swift", ("스위프트",)),
     "go": ("Go", ("golang", "고랭")),

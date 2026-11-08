@@ -5,7 +5,7 @@ from pathlib import Path
 
 from app.domains.chat.models import Intent
 from app.domains.chat.schemas import ChatMessage
-from app.domains.documents.pipeline.llm import get_llm
+from app.domains.documents.pipeline.llm import get_chat_llm
 
 _PROMPT = (Path(__file__).parent / "prompts" / "intent.md").read_text(encoding="utf-8")
 
@@ -32,5 +32,5 @@ def _format_conversation(message: str, history: list[ChatMessage]) -> str:
 
 
 async def understand_intent(message: str, history: list[ChatMessage]) -> Intent:
-    llm = get_llm().with_structured_output(Intent)
+    llm = get_chat_llm().with_structured_output(Intent)
     return await llm.ainvoke(f"{_PROMPT}{_format_conversation(message, history)}")

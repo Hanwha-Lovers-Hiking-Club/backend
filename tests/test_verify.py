@@ -9,6 +9,7 @@ from app.domains.documents.pipeline.models import (
     Experience,
     OmittedLimit,
     ReuseCheck,
+    TechnologyCheck,
 )
 from app.domains.documents.pipeline.nodes import verify as V
 
@@ -44,6 +45,7 @@ def _experience() -> Experience:
                 kind="result", statement="Safari 실패", chunk_id=_cid(2), quote=QUOTES["safari"][1]
             ),
         ],
+        technologies=[],
     )
 
 
@@ -119,9 +121,9 @@ REUSABLE = ReuseCheck(
 )
 
 
-def _checks(draft: CardDraft, omitted=(), reuse=REUSABLE, **bad) -> ClaimChecks:
+def _checks(draft: CardDraft, omitted=(), reuse=REUSABLE, tech=None, **bad) -> ClaimChecks:
     # 값이 있는 모든 필드를 supported(lesson은 lesson_within_scope)로 두고,
-    # bad에 준 필드만 그 판정으로 바꾼다
+    # bad에 준 필드만 그 판정으로 바꾼다. 기술은 K1..마다 supported, tech에 준 것만 그 판정으로
     checks = []
     for field in V._FIELDS:
         if V._value(draft, field):
@@ -135,7 +137,17 @@ def _checks(draft: CardDraft, omitted=(), reuse=REUSABLE, **bad) -> ClaimChecks:
                     judgement=bad.get(field, ok),
                 )
             )
-    return ClaimChecks(checks=checks, omitted_limits=list(omitted), reuse=reuse)
+    tech = tech or {}
+    technology_checks = [
+        TechnologyCheck(technology_id=f"K{i}", note="n", judgement=tech.get(t, "supported"))
+        for i, t in enumerate(draft.technologies, 1)
+    ]
+    return ClaimChecks(
+        checks=checks,
+        omitted_limits=list(omitted),
+        reuse=reuse,
+        technology_checks=technology_checks,
+    )
 
 
 class _LLM:
@@ -250,11 +262,11 @@ def test_unconfirmed_judgement_outside_outcome_is_a_problem(monkeypatch):
 
 def test_bad_conditional_field_is_cleared_and_unused_evidence_is_dropped(monkeypatch):
     draft = _draft(title="조합 이벤트 처리", summary="요약", lesson="교훈")
-    checks = _checks(draft, outcome="overstated", technologies="not_in_evidence")
+    checks = _checks(draft, outcome="overstated")
     result, _ = _run(monkeypatch, {draft.title: checks}, draft)
     card = result["verified_cards"][0]
-    assert card.verification.cleared_fields == ["outcome", "technologies"]
-    assert card.draft.outcome is None and card.draft.technologies == []
+    assert card.verification.cleared_fields == ["outcome"]
+    assert card.draft.outcome is None
     assert (card.verification.verdict, card.verification.status) == ("passed", "active")
     # 남은 필드가 인용하는 근거만 남고 번호가 다시 매겨진다
     for field, idx in card.draft.field_sources.items():
@@ -285,6 +297,7 @@ def test_missing_judgement_or_failed_call_is_incomplete_not_held(monkeypatch):
         checks=[c for c in _checks(missing).checks if c.field != "summary"],
         omitted_limits=[],
         reuse=REUSABLE,
+        technology_checks=_checks(missing).technology_checks,
     )
     results = {"a": checks, "b": RuntimeError("terra down"), "c": _checks(ok)}
     result, _ = _run(monkeypatch, results, missing, failed, ok)
@@ -313,3 +326,84 @@ def test_unconfirmed_result_keeps_the_outcome_and_is_active(monkeypatch):
     card = result["verified_cards"][0]
     assert (card.verification.verdict, card.verification.status) == ("passed", "active")
     assert card.draft.outcome and card.verification.cleared_fields == []
+
+
+def _tech_draft(**overrides) -> CardDraft:
+    # 기술 3개. sql 근거는 경험 근거와 다른 청크(코드 블록)에 있다
+    def source(i: int, excerpt: str, basis: str) -> CardEvidenceDraft:
+        return CardEvidenceDraft(
+            document_id=DOC,
+            location=None,
+            excerpt=excerpt,
+            chunk_id=_cid(i),
+            kind=f"technology:{basis}",
+        )
+
+    return _draft(
+        technologies=["sql", "chrome", "createticket"],
+        technology_sources={
+            "sql": [source(3, "UPDATE inventory SET remaining = remaining - 1", "syntax")],
+            "chrome": [source(1, "Chrome에서", "name")],
+            "createticket": [source(1, "Chrome에서", "name")],
+        },
+        **overrides,
+    )
+
+
+def _tech_state(*drafts) -> dict:
+    state = _state(*drafts)
+    state["chunks"].append(
+        {
+            "id": _cid(3),
+            "document_id": DOC,
+            "index": 3,
+            "text": "```sql\nUPDATE inventory SET remaining = remaining - 1\n```",
+            "location": "",
+        }
+    )
+    return state
+
+
+def test_verifier_sees_each_technology_with_its_source_chunk(monkeypatch):
+    draft = _tech_draft()
+    llm = _LLM({draft.title: _checks(draft)})
+    monkeypatch.setattr(V, "get_llm", lambda: llm)
+    V.verify(_tech_state(draft))
+    message = llm.messages[0]
+    assert "## 사용 기술" in message and "K1: SQL" in message
+    assert "근거(syntax, 시험.xlsx): UPDATE inventory" in message
+    assert "```sql" in message  # 경험 근거에 없는 기술 근거 청크도 원문으로 보여 준다
+    assert "technologies:" not in message.split("## 사용 기술")[0]  # 주장 판정 대상이 아니다
+
+
+def test_only_the_problem_technologies_are_dropped_and_the_card_verdict_is_unchanged(monkeypatch):
+    draft = _tech_draft()
+    checks = _checks(
+        draft, tech={"chrome": "rejected_as_adopted", "createticket": "not_a_technology"}
+    )
+    llm = _LLM({draft.title: checks})
+    monkeypatch.setattr(V, "get_llm", lambda: llm)
+    card = V.verify(_tech_state(draft))["verified_cards"][0]
+    assert card.draft.technologies == ["sql"]
+    assert list(card.draft.technology_sources) == ["sql"]
+    v = card.verification
+    assert (v.verdict, v.status, v.cleared_fields) == ("passed", "active", [])
+    assert any("chrome rejected_as_adopted" in r for r in v.reasons)
+    assert any("createticket not_a_technology" in r for r in v.reasons)
+
+
+def test_a_technology_without_judgement_is_dropped_not_the_whole_list(monkeypatch):
+    draft = _tech_draft()
+    checks = _checks(draft)
+    # K2(chrome) 판정을 빼고, K1(sql) 판정을 두 번 넣는다(첫 판정만 본다)
+    checks.technology_checks = [
+        checks.technology_checks[0],
+        TechnologyCheck(technology_id="K1", note="n", judgement="not_in_evidence"),
+        checks.technology_checks[2],
+    ]
+    llm = _LLM({draft.title: checks})
+    monkeypatch.setattr(V, "get_llm", lambda: llm)
+    card = V.verify(_tech_state(draft))["verified_cards"][0]
+    assert card.draft.technologies == ["sql", "createticket"]
+    assert card.verification.verdict == "passed"
+    assert any("chrome 판정 누락" in r for r in card.verification.reasons)

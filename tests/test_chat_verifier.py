@@ -66,7 +66,7 @@ def retrieval(candidates):
 
 
 def _use(monkeypatch, llm):
-    monkeypatch.setattr(verifier, "get_llm", lambda: llm)
+    monkeypatch.setattr(verifier, "get_chat_llm", lambda: llm)
 
 
 async def test_keeps_only_relevant_chunks_and_cards_in_search_order(monkeypatch, retrieval):
@@ -248,7 +248,7 @@ async def test_nothing_found_skips_llm_and_is_not_answerable(monkeypatch):
     def forbidden():
         raise AssertionError("후보가 없으면 LLM을 부르면 안 된다")
 
-    monkeypatch.setattr(verifier, "get_llm", forbidden)
+    monkeypatch.setattr(verifier, "get_chat_llm", forbidden)
 
     result = await verifier.verify("질문", Retrieval(cards=[], chunks=[]))
 

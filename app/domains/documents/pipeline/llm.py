@@ -10,9 +10,14 @@ from app.config import settings
 from app.domains.documents.pipeline.observe import LlmUsageCallback
 from app.domains.documents.pipeline.retry import retry_sync
 
-# 모델은 비교 실험으로 정했다: 같은 입력에서 gpt-4.1-mini/gpt-4.1은
+# 문서 파이프라인 모델은 비교 실험으로 정했다: 같은 입력에서 gpt-4.1-mini/gpt-4.1은
 # 문서 하나에만 있는 경험을 자주 빠뜨렸고, gpt-5.6-terra는 빠뜨림·잘못 묶기·지어낸 인용이 없었다.
-MODEL_NAME = "gpt-5.6-terra"
+# gpt-6.1-terra는 같은 문서 dry-run에서 경험·카드 수와 판정이 같고 지어낸 인용이 더 적었으며,
+# 단가가 절반 이하다(2026-11). 교훈 문장이 약해지는 경향은 draft_card 프롬프트로 보완했다
+MODEL_NAME = "gpt-6.1-terra"
+# 챗봇(chat 도메인)은 파이프라인 모델을 바꿀 때 함께 바뀌지 않도록 따로 둔다.
+# 챗봇 답변 품질은 이 모델로만 확인했다
+CHAT_MODEL_NAME = "gpt-5.6-terra"
 # 추론 강도. low에서 추론 토큰은 호출당 수백 개 수준이었다(실험 실측)
 REASONING_EFFORT = "low"
 # 한 호출이 멈춘 채 응답이 없으면 job 전체가 멈춘다. SDK 기본값(10분)은 너무 길어서 줄인다.
@@ -21,16 +26,27 @@ REASONING_EFFORT = "low"
 LLM_TIMEOUT_SECONDS = 120
 
 
-@lru_cache
-def get_llm() -> BaseChatModel:
+def _chat_model(model: str) -> BaseChatModel:
     return ChatOpenAI(
-        model=MODEL_NAME,
+        model=model,
         api_key=settings.OPENAI_API_KEY,
         # 추론 모델은 temperature를 고정할 수 없어서 넘기지 않는다
         reasoning_effort=REASONING_EFFORT,
         timeout=LLM_TIMEOUT_SECONDS,
         callbacks=[LlmUsageCallback()],
     )
+
+
+@lru_cache
+def get_llm() -> BaseChatModel:
+    # 문서 파이프라인(extract, draft_card, verify, project_meta)용
+    return _chat_model(MODEL_NAME)
+
+
+@lru_cache
+def get_chat_llm() -> BaseChatModel:
+    # 챗봇(chat 도메인)용
+    return _chat_model(CHAT_MODEL_NAME)
 
 
 def invoke_with_retry(llm, messages):

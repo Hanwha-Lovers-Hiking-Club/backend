@@ -12,13 +12,20 @@
 #     이 규칙으로 걸러졌다. 기각한 가설은 원인을 못 찾은 조사에서도 진단 교훈의 근거가 되어 남긴다.
 import logging
 from pathlib import Path
+from typing import TypeVar
 
 import tiktoken
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.logging import summarize_error
+from app.core.technology import find_technologies, normalize_technology
 from app.domains.documents.pipeline.llm import get_llm, invoke_with_retry
-from app.domains.documents.pipeline.models import Evidence, Experience, Experiences
+from app.domains.documents.pipeline.models import (
+    Evidence,
+    Experience,
+    Experiences,
+    TechnologyUse,
+)
 from app.domains.documents.pipeline.project_meta import describe_project
 from app.domains.documents.pipeline.quotes import plain, quote_pieces
 from app.domains.documents.pipeline.state import Chunk, IngestionState
@@ -34,6 +41,8 @@ MAX_INPUT_TOKENS = 200_000
 
 # 이 중 하나도 없으면 실제로 일어난 일(원인 확인, 결정, 조치, 결과, 가설 기각)이 없는 경험이다
 _FACT_KINDS = {"cause", "decision", "action", "result", "rejected_hypothesis"}
+
+E = TypeVar("E", Evidence, TechnologyUse)
 
 
 def _aliases(state: IngestionState) -> tuple[dict[str, Chunk], dict[str, str]]:
@@ -56,9 +65,10 @@ def _format(chunks: dict[str, Chunk], names: dict[str, str]) -> str:
     return "\n".join(out)
 
 
-def _ground(evidence: Evidence, chunks: dict[str, Chunk]) -> Evidence | None:
+def _ground(evidence: E, chunks: dict[str, Chunk]) -> E | None:
     # 인용이 원문에 있으면 chunk_id를 실제 청크 id로 바꿔 돌려주고, 없으면 None.
-    # 모델이 청크 id를 잘못 적은 경우(같은 문서의 다른 청크에 인용이 있음)는 id를 고친다
+    # 모델이 청크 id를 잘못 적은 경우(같은 문서의 다른 청크에 인용이 있음)는 id를 고친다.
+    # 경험 근거(Evidence)와 기술 근거(TechnologyUse)가 같은 규칙을 쓴다
     doc = evidence.chunk_id.split(":")[0]
     doc_chunks = [(alias, c) for alias, c in chunks.items() if alias.split(":")[0] == doc]
     pieces = quote_pieces(evidence.quote)
@@ -73,6 +83,59 @@ def _ground(evidence: Evidence, chunks: dict[str, Chunk]) -> Evidence | None:
     return evidence.model_copy(update={"chunk_id": chunk["id"]})
 
 
+def _names_technology(name: str, quote: str) -> bool:
+    # 인용에 그 기술의 이름(사전의 별칭 포함)이 있는지.
+    # "웹소켓"으로 쓴 원문도 WebSocket으로 인정한다
+    if plain(name).casefold() in plain(quote).casefold():
+        return True
+    return normalize_technology(name) in find_technologies(quote)
+
+
+def _ground_technology(tech: TechnologyUse, chunks: dict[str, Chunk]) -> TechnologyUse | None:
+    # 이름이나 코드로 식별할 수 있는 근거만 남긴다. 판단이 필요한 부분(채택 여부, 기술인지)은
+    # verify가 원문을 보고 판정한다
+    name = tech.name.strip()
+    if not name:
+        return None
+    grounded = _ground(tech.model_copy(update={"name": name}), chunks)
+    if grounded is None:
+        return None
+    if tech.basis in ("name", "import") and not _names_technology(name, tech.quote):
+        return None
+    if tech.basis == "code_language" and not _has_fence(tech.quote, chunks, grounded.chunk_id):
+        return None
+    return grounded
+
+
+def _has_fence(quote: str, chunks: dict[str, Chunk], chunk_id: str) -> bool:
+    # 비교 규칙(plain)은 기호를 지워서 "```python"이 "python"이 된다.
+    # 코드 블록 언어 표시는 원문 그대로(공백만 맞춰) 찾는다
+    fence = " ".join(quote.split()).casefold()
+    chunk = next((c for c in chunks.values() if c["id"] == chunk_id), None)
+    if chunk is None or not fence.startswith("```"):
+        return False
+    return fence in " ".join(chunk["text"].split()).casefold()
+
+
+def _ground_technologies(experience: Experience, chunks: dict[str, Chunk]) -> list[TechnologyUse]:
+    kept: list[TechnologyUse] = []
+    seen: set[str | None] = set()
+    for tech in experience.technologies:
+        grounded = _ground_technology(tech, chunks)
+        key = normalize_technology(tech.name)
+        if grounded is None:
+            logger.info(
+                "extract: 근거로 확인되지 않은 기술 제거 %r(%s) (%s)",
+                tech.name,
+                tech.basis,
+                experience.title,
+            )
+        elif key not in seen:
+            seen.add(key)
+            kept.append(grounded)
+    return kept
+
+
 def _keep(experience: Experience, chunks: dict[str, Chunk]) -> Experience | None:
     evidences = [e for e in (_ground(e, chunks) for e in experience.evidences) if e]
     dropped = len(experience.evidences) - len(evidences)
@@ -81,7 +144,8 @@ def _keep(experience: Experience, chunks: dict[str, Chunk]) -> Experience | None
     if not {e.kind for e in evidences} & _FACT_KINDS:
         logger.info("extract: 계획·관찰 근거뿐이라 경험 제외 (%s)", experience.title)
         return None
-    return experience.model_copy(update={"evidences": evidences})
+    technologies = _ground_technologies(experience, chunks)
+    return experience.model_copy(update={"evidences": evidences, "technologies": technologies})
 
 
 def _ground_project_name(name: str | None, chunks: dict[str, Chunk]) -> str | None:

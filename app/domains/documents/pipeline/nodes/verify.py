@@ -14,6 +14,8 @@
 #   조건부·선택 필드에 문제 -> 그 필드를 비운다. 비운 뒤 조건부 필드가 모두 비면 excluded
 #   필수 필드에 문제이거나 결론을 바꾸는 한계를 빠뜨림 -> held(자동 재작성 없이 사람 검토)
 #   호출 실패·판정 누락 -> incomplete(저장 안 함, job 경고)
+#   기술 -> 기술마다(K1..) 판정을 받아 문제가 있거나 판정이 빠진 기술만 뺀다.
+#           카드 판정에는 영향이 없다
 # 공개 상태: 카드는 확정된 정답이 아니라 "이 조건에서 이렇게 했고 여기까지 확인했다"는 경험
 # 지식이다. 그래서 효과 확인 여부가 아니라 재사용 가치로 정한다. passed이고 적용 상황·행동·확인
 # 범위가 있으면 결과가 없거나 미확정이어도 active, 그 밖의 passed와 held는 draft.
@@ -24,6 +26,7 @@ from pathlib import Path
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.logging import summarize_error
+from app.core.technology import display_name
 from app.domains.documents.pipeline.llm import get_llm, invoke_with_retry
 from app.domains.documents.pipeline.models import (
     CardDraft,
@@ -32,6 +35,7 @@ from app.domains.documents.pipeline.models import (
     Experience,
     OmittedLimit,
     ReuseCheck,
+    TechnologyCheck,
     VerificationResult,
     VerifiedCard,
 )
@@ -47,7 +51,8 @@ MAX_WORKERS = 4
 _MAX_CHUNK_CHARS = 30_000
 _REQUIRED = ("title", "summary", "context", "lesson")
 _CONDITIONAL = ("problem", "cause", "approach", "rationale", "outcome")
-# 검증 메시지에 보여 주고 판정을 받는 필드(카드 필드 순서 그대로)
+# 검증 메시지에 보여 주고 주장 단위로 판정을 받는 필드(카드 필드 순서 그대로).
+# technologies는 항목이라 따로 기술마다 판정한다(technology_checks)
 _FIELDS = (
     "title",
     "summary",
@@ -58,7 +63,6 @@ _FIELDS = (
     "rationale",
     "outcome",
     "lesson",
-    "technologies",
     "department",
     "project_date",
 )
@@ -71,8 +75,6 @@ _NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 def _value(draft: CardDraft, field: str) -> str | None:
     value = getattr(draft, field)
-    if field == "technologies":
-        return ", ".join(value) or None
     if field == "project_date":
         return value.isoformat() if value else None
     return value or None
@@ -102,6 +104,8 @@ class _Input:
                 label[key] = f"H{len(self.headers) + 1}"
                 self.headers.append((label[key], ev.chunk_id, ev.excerpt or ""))
             self.card_labels.append(label[key])
+        # 기술 id(K1..) -> 표준 ID. 판정은 이 id로 돌려받는다
+        self.technology_ids = {f"K{i}": t for i, t in enumerate(draft.technologies, 1)}
 
     def message(self) -> str:
         d = self.draft
@@ -113,6 +117,17 @@ class _Input:
                     dict.fromkeys(self.card_labels[i] for i in d.field_sources.get(field, []))
                 )
                 lines.append(f"{field}: {value}  [근거: {refs or '없음'}]")
+
+        lines += ["", "## 사용 기술"]
+        if not self.technology_ids:
+            lines.append("(없음)")
+        for kid, tech in self.technology_ids.items():
+            lines.append(f"{kid}: {display_name(tech)}")
+            for ev in d.technology_sources.get(tech, []):
+                c = self.chunks.get(ev.chunk_id)
+                where = self.names[str(c["document_id"])] if c else "?"
+                basis = (ev.kind or "").removeprefix("technology:")
+                lines.append(f"  근거({basis}, {where}): {ev.excerpt}")
 
         lines += ["", "## 경험의 근거 전체"]
         for i, e in enumerate(self.evidences, 1):
@@ -129,8 +144,14 @@ class _Input:
             lines.append(f"{hid} [문서 머리말] ({where})\n  원문: {excerpt}")
 
         lines += ["", "## 청크 원문"]
+        # 기술 근거는 경험 근거와 다른 청크(코드 블록 등)에 있을 수 있어서 그 청크도 보여 준다
+        technology_chunks = [
+            ev.chunk_id for sources in d.technology_sources.values() for ev in sources
+        ]
         chunk_ids = dict.fromkeys(
-            [e.chunk_id for e in self.evidences] + [c for _, c, _ in self.headers]
+            [e.chunk_id for e in self.evidences]
+            + [c for _, c, _ in self.headers]
+            + technology_chunks
         )
         source, used = [], 0
         for chunk_id in chunk_ids:
@@ -176,22 +197,52 @@ def _is_reusable(reuse: ReuseCheck) -> bool:
     return reuse.kind != "none" and all(part.strip() for part in parts)
 
 
-def _prune(draft: CardDraft, cleared: list[str]) -> CardDraft:
-    # 문제 필드를 비우고, 남은 필드가 인용하지 않는 근거는 빼서 근거 번호를 다시 매긴다
-    update: dict = {f: ([] if f == "technologies" else None) for f in cleared}
+def _prune(draft: CardDraft, cleared: list[str], dropped_technologies: set[str]) -> CardDraft:
+    # 문제 필드를 비우고, 남은 필드가 인용하지 않는 근거는 빼서 근거 번호를 다시 매긴다.
+    # 기술은 문제가 있는 기술만 뺀다(목록 전체를 비우지 않는다)
+    update: dict = {f: None for f in cleared}
     keep = {f: idx for f, idx in draft.field_sources.items() if f not in cleared}
     used = sorted({i for idx in keep.values() for i in idx})
     remap = {old: new for new, old in enumerate(used)}
     update["evidences"] = [draft.evidences[i] for i in used]
     update["field_sources"] = {f: [remap[i] for i in idx] for f, idx in keep.items()}
+    update["technologies"] = [t for t in draft.technologies if t not in dropped_technologies]
+    update["technology_sources"] = {
+        t: s for t, s in draft.technology_sources.items() if t not in dropped_technologies
+    }
     return draft.model_copy(update=update)
+
+
+def _technology_problems(
+    checks: list[TechnologyCheck], technology_ids: dict[str, str]
+) -> tuple[set[str], list[str]]:
+    # (뺄 기술의 표준 ID, 사유). 판정이 빠진 기술도 확인되지 않은 것이라 뺀다.
+    # 같은 기술을 두 번 판정했으면 첫 판정만 본다
+    first: dict[str, TechnologyCheck] = {}
+    for check in checks:
+        first.setdefault(check.technology_id, check)
+    dropped, reasons = set(), []
+    for kid, tech in technology_ids.items():
+        check = first.get(kid)
+        if check is None:
+            dropped.add(tech)
+            reasons.append(f"technologies: {tech} 판정 누락")
+        elif check.judgement != "supported":
+            dropped.add(tech)
+            reasons.append(f"technologies: {tech} {check.judgement} ({check.note})")
+    return dropped, reasons
 
 
 def _omitted(limits: list[OmittedLimit], result_ids: set[str]) -> list[str]:
     return [o.limit for o in limits if o.evidence_id in result_ids and o.limit.strip()]
 
 
-def _decide(draft: CardDraft, result: ClaimChecks, result_ids: set[str]) -> VerifiedCard:
+def _decide(
+    draft: CardDraft,
+    result: ClaimChecks,
+    result_ids: set[str],
+    technology_ids: dict[str, str] | None = None,
+) -> VerifiedCard:
     checks = result.checks
     present = [f for f in _FIELDS if _value(draft, f)]
     missing = [f for f in present if f not in {c.field for c in checks}]
@@ -210,7 +261,12 @@ def _decide(draft: CardDraft, result: ClaimChecks, result_ids: set[str]) -> Veri
     reasons += [f"누락: {limit}" for limit in omitted]
     cleared = list(dict.fromkeys(c.field for c in problems if c.field not in _REQUIRED))
     held = bool(omitted) or any(c.field in _REQUIRED for c in problems)
-    pruned = _prune(draft, cleared)
+    # 기술 문제는 그 기술만 빼고 카드 판정(held/excluded)에는 반영하지 않는다
+    dropped, technology_reasons = _technology_problems(
+        result.technology_checks, technology_ids or {}
+    )
+    reasons += technology_reasons
+    pruned = _prune(draft, cleared, dropped)
 
     if not any(getattr(pruned, f) for f in _CONDITIONAL):
         verdict, status = "excluded", None
@@ -235,7 +291,7 @@ def verify_one(
     source = _Input(draft, experience, chunks, names)
     messages = [SystemMessage(_PROMPT), HumanMessage(source.message())]
     result: ClaimChecks = invoke_with_retry(llm, messages)
-    return _decide(draft, result, source.result_ids)
+    return _decide(draft, result, source.result_ids, source.technology_ids)
 
 
 def verify(state: IngestionState) -> dict:

@@ -2,7 +2,12 @@ from uuid import uuid4
 
 import pytest
 
-from app.domains.documents.pipeline.models import Evidence, Experience, Experiences
+from app.domains.documents.pipeline.models import (
+    Evidence,
+    Experience,
+    Experiences,
+    TechnologyUse,
+)
 from app.domains.documents.pipeline.nodes import extract as EX
 
 DOC1, DOC2 = uuid4(), uuid4()
@@ -18,6 +23,8 @@ def _state() -> dict:
     texts = {
         (DOC1, 0): "주문 두 건이 동시에 할당됐다. 처음에는 메시지 중복을 의심했다.",
         (DOC1, 1): "원인은 읽기와 쓰기가 분리된 경쟁 조건이다. 재고 행 잠금을 채택했다.",
+        (DOC1, 2): "```sql\nSELECT available FROM stock WHERE sku = :sku FOR UPDATE;\n```\n"
+        "할당 결과는 웹소켓으로 화면에 알린다. useState로 선택 상태를 둔다.",
         (DOC2, 0): "| 시험 | 결과 |\n|---|---|\n| 동시 할당 100회 | 초과 할당 0건 |",
     }
     return {
@@ -66,8 +73,18 @@ def _run(monkeypatch, *experiences, error=None, project_name=None) -> tuple[dict
     return EX.extract(_state()), llm
 
 
-def _exp(*evidences) -> Experience:
-    return Experience(title="t", summary="s", link_hints=[], evidences=list(evidences))
+def _exp(*evidences, technologies=()) -> Experience:
+    return Experience(
+        title="t",
+        summary="s",
+        link_hints=[],
+        evidences=list(evidences),
+        technologies=list(technologies),
+    )
+
+
+def _tech(name, basis, chunk_id, quote) -> TechnologyUse:
+    return TechnologyUse(name=name, basis=basis, chunk_id=chunk_id, quote=quote)
 
 
 def test_prompt_uses_short_aliases_and_results_map_back_to_real_chunk_ids(monkeypatch):
@@ -166,3 +183,29 @@ def test_project_meta_is_returned_with_experiences(monkeypatch):
 def test_project_name_can_be_absent(monkeypatch):
     result, _ = _run(monkeypatch, project_name=None)
     assert result["project_name"] is None
+
+
+def test_technologies_are_kept_only_with_an_identifying_source(monkeypatch):
+    decision = _ev("decision", "D1:1", "재고 행 잠금을 채택했다.")
+    technologies = [
+        # 코드 블록 언어 표시: 원문 그대로 있어야 한다. 청크 id가 틀려도 인용이 있는 청크로 고친다
+        _tech("SQL", "code_language", "D1:0", "```sql"),
+        # 이름: 한글 표기("웹소켓")도 사전 별칭으로 인정한다
+        _tech("WebSocket", "name", "D1:2", "할당 결과는 웹소켓으로 화면에 알린다."),
+        # 이름 근거인데 인용에 그 기술 이름이 없다(useState만 보고 짐작)
+        _tech("React", "name", "D1:2", "useState로 선택 상태를 둔다."),
+        # 원문에 없는 인용
+        _tech("Redis", "name", "D1:2", "Redis 분산 락을 썼다."),
+        # 코드 블록 표시가 아닌 인용을 code_language 근거로 댔다
+        _tech("Python", "code_language", "D1:2", "할당 결과는 웹소켓으로 화면에 알린다."),
+        # 같은 기술은 한 번만 남긴다
+        _tech("websocket", "name", "D1:2", "할당 결과는 웹소켓으로 화면에 알린다."),
+        _tech("SQL", "syntax", "D1:2", "SELECT available FROM stock WHERE sku = :sku FOR UPDATE;"),
+    ]
+    result, _ = _run(monkeypatch, _exp(decision, technologies=technologies))
+    [experience] = result["experiences"]
+    assert [(t.name, t.basis) for t in experience.technologies] == [
+        ("SQL", "code_language"),
+        ("WebSocket", "name"),
+    ]
+    assert [t.chunk_id for t in experience.technologies] == [f"{DOC1}:2", f"{DOC1}:2"]
