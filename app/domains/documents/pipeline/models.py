@@ -29,6 +29,23 @@ class Evidence(BaseModel):
     quote: str
 
 
+# 원문에서 기술을 확인한 방식. 이름이나 코드로 식별할 수 있는 것만 인정한다
+# (컴포넌트 이름·패턴에서 미루어 짐작한 기술은 받지 않는다)
+#   name: 원문에 기술 이름이 그대로 있다
+#   import: import·require·의존성 선언에 기술 이름이 있다
+#   code_language: 코드 블록의 언어 표시(```python 등)
+#   syntax: 그 기술에만 있는 문법(CREATE TABLE 등의 SQL 문장 등)
+TechnologyBasis = Literal["name", "import", "code_language", "syntax"]
+
+
+# 경험에서 실제로 사용한 기술 하나와 그 근거. chunk_id는 Evidence와 같은 규칙으로 바뀐다
+class TechnologyUse(BaseModel):
+    name: str
+    basis: TechnologyBasis
+    chunk_id: str
+    quote: str
+
+
 # extract 노드의 출력 타입. state.IngestionState.experiences에 쌓인다
 class Experience(BaseModel):
     title: str
@@ -36,6 +53,9 @@ class Experience(BaseModel):
     # 지금은 쓰는 곳이 없다. 검증한 스키마를 바꾸지 않으려고 남겨 둔다
     link_hints: list[str]
     evidences: list[Evidence]
+    # 경험 추출 결과가 달라지지 않도록 evidences 뒤에 둔다.
+    # 문서 전체를 보는 단계는 extract뿐이라 여기서 뽑는다
+    technologies: list[TechnologyUse]
 
 
 # extract 노드의 LLM structured output 루트 타입. 리스트를 바로 루트로 못 받아서 감싸는 래퍼
@@ -94,7 +114,7 @@ class CardComposition(BaseModel):
     rationale: OptionalSourcedText
     outcome: OptionalSourcedText
     lesson: SourcedText
-    technologies: list[str]
+    # 기술은 여기서 쓰지 않는다. extract가 근거와 함께 뽑은 경험의 기술을 draft_card가 그대로 쓴다
     keywords: list[str]
     department: OptionalSourcedText
     # 원문의 날짜 표현 그대로. 연-월-일이 모두 있고 원문에 있을 때만 draft_card가 date로 바꾼다
@@ -121,6 +141,10 @@ class CardDraft(BaseModel):
     # 필드 이름 -> 그 필드를 뒷받침하는 evidences의 인덱스. 검증 노드가 필드별로 원문을 대조한다.
     # DB에는 저장하지 않는다
     field_sources: dict[str, list[int]] = {}
+    # 기술(technologies의 표준 ID) -> 그 기술을 확인한 원문 근거. 검증 노드가 기술마다 대조한다.
+    # 카드 근거(evidences)와 따로 둔다: 코드 블록 표시 같은 기술 근거는 화면의 근거 문서로 보여 줄
+    # 내용이 아니다. DB에는 저장하지 않는다
+    technology_sources: dict[str, list[CardEvidenceDraft]] = {}
     # 이 카드를 만든 경험의 state.experiences 인덱스. 검증 노드가 경험의 근거 전체를 보려고 쓴다
     experience_index: int | None = None
 
@@ -167,10 +191,29 @@ class OmittedLimit(BaseModel):
     limit: str
 
 
+# 기술은 주장 문장이 아니라 항목이라 따로 판정한다. 기술마다 id(K1..)로 판정해야 어느 기술을 뺄지
+# 정할 수 있고, 판정이 빠진 기술도 찾을 수 있다
+TechnologyJudgement = Literal[
+    "supported",
+    "rejected_as_adopted",
+    "not_in_evidence",
+    "inferred_only",
+    "not_a_technology",
+]
+
+
+class TechnologyCheck(BaseModel):
+    technology_id: str
+    note: str
+    judgement: TechnologyJudgement
+
+
 class ClaimChecks(BaseModel):
     checks: list[ClaimCheck]
     omitted_limits: list[OmittedLimit]
     reuse: ReuseCheck
+    # 기존 판정 결과가 달라지지 않도록 맨 뒤에 둔다
+    technology_checks: list[TechnologyCheck]
 
 
 # 카드 검증 결과. 검증 판정(verdict)과 공개 상태(status)는 따로 기록한다

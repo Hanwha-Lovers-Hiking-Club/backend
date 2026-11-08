@@ -7,6 +7,7 @@ from app.domains.documents.pipeline.models import (
     Experience,
     OptionalSourcedText,
     SourcedText,
+    TechnologyUse,
 )
 from app.domains.documents.pipeline.nodes import draft_card as DC
 
@@ -44,7 +45,7 @@ def _state(*experiences) -> dict:
     }
 
 
-def _experience(title="중복 지급") -> Experience:
+def _experience(title="중복 지급", technologies=()) -> Experience:
     return Experience(
         title=title,
         summary="s",
@@ -69,6 +70,7 @@ def _experience(title="중복 지급") -> Experience:
                 quote="배포 후 5회 배치에서 중복 0건.",
             ),
         ],
+        technologies=list(technologies),
     )
 
 
@@ -93,7 +95,6 @@ def _composition(**overrides) -> CardComposition:
         rationale=_o(),
         outcome=_o(["E3", "E1"], "배포 후 5회 배치에서 중복 0건"),
         lesson=_s(["E2", "E3"], "교훈"),
-        technologies=[],
         keywords=["데이터 정합성"],
         department=_o(["H1"], "재무팀"),  # 머리말에 없는 값
         project_date=_o(["E1"], "2026-08-12"),
@@ -239,3 +240,27 @@ def test_value_from_header_cites_the_line_it_came_from(monkeypatch):
     draft = result["card_drafts"][0]
     assert draft.department == "로컬픽 정산"
     assert draft.evidences[draft.field_sources["department"][0]].excerpt == "프로젝트: 로컬픽 정산"
+
+
+def test_technologies_come_from_the_experience_with_their_sources(monkeypatch):
+    # LLM이 아니라 extract가 근거와 함께 확인한 기술을 쓴다.
+    # 표기가 달라도 같은 기술이면 근거를 합친다
+    technologies = [
+        TechnologyUse(name="PostgreSQL", basis="name", chunk_id=f"{DOC2}:1", quote="DB 스케줄러"),
+        TechnologyUse(name="postgres", basis="name", chunk_id=f"{DOC1}:1", quote="두 pod가"),
+        TechnologyUse(name="Kubernetes", basis="name", chunk_id=f"{DOC1}:1", quote="두 pod가"),
+        TechnologyUse(name="Redis", basis="name", chunk_id="없는 청크", quote="Redis"),
+    ]
+    result, llm = _run(
+        monkeypatch, {"중복 지급": _composition()}, _experience(technologies=technologies)
+    )
+    [draft] = result["card_drafts"]
+    assert draft.technologies == ["postgresql", "kubernetes"]
+    assert [e.chunk_id for e in draft.technology_sources["postgresql"]] == [
+        f"{DOC2}:1",
+        f"{DOC1}:1",
+    ]
+    assert draft.technology_sources["kubernetes"][0].kind == "technology:name"
+    # 기술 근거는 카드 근거(화면의 근거 문서)에 섞이지 않는다
+    assert "두 pod가" not in [e.excerpt for e in draft.evidences]
+    assert "technologies" not in llm.messages[0]
