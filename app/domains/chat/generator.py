@@ -9,7 +9,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from app.domains.chat.card_context import format_cards, format_chunks
 from app.domains.chat.models import ChunkCandidate, IntentKind
 from app.domains.chat.schemas import ChatMessage
-from app.domains.documents.pipeline.llm import get_llm
+from app.domains.documents.pipeline.llm import get_chat_llm
 from app.domains.knowledge_cards.schemas import KnowledgeCard
 
 _SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "answer.md").read_text(encoding="utf-8")
@@ -115,6 +115,6 @@ async def generate_answer(
         return
 
     messages = _build_messages(message, history, kind, chunks, cards, conflicts)
-    async for part in get_llm().astream(messages):
+    async for part in get_chat_llm().astream(messages):
         if part.content:
             yield part.content

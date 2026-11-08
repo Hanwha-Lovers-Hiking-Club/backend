@@ -20,7 +20,7 @@ from app.domains.chat.models import (
     VerificationOutput,
     VerifiedCandidate,
 )
-from app.domains.documents.pipeline.llm import get_llm
+from app.domains.documents.pipeline.llm import get_chat_llm
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ async def verify(question: str, retrieval: Retrieval) -> Verification:
 
     try:
         output = await asyncio.wait_for(
-            get_llm()
+            get_chat_llm()
             .with_structured_output(VerificationOutput)
             .ainvoke(_build_prompt(question, retrieval)),
             timeout=VERIFY_TIMEOUT_SECONDS,

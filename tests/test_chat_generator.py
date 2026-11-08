@@ -44,7 +44,7 @@ def _chunk(
 
 
 def _use(monkeypatch, llm):
-    monkeypatch.setattr(generator, "get_llm", lambda: llm)
+    monkeypatch.setattr(generator, "get_chat_llm", lambda: llm)
 
 
 async def test_streams_non_empty_chunks(monkeypatch, make_card):
@@ -156,7 +156,7 @@ async def test_no_data_answers_with_notice_without_calling_llm(monkeypatch):
     def forbidden():
         raise AssertionError("자료가 없으면 LLM을 부르면 안 된다")
 
-    monkeypatch.setattr(generator, "get_llm", forbidden)
+    monkeypatch.setattr(generator, "get_chat_llm", forbidden)
 
     tokens = await _collect(generator.generate_answer("질문", [], "general", [], chunks=[]))
 
