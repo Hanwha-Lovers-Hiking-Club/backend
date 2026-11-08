@@ -152,7 +152,8 @@ TECHNOLOGIES: dict[str, tuple[str, tuple[str, ...]]] = {
 
 # 기술 스택이 아닌 이름. 문서에 이름이 그대로 나와도 카드 기술과 프로젝트 stack에 넣지 않는다.
 # 파일·데이터 형식과 통신 방식·표준은 "무엇으로 만들었나"가 아니라 다루는 대상이라서다.
-# 판단이 갈리는 브라우저·OS(Safari, iOS)와 외부 서비스 이름은 넣지 않았다. 값은 정규화된 키다.
+# 메시지 발송사·PG사 같은 거래 업체 이름도 기술이 아니지만, 이름을 미리 알 수 없어
+# 목록 대신 extract·verify 프롬프트로 거른다. 값은 정규화된 키다.
 NOT_TECHNOLOGIES: frozenset[str] = frozenset(
     {
         # 파일·데이터 형식
@@ -180,6 +181,19 @@ NOT_TECHNOLOGIES: frozenset[str] = frozenset(
         "sso",
         "utf8",
         "iso8601",
+        # 브라우저·OS: 문제가 난 환경이라 키워드로 다룬다.
+        # 앱을 만든 기술은 Swift·Kotlin 등으로 따로 잡힌다
+        "safari",
+        "사파리",
+        "chrome",
+        "크롬",
+        "firefox",
+        "edge",
+        "ios",
+        "android",
+        "안드로이드",
+        "windows",
+        "macos",
     }
 )
 

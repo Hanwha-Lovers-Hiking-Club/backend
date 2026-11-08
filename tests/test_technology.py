@@ -150,14 +150,31 @@ def test_dictionary_has_around_a_hundred_entries():
 
 
 @pytest.mark.parametrize(
-    "name", ["PDF", "csv", "JSON", "GeoJSON", "JPEG", "엑셀", "HTTP", "TCP", "SFTP", "SSO", "UTF-8"]
+    "name",
+    [
+        "PDF",
+        "csv",
+        "JSON",
+        "GeoJSON",
+        "JPEG",
+        "엑셀",
+        "HTTP",
+        "TCP",
+        "SFTP",
+        "SSO",
+        "UTF-8",
+        "Safari",
+        "iOS",
+        "Android",
+        "크롬",
+    ],
 )
 def test_file_formats_and_protocols_are_not_technologies(name):
     assert not is_technology(name)
 
 
 def test_normalize_technologies_drops_names_that_are_not_technologies():
-    assert normalize_technologies(["Python", "PDF", "http", "Safari"]) == ["python", "safari"]
+    assert normalize_technologies(["Python", "PDF", "http", "Safari", "Go"]) == ["python", "go"]
 
 
 def test_not_technologies_are_normalized_keys_outside_the_dictionary():
