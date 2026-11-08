@@ -18,7 +18,7 @@ from app.core.sse import to_sse
 from app.domains.chat.generator import NO_DATA_MESSAGE, OFF_TOPIC_MESSAGE, generate_answer
 from app.domains.chat.intent import understand_intent
 from app.domains.chat.models import ChunkCandidate, VerifiedCandidate
-from app.domains.chat.retriever import search
+from app.domains.chat.retriever import find_linked_evidence, search
 from app.domains.chat.schemas import (
     ChatCompletedEvent,
     ChatErrorEvent,
@@ -52,10 +52,14 @@ TRUNCATED_NOTICE = (
 )
 
 
-def _to_reference(verified: VerifiedCandidate) -> ChatReference:
-    # 참조 하나 = 카드 하나 + 그 카드의 근거 하나. 근거가 여러 개면 첫 번째를 보여준다
+def _to_reference(verified: VerifiedCandidate, chunks: list[ChunkCandidate]) -> ChatReference:
+    # 참조 하나 = 카드 하나 + 그 카드의 근거 하나. 답변에 쓴 청크(chunks)에 들어 있는 근거를
+    # 우선 보여주고, 없으면 첫 번째 문서의 첫 번째 근거를 보여준다
     card = verified.candidate.card
-    evidence = card.evidences[0]
+    source_document, evidence = find_linked_evidence(card, chunks) or (
+        card.evidences[0],
+        card.evidences[0].items[0],
+    )
     return ChatReference(
         id=evidence.id,
         type="knowledge-card",
@@ -63,8 +67,8 @@ def _to_reference(verified: VerifiedCandidate) -> ChatReference:
         card=card,
         reason=verified.reason,
         document=ChatSourceDocument(
-            id=evidence.document_id,
-            document_title=evidence.document_title,
+            id=source_document.document_id,
+            document_title=source_document.document_title,
             location=evidence.location,
             excerpt=evidence.excerpt,
         ),
@@ -149,9 +153,11 @@ async def _answer_events(
 
     # D/E. 근거가 하나도 없는 카드는 참조로 보여줄 수 없다 (카드당 근거 1개 이상은 앱 로직이
     # 보장하지만 방어한다). 관련 카드가 없으면 빈 목록이 되어 원문만으로 답한다(D)
-    references = [_to_reference(v) for v in verification.cards if v.candidate.card.evidences][
-        :MAX_REFERENCES
-    ]
+    references = [
+        _to_reference(v, verification.chunks)
+        for v in verification.cards
+        if v.candidate.card.evidences
+    ][:MAX_REFERENCES]
     cards = [reference.card for reference in references]
     # 이전 대화는 후속 질문일 때만 넘긴다. 새 주제 질문에 이전 대화가 섞이지 않게 한다
     generation_history = history if intent.is_follow_up else []

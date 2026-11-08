@@ -1,6 +1,7 @@
 # 지식카드 로직: Supabase 조회/저장과 DB 행 -> 응답 모양 변환.
 import asyncio
 import logging
+import re
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -91,20 +92,46 @@ def _apply_filters(query, q: str):
     return query
 
 
+def _location_sort_key(location: str | None) -> tuple[bool, list[str | int]]:
+    # 위치가 없는 근거는 맨 뒤로 보낸다. 숫자는 숫자로 비교해서 p.2가 p.10보다 먼저 온다.
+    # re.split은 문자열과 숫자를 번갈아 돌려주므로 같은 자리끼리는 항상 같은 타입으로 비교된다
+    if not location:
+        return (True, [])
+    parts = re.split(r"(\d+)", location)
+    return (False, [int(part) if i % 2 else part for i, part in enumerate(parts)])
+
+
+def _group_evidences(card_documents: list[dict]) -> list[dict]:
+    # card_documents는 근거 하나당 한 행이라 같은 문서가 여러 행으로 온다. 문서별로 묶어서 내려준다.
+    # DB가 순서를 보장하지 않으므로 응답마다 순서가 같도록 여기서 정렬한다
+    documents: dict[str, dict] = {}
+    for evidence in card_documents:
+        document = documents.setdefault(
+            evidence["document_id"],
+            {
+                "document_id": evidence["document_id"],
+                "document_title": evidence["documents"]["title"],
+                "original_filename": evidence["documents"]["original_filename"],
+                "url": None,
+                "items": [],
+            },
+        )
+        document["items"].append(
+            {
+                "id": evidence["id"],
+                "location": evidence["location"],
+                "excerpt": evidence["excerpt"],
+            }
+        )
+    for document in documents.values():
+        document["items"].sort(
+            key=lambda item: (_location_sort_key(item["location"]), item["excerpt"] or "")
+        )
+    return sorted(documents.values(), key=lambda d: (d["document_title"], d["document_id"]))
+
+
 def _to_card(row: dict) -> dict:
     card_documents = row.pop("card_documents", None) or []
-    evidences = [
-        {
-            "id": evidence["id"],
-            "document_id": evidence["document_id"],
-            "document_title": evidence["documents"]["title"],
-            "original_filename": evidence["documents"]["original_filename"],
-            "location": evidence["location"],
-            "excerpt": evidence["excerpt"],
-            "url": None,
-        }
-        for evidence in card_documents
-    ]
     # technologies에는 표준 ID가 저장되어 있어서 화면에는 공식 표기로 내려준다
     technologies = [display_name(t) for t in row.get("technologies") or []]
     # 프로젝트 이름은 카드 컬럼이 아니라 projects에서 읽어서 어느 화면에서나 같게 보인다
@@ -114,7 +141,7 @@ def _to_card(row: dict) -> dict:
         "project_name": project.get("name"),
         "project_domain": project.get("domain"),
         "technologies": technologies,
-        "evidences": evidences,
+        "evidences": _group_evidences(card_documents),
     }
 
 

@@ -148,6 +148,83 @@ def test_contains_excerpt_ignores_whitespace_and_allows_long_prefix(content, exc
     assert retriever._contains_excerpt(content, excerpt) is expected
 
 
+def _evidence_document(n: int, *excerpts: str | None) -> dict:
+    # 근거 id는 "문서 번호 * 100 + 순서"로 붙여서 어떤 근거가 골렸는지 바로 알 수 있게 한다
+    return {
+        "document_id": _id(n),
+        "document_title": f"문서 {n}",
+        "original_filename": f"{n}.pdf",
+        "items": [
+            {"id": _id(n * 100 + i), "location": None, "excerpt": excerpt}
+            for i, excerpt in enumerate(excerpts)
+        ],
+    }
+
+
+def _linked_evidence_id(card, chunks) -> str | None:
+    found = retriever.find_linked_evidence(card, chunks)
+    return str(found[1].id) if found else None
+
+
+def test_find_linked_evidence_skips_evidences_not_in_the_chunk(make_card):
+    card = make_card(evidences=[_evidence_document(1, "문서 머리말", "원인 문장")])
+
+    document, evidence = retriever.find_linked_evidence(
+        card, [_chunk(1, "본문에 원인 문장이 있다", document=_id(1))]
+    )
+
+    assert evidence.excerpt == "원인 문장"
+    assert str(document.document_id) == _id(1)
+
+
+def test_find_linked_evidence_prefers_higher_ranked_chunk(make_card):
+    card = make_card(evidences=[_evidence_document(1, "첫 근거", "둘째 근거")])
+    chunks = [
+        _chunk(1, "둘째 근거가 있는 청크", document=_id(1)),
+        _chunk(2, "첫 근거가 있는 청크", document=_id(1)),
+    ]
+
+    assert _linked_evidence_id(card, chunks) == _id(101)
+
+
+def test_find_linked_evidence_uses_first_evidence_within_a_chunk(make_card):
+    card = make_card(evidences=[_evidence_document(1, "첫 근거", "둘째 근거")])
+    chunks = [_chunk(1, "첫 근거와 둘째 근거가 함께 있는 청크", document=_id(1))]
+
+    assert _linked_evidence_id(card, chunks) == _id(100)
+
+
+def test_find_linked_evidence_searches_every_document_of_the_card(make_card):
+    card = make_card(
+        evidences=[_evidence_document(1, "첫 문서 근거"), _evidence_document(2, "둘째 문서 근거")]
+    )
+    chunks = [_chunk(1, "둘째 문서 근거가 있는 청크", document=_id(2))]
+
+    document, evidence = retriever.find_linked_evidence(card, chunks)
+
+    assert str(document.document_id) == _id(2)
+    assert evidence.excerpt == "둘째 문서 근거"
+
+
+def test_find_linked_evidence_ignores_chunks_of_other_documents(make_card):
+    card = make_card(evidences=[_evidence_document(1, "같은 문장")])
+
+    assert _linked_evidence_id(card, [_chunk(1, "같은 문장", document=_id(2))]) is None
+
+
+def test_find_linked_evidence_skips_evidences_without_excerpt(make_card):
+    card = make_card(evidences=[_evidence_document(1, None, "발췌문")])
+
+    assert _linked_evidence_id(card, [_chunk(1, "발췌문", document=_id(1))]) == _id(101)
+
+
+def test_find_linked_evidence_returns_none_without_link(make_card):
+    card = make_card(evidences=[_evidence_document(1, "근거")])
+
+    assert _linked_evidence_id(card, [_chunk(1, "상관없는 내용", document=_id(1))]) is None
+    assert _linked_evidence_id(card, []) is None
+
+
 def test_links_card_only_when_its_excerpt_is_in_the_chunk(fake_db):
     fake_db["evidences"] = [
         {"card_id": _id(1), "document_id": "doc-1", "excerpt": "웹훅 순서 역전"},

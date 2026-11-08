@@ -26,12 +26,16 @@ CARD = {
     "updated_at": "2026-10-24T09:00:00Z",
     "evidences": [
         {
-            "id": "0b9a5c1e-1f0d-4d4b-9a51-3c7a3f0e8b21",
             "document_id": "4c10a229-9b3a-40bc-8611-e2f787540f03",
             "document_title": "검색 시스템 설계서",
             "original_filename": "search-design.pdf",
-            "location": "3장 검색 방식",
-            "excerpt": "벡터 검색과 키워드 검색을 결합한다.",
+            "items": [
+                {
+                    "id": "0b9a5c1e-1f0d-4d4b-9a51-3c7a3f0e8b21",
+                    "location": "3장 검색 방식",
+                    "excerpt": "벡터 검색과 키워드 검색을 결합한다.",
+                }
+            ],
         }
     ],
 }
@@ -46,11 +50,15 @@ def test_knowledge_card_serializes_to_camel_case():
     assert "lastVerifiedAt" in data
     assert "quality_score" not in data
     assert data["evidences"][0] == {
-        "id": "0b9a5c1e-1f0d-4d4b-9a51-3c7a3f0e8b21",
         "documentId": "4c10a229-9b3a-40bc-8611-e2f787540f03",
         "documentTitle": "검색 시스템 설계서",
         "originalFilename": "search-design.pdf",
-        "location": "3장 검색 방식",
-        "excerpt": "벡터 검색과 키워드 검색을 결합한다.",
         "url": None,
+        "items": [
+            {
+                "id": "0b9a5c1e-1f0d-4d4b-9a51-3c7a3f0e8b21",
+                "location": "3장 검색 방식",
+                "excerpt": "벡터 검색과 키워드 검색을 결합한다.",
+            }
+        ],
     }

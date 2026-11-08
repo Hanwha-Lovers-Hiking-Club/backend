@@ -28,7 +28,7 @@ def format_card(number: int, card: KnowledgeCard) -> str:
         elif field == "outcome":
             # 빈 필드를 그냥 빼면 답변이 효과가 확인된 사례처럼 말할 수 있다
             lines.append("결과: 확인된 기록 없음")
-    excerpts = [e.excerpt for e in card.evidences if e.excerpt]
+    excerpts = [e.excerpt for document in card.evidences for e in document.items if e.excerpt]
     if excerpts:
         lines.append("근거 발췌문:")
         lines.extend(f"- {excerpt}" for excerpt in excerpts)
