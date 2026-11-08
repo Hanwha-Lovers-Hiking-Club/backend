@@ -16,7 +16,7 @@ DOC1, DOC2 = uuid4(), uuid4()
 @pytest.fixture(autouse=True)
 def fake_project_meta(monkeypatch):
     # 소개 정보는 test_project_meta.py에서 따로 본다
-    monkeypatch.setattr(EX, "describe_project", lambda _message, _chunks: {"team": "결제팀"})
+    monkeypatch.setattr(EX, "describe_project", lambda _message, _chunks: ({"team": "결제팀"}, {}))
 
 
 def _state() -> dict:

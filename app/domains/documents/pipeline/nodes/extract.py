@@ -186,8 +186,10 @@ def extract(state: IngestionState) -> dict:
     project_name = _ground_project_name(result.project_name, chunks)
     if result.project_name and project_name is None:
         logger.warning("extract: 원문에 없는 프로젝트 이름 제거 (%s)", result.project_name)
+    project_meta, period_evidence = describe_project(message, chunks)
     return {
         "experiences": experiences,
         "project_name": project_name,
-        "project_meta": describe_project(message, chunks),
+        "project_meta": project_meta,
+        "project_period_evidence": period_evidence,
     }

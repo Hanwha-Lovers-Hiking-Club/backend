@@ -73,6 +73,27 @@ def run(folder: Path) -> tuple[dict, dict, float]:
     )
 
 
+def _period_lines(state: dict) -> list[str]:
+    # 프로젝트 기간과 근거. 청크 별칭 D<n>은 업로드 순서의 n번째 문서다
+    meta = state.get("project_meta", {})
+    evidence = state.get("project_period_evidence", {})
+    files = {f"D{i}": d["original_filename"] for i, d in enumerate(state["documents"], 1)}
+
+    def where(date: dict) -> str:
+        doc = files.get(date["chunk_id"].split(":")[0], "?")
+        year = f" / 연도 근거: {date['year_quote']}" if date.get("year_quote") else ""
+        return f"{date['month']} ← {doc} ({date['chunk_id']}): {date['quote']}{year}"
+
+    lines = [
+        f"- 소개: {meta.get('domain')} / {meta.get('team')} / {meta.get('description')}",
+        f"- 기간: {meta.get('period') or '없음'} ({evidence.get('kind') or '-'})",
+    ]
+    if evidence.get("kind"):
+        lines += [f"  - 시작 {where(evidence['start'])}", f"  - 종료 {where(evidence['end'])}"]
+    lines += [f"  - 버린 근거: {r}" for r in evidence.get("rejected", [])]
+    return lines
+
+
 def render(folder: Path, state: dict, usage: dict, seconds: float) -> list[str]:
     names = {d["id"]: d["original_filename"] for d in state["documents"]}
     chunks = {c["id"]: c for c in state["chunks"]}
@@ -83,6 +104,7 @@ def render(folder: Path, state: dict, usage: dict, seconds: float) -> list[str]:
         f"- 경험 {len(experiences)}개 -> 카드 후보 {len(drafts)}개, 미생성 {len(state.get('draft_skips', []))}개",
         f"- LLM {usage['calls']}회, 입력 {usage['input']:,} / 출력 {usage['output']:,} 토큰, {seconds:.0f}초",
         f"- 프로젝트 이름: {state.get('project_name') or '찾지 못함'}",
+        *_period_lines(state),
         f"- 오류: {state.get('error') or '없음'}",
     ]
     lines += [f"- 경고: {w}" for w in state.get("warnings", [])]

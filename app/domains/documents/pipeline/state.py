@@ -70,6 +70,9 @@ class IngestionState(TypedDict):
     project_name: str | None
     # extract 노드가 뽑은 프로젝트 소개 정보(projects 컬럼 이름 -> 값). 확인된 항목만 들어 있다
     project_meta: dict[str, str]
+    # 기간을 정한 근거(명시 기간/활동 기간, 경계별 원문 구절)와 버린 경계의 사유.
+    # DB에 저장하지 않는다(dry-run 리포트와 로그용)
+    project_period_evidence: dict
     # save 노드가 active 카드의 기술을 모은 프로젝트 대표 기술. 화면 표기로 들어 있다
     project_stack: list[str]
     # draft_card 노드의 출력. 구조 검사를 통과한 카드 후보
