@@ -9,7 +9,7 @@ import logging
 import re
 import unicodedata
 
-from app.core.technology.aliases import AMBIGUOUS_IN_TEXT, TECHNOLOGIES
+from app.core.technology.aliases import AMBIGUOUS_IN_TEXT, NOT_TECHNOLOGIES, TECHNOLOGIES
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +56,22 @@ def normalize_technology(name: str) -> str | None:
     return _ALIAS_TO_ID.get(key, key)
 
 
+def is_technology(name: str) -> bool:
+    # 파일 형식(PDF, CSV)이나 통신 방식(HTTP) 같은 기술 스택이 아닌 이름이면 False
+    tech_id = normalize_technology(name)
+    return tech_id is not None and tech_id not in NOT_TECHNOLOGIES
+
+
 def normalize_technologies(names: list[str]) -> list[str]:
-    # 인제스트에서 쓴다. 표준 ID 기준으로 중복을 제거하고(순서 유지),
+    # 인제스트에서 쓴다. 표준 ID 기준으로 중복을 제거하고(순서 유지), 기술 스택이 아닌 이름은 빼고,
     # 사전에 없는 기술은 로그로 남긴다
     result: list[str] = []
     for name in names:
         tech_id = normalize_technology(name)
         if tech_id is None or tech_id in result:
+            continue
+        if tech_id in NOT_TECHNOLOGIES:
+            logger.info("technology: 기술 스택이 아닌 이름 제외 %r", name)
             continue
         if tech_id not in _DISPLAY:
             logger.info("technology: 사전에 없는 기술 %r -> %r", name, tech_id)
