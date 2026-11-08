@@ -1,9 +1,17 @@
 from uuid import uuid4
 
+import pytest
+
 from app.domains.documents.pipeline.models import Evidence, Experience, Experiences
 from app.domains.documents.pipeline.nodes import extract as EX
 
 DOC1, DOC2 = uuid4(), uuid4()
+
+
+@pytest.fixture(autouse=True)
+def fake_project_meta(monkeypatch):
+    # 소개 정보는 test_project_meta.py에서 따로 본다
+    monkeypatch.setattr(EX, "describe_project", lambda _message, _chunks: {"team": "결제팀"})
 
 
 def _state() -> dict:
@@ -52,8 +60,8 @@ def _ev(kind, chunk_id, quote) -> Evidence:
     return Evidence(kind=kind, statement="s", chunk_id=chunk_id, quote=quote)
 
 
-def _run(monkeypatch, *experiences, error=None) -> tuple[dict, _LLM]:
-    llm = _LLM(Experiences(experiences=list(experiences)), error)
+def _run(monkeypatch, *experiences, error=None, project_name=None) -> tuple[dict, _LLM]:
+    llm = _LLM(Experiences(experiences=list(experiences), project_name=project_name), error)
     monkeypatch.setattr(EX, "get_llm", lambda: llm)
     return EX.extract(_state()), llm
 
@@ -113,7 +121,7 @@ def test_experience_without_cause_decision_action_or_result_is_dropped(monkeypat
     )
     ungrounded_fact = _exp(_ev("action", "D1:0", "캐시를 도입했다."))  # 남는 근거가 없음
     result, _ = _run(monkeypatch, plan_only, ungrounded_fact)
-    assert result == {"experiences": []}
+    assert result["experiences"] == []
 
 
 def test_llm_failure_becomes_an_error(monkeypatch):
@@ -138,3 +146,23 @@ def test_investigation_with_only_a_rejected_hypothesis_is_kept(monkeypatch):
         ),
     )
     assert len(result["experiences"]) == 1
+
+
+def test_project_name_found_in_source_is_kept_as_written(monkeypatch):
+    result, _ = _run(monkeypatch, project_name=" 경쟁 조건 ")
+    assert result["project_name"] == "경쟁 조건"
+
+
+def test_project_name_missing_from_source_is_dropped(monkeypatch):
+    result, _ = _run(monkeypatch, project_name="없는 프로젝트")
+    assert result["project_name"] is None
+
+
+def test_project_meta_is_returned_with_experiences(monkeypatch):
+    result, _ = _run(monkeypatch)
+    assert result["project_meta"] == {"team": "결제팀"}
+
+
+def test_project_name_can_be_absent(monkeypatch):
+    result, _ = _run(monkeypatch, project_name=None)
+    assert result["project_name"] is None

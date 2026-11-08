@@ -41,7 +41,7 @@ def test_streams_progress_until_completed(client, monkeypatch):
             # 상태가 그대로면 다시 보내지 않는다
             {},
             {"active_step": 2, "progress": 48},
-            {"status": "completed", "created_card_count": 8},
+            {"status": "completed", "created_card_count": 8, "active_card_count": 6},
         ],
     )
 
@@ -54,19 +54,19 @@ def test_streams_progress_until_completed(client, monkeypatch):
         'event: progress\ndata: {"activeStep":1,"progress":32}\n\n'
         'event: progress\ndata: {"activeStep":2,"progress":48}\n\n'
         f'event: completed\ndata: {{"jobId":"{job_id}","status":"completed",'
-        '"createdCardCount":8}\n\n'
+        '"createdCardCount":8,"activeCardCount":6}\n\n'
     )
 
 
 def test_completed_job_sends_only_completed(client):
     job_id = uuid4()
-    jobs._jobs[job_id] = _job(status="completed", created_card_count=3)
+    jobs._jobs[job_id] = _job(status="completed", created_card_count=3, active_card_count=3)
 
     response = client.get(_url(job_id))
 
     assert response.text == (
         f'event: completed\ndata: {{"jobId":"{job_id}","status":"completed",'
-        '"createdCardCount":3}\n\n'
+        '"createdCardCount":3,"activeCardCount":3}\n\n'
     )
 
 

@@ -9,6 +9,7 @@ from app.core.schemas import CamelModel
 # recent: updated_at DESC / created: created_at DESC / name: title ASC
 CardSort = Literal["recent", "created", "name"]
 CardStatus = Literal["draft", "active", "flagged", "archived"]
+ProjectDomain = Literal["ai", "frontend", "backend", "data", "app"]
 
 
 class CardEvidence(CamelModel):
@@ -46,7 +47,10 @@ class KnowledgeCard(CamelModel):
     quality_score: float | None
     last_verified_at: datetime | None
     verification_version: str | None
+    project_id: UUID
     project_name: str | None
+    # 카드 색과 아이콘을 프로젝트 분야로 정한다. NULL이면 미분류
+    project_domain: ProjectDomain | None
     department: str | None
     project_date: date | None
     created_at: datetime

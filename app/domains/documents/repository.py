@@ -45,6 +45,17 @@ def get_document(document_id: str) -> dict | None:
     return result.data[0] if result.data else None
 
 
+def list_project_documents(project_id: str) -> list[dict]:
+    result = (
+        supabase.table("documents")
+        .select("id, title, original_filename, size_bytes, created_at")
+        .eq("project_id", project_id)
+        .order("original_filename")
+        .execute()
+    )
+    return result.data
+
+
 def create_signed_url(path: str, expires_in: int, download: str | None = None) -> str:
     # download에 파일명을 주면 브라우저가 열지 않고 그 이름으로 내려받는다
     options = {"download": download} if download else None

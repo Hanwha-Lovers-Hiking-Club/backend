@@ -7,6 +7,8 @@ from app.domains.documents.pipeline.models import (
     ClaimChecks,
     Evidence,
     Experience,
+    OmittedLimit,
+    ReuseCheck,
 )
 from app.domains.documents.pipeline.nodes import verify as V
 
@@ -73,8 +75,7 @@ def _draft(title="한글 입력 유실 해결", outcome="Chrome 시험 20회 통
         lesson="교훈",
         technologies=["chrome"],
         keywords=[],
-        project_name="케어링크",
-        department=None,
+        department="케어링크",
         project_date=None,
         evidences=evidences,
         field_sources={
@@ -84,7 +85,7 @@ def _draft(title="한글 입력 유실 해결", outcome="Chrome 시험 20회 통
             "approach": [0],
             "outcome": [1],
             "lesson": [0, 1],
-            "project_name": [2],
+            "department": [2],
         },
         experience_index=0,
     )
@@ -110,7 +111,15 @@ def _state(*drafts) -> dict:
     }
 
 
-def _checks(draft: CardDraft, **bad) -> ClaimChecks:
+REUSABLE = ReuseCheck(
+    situation="한글 입력 폼에서",
+    guidance="조합 이벤트를 분리한다",
+    confirmed_scope="Chrome 20회",
+    kind="action",
+)
+
+
+def _checks(draft: CardDraft, omitted=(), reuse=REUSABLE, **bad) -> ClaimChecks:
     # 값이 있는 모든 필드를 supported(lesson은 lesson_within_scope)로 두고,
     # bad에 준 필드만 그 판정으로 바꾼다
     checks = []
@@ -126,7 +135,7 @@ def _checks(draft: CardDraft, **bad) -> ClaimChecks:
                     judgement=bad.get(field, ok),
                 )
             )
-    return ClaimChecks(checks=checks)
+    return ClaimChecks(checks=checks, omitted_limits=list(omitted), reuse=reuse)
 
 
 class _LLM:
@@ -159,7 +168,7 @@ def test_verifier_sees_all_evidence_of_the_experience_not_only_the_cited_ones(mo
     assert (
         "Safari 실패" in message and QUOTES["safari"][1] in message
     )  # 카드가 인용하지 않은 근거와 청크
-    assert "H1 [문서 머리말]" in message and "project_name: 케어링크  [근거: H1]" in message
+    assert "H1 [문서 머리말]" in message and "department: 케어링크  [근거: H1]" in message
     assert "같은 문자열로 찾지 못했다" in message and ": 30" in message  # 수치 신호(자동 탈락 아님)
 
 
@@ -170,11 +179,73 @@ def test_all_supported_with_outcome_is_passed_and_active(monkeypatch):
     assert (card.verification.verdict, card.verification.status) == ("passed", "active")
 
 
-def test_decision_card_without_outcome_passes_but_is_published_as_draft(monkeypatch):
+def test_decision_card_without_outcome_is_active_when_reusable(monkeypatch):
     draft = _draft(outcome=None, field_sources={**_draft().field_sources, "outcome": []})
     result, _ = _run(monkeypatch, {draft.title: _checks(draft)}, draft)
     v = result["verified_cards"][0].verification
-    assert (v.verdict, v.status) == ("passed", "draft") and "결과(outcome) 없음" in v.reasons[0]
+    assert (v.verdict, v.status) == ("passed", "active")
+
+
+def test_generic_lesson_stays_draft_even_with_a_confirmed_result(monkeypatch):
+    draft = _draft()
+    generic = REUSABLE.model_copy(update={"kind": "none"})
+    result, _ = _run(monkeypatch, {draft.title: _checks(draft, reuse=generic)}, draft)
+    v = result["verified_cards"][0].verification
+    assert (v.verdict, v.status) == ("passed", "draft") and "재사용 가치 부족" in v.reasons[0]
+
+
+def test_card_without_confirmed_scope_stays_draft(monkeypatch):
+    draft = _draft()
+    no_scope = REUSABLE.model_copy(update={"confirmed_scope": "  "})
+    result, _ = _run(monkeypatch, {draft.title: _checks(draft, reuse=no_scope)}, draft)
+    assert result["verified_cards"][0].verification.status == "draft"
+
+
+def test_omitted_side_effect_holds_the_card(monkeypatch):
+    draft = _draft()
+    limit = OmittedLimit(evidence_id="E3", limit="Safari에서 20회 중 2회 유실됐다")
+    result, _ = _run(monkeypatch, {draft.title: _checks(draft, omitted=[limit])}, draft)
+    v = result["verified_cards"][0].verification
+    assert (v.verdict, v.status) == ("held", "draft")
+    assert v.reasons == ["누락: Safari에서 20회 중 2회 유실됐다"]
+
+
+def test_omission_pointing_at_a_non_result_evidence_is_ignored(monkeypatch):
+    draft = _draft()
+    limit = OmittedLimit(evidence_id="E1", limit="조치 방식의 단점이 카드에 없다")
+    result, _ = _run(monkeypatch, {draft.title: _checks(draft, omitted=[limit])}, draft)
+    assert result["verified_cards"][0].verification.status == "active"
+
+
+def test_title_condition_dropped_is_fine_when_the_outcome_has_the_condition(monkeypatch):
+    draft = _draft()
+    checks = _checks(draft, title="condition_dropped", summary="condition_dropped")
+    result, _ = _run(monkeypatch, {draft.title: checks}, draft)
+    assert result["verified_cards"][0].verification.status == "active"
+
+
+def test_summary_condition_dropped_holds_when_the_outcome_also_lacks_it(monkeypatch):
+    draft = _draft()
+    checks = _checks(draft, summary="condition_dropped", outcome="condition_dropped")
+    result, _ = _run(monkeypatch, {draft.title: checks}, draft)
+    v = result["verified_cards"][0].verification
+    assert (v.verdict, v.status) == ("held", "draft") and v.cleared_fields == ["outcome"]
+
+
+def test_unconfirmed_summary_that_repeats_the_outcome_is_fine(monkeypatch):
+    draft = _draft()
+    checks = _checks(draft, summary="result_unconfirmed", outcome="result_unconfirmed")
+    result, _ = _run(monkeypatch, {draft.title: checks}, draft)
+    assert result["verified_cards"][0].verification.status == "active"
+
+
+def test_unconfirmed_judgement_outside_outcome_is_a_problem(monkeypatch):
+    # 이 판정이 lesson에 붙으면 효과를 단정한 주장이 통과하므로 막는다
+    draft = _draft()
+    checks = _checks(draft, lesson="result_unconfirmed")
+    result, _ = _run(monkeypatch, {draft.title: checks}, draft)
+    v = result["verified_cards"][0].verification
+    assert (v.verdict, v.status) == ("held", "draft")
 
 
 def test_bad_conditional_field_is_cleared_and_unused_evidence_is_dropped(monkeypatch):
@@ -184,7 +255,7 @@ def test_bad_conditional_field_is_cleared_and_unused_evidence_is_dropped(monkeyp
     card = result["verified_cards"][0]
     assert card.verification.cleared_fields == ["outcome", "technologies"]
     assert card.draft.outcome is None and card.draft.technologies == []
-    assert (card.verification.verdict, card.verification.status) == ("passed", "draft")
+    assert (card.verification.verdict, card.verification.status) == ("passed", "active")
     # 남은 필드가 인용하는 근거만 남고 번호가 다시 매겨진다
     for field, idx in card.draft.field_sources.items():
         assert all(i < len(card.draft.evidences) for i in idx), field
@@ -210,7 +281,11 @@ def test_clearing_the_only_conditional_field_excludes_the_card(monkeypatch):
 
 def test_missing_judgement_or_failed_call_is_incomplete_not_held(monkeypatch):
     missing, failed, ok = _draft(title="a"), _draft(title="b"), _draft(title="c")
-    checks = ClaimChecks(checks=[c for c in _checks(missing).checks if c.field != "summary"])
+    checks = ClaimChecks(
+        checks=[c for c in _checks(missing).checks if c.field != "summary"],
+        omitted_limits=[],
+        reuse=REUSABLE,
+    )
     results = {"a": checks, "b": RuntimeError("terra down"), "c": _checks(ok)}
     result, _ = _run(monkeypatch, results, missing, failed, ok)
     verdicts = [(c.verification.verdict, c.verification.status) for c in result["verified_cards"]]
@@ -229,13 +304,12 @@ def test_no_drafts_skips_the_llm(monkeypatch):
     assert V.verify(_state()) == {"verified_cards": []}
 
 
-def test_unconfirmed_result_keeps_the_outcome_but_is_published_as_draft(monkeypatch):
-    # 원문이 효과 판단을 보류한 관찰은 사실이라 outcome을 남기지만 공개(active)하지 않는다
+def test_unconfirmed_result_keeps_the_outcome_and_is_active(monkeypatch):
+    # 원문이 효과 판단을 보류한 관찰은 사실이고, 그 범위가 카드에 드러나면 경험 지식으로 쓸 수 있다
     draft = _draft()
     result, _ = _run(
         monkeypatch, {draft.title: _checks(draft, outcome="result_unconfirmed")}, draft
     )
     card = result["verified_cards"][0]
-    assert (card.verification.verdict, card.verification.status) == ("passed", "draft")
+    assert (card.verification.verdict, card.verification.status) == ("passed", "active")
     assert card.draft.outcome and card.verification.cleared_fields == []
-    assert "결과 미확정" in card.verification.reasons[0]

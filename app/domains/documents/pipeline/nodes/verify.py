@@ -12,10 +12,11 @@
 #
 # 판정(models.VerificationResult 참고):
 #   조건부·선택 필드에 문제 -> 그 필드를 비운다. 비운 뒤 조건부 필드가 모두 비면 excluded
-#   필수 필드에 문제 -> held(자동 재작성 없이 사람 검토. 오탐이면 다시 써도 같은 이유로 떨어진다)
+#   필수 필드에 문제이거나 결론을 바꾸는 한계를 빠뜨림 -> held(자동 재작성 없이 사람 검토)
 #   호출 실패·판정 누락 -> incomplete(저장 안 함, job 경고)
-# 공개 상태: passed이고 효과가 확인된 outcome이 있으면 active. 결과 없는 passed, 결과 미확정
-# (원문이 효과 판단을 보류한 관찰)인 passed, held는 draft.
+# 공개 상태: 카드는 확정된 정답이 아니라 "이 조건에서 이렇게 했고 여기까지 확인했다"는 경험
+# 지식이다. 그래서 효과 확인 여부가 아니라 재사용 가치로 정한다. passed이고 적용 상황·행동·확인
+# 범위가 있으면 결과가 없거나 미확정이어도 active, 그 밖의 passed와 held는 draft.
 import logging
 import re
 from pathlib import Path
@@ -29,6 +30,8 @@ from app.domains.documents.pipeline.models import (
     ClaimCheck,
     ClaimChecks,
     Experience,
+    OmittedLimit,
+    ReuseCheck,
     VerificationResult,
     VerifiedCard,
 )
@@ -56,13 +59,12 @@ _FIELDS = (
     "outcome",
     "lesson",
     "technologies",
-    "project_name",
     "department",
     "project_date",
 )
 _OK = {"supported", "lesson_within_scope"}
-# 내용 오류는 아니지만 공개하지 않을 판정.
-# 원문이 효과 판단을 보류한 결과라, outcome은 남기고 카드를 draft로 둔다
+# 원문이 효과 판단을 보류한 관찰을 그대로 적었다는 뜻이다. 결과를 옮겨 적는 outcome과 summary에서만
+# 문제가 아니다. 다른 필드에 붙으면 효과를 단정하는 주장이 통과하므로 문제로 본다
 _UNCONFIRMED = "result_unconfirmed"
 _NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
@@ -91,6 +93,7 @@ class _Input:
             e for e in (experience.evidences if experience else []) if e.chunk_id in chunks
         ]
         label = {(e.chunk_id, e.quote): f"E{i}" for i, e in enumerate(self.evidences, 1)}
+        self.result_ids = {f"E{i}" for i, e in enumerate(self.evidences, 1) if e.kind == "result"}
         self.card_labels: list[str] = []
         self.headers: list[tuple[str, str, str]] = []  # (H id, chunk_id, 발췌문)
         for ev in draft.evidences:
@@ -156,6 +159,23 @@ class _Input:
         return "\n".join(lines)
 
 
+def _is_ok(check: ClaimCheck, outcome_scoped: bool) -> bool:
+    if check.judgement in _OK:
+        return True
+    if check.judgement == _UNCONFIRMED:
+        return check.field in ("outcome", "summary")
+    # 제목과 요약은 조건을 모두 담지 않아도 된다. 다만 본문 outcome에도 조건이 없으면
+    # 그 범위가 카드 어디에도 없는 것이므로 문제로 남긴다
+    if check.judgement == "condition_dropped" and check.field in ("title", "summary"):
+        return outcome_scoped
+    return False
+
+
+def _is_reusable(reuse: ReuseCheck) -> bool:
+    parts = (reuse.situation, reuse.guidance, reuse.confirmed_scope)
+    return reuse.kind != "none" and all(part.strip() for part in parts)
+
+
 def _prune(draft: CardDraft, cleared: list[str]) -> CardDraft:
     # 문제 필드를 비우고, 남은 필드가 인용하지 않는 근거는 빼서 근거 번호를 다시 매긴다
     update: dict = {f: ([] if f == "technologies" else None) for f in cleared}
@@ -167,20 +187,29 @@ def _prune(draft: CardDraft, cleared: list[str]) -> CardDraft:
     return draft.model_copy(update=update)
 
 
-def _decide(draft: CardDraft, checks: list[ClaimCheck]) -> VerifiedCard:
+def _omitted(limits: list[OmittedLimit], result_ids: set[str]) -> list[str]:
+    return [o.limit for o in limits if o.evidence_id in result_ids and o.limit.strip()]
+
+
+def _decide(draft: CardDraft, result: ClaimChecks, result_ids: set[str]) -> VerifiedCard:
+    checks = result.checks
     present = [f for f in _FIELDS if _value(draft, f)]
     missing = [f for f in present if f not in {c.field for c in checks}]
     if missing:
-        result = VerificationResult(
+        verification = VerificationResult(
             verdict="incomplete", reasons=[f"판정 누락: {', '.join(missing)}"]
         )
-        return VerifiedCard(draft=draft, verification=result)
+        return VerifiedCard(draft=draft, verification=verification)
 
-    problems = [c for c in checks if c.field in present and c.judgement not in _OK | {_UNCONFIRMED}]
-    unconfirmed = [c for c in checks if c.field == "outcome" and c.judgement == _UNCONFIRMED]
+    outcome_scoped = not any(
+        c.field == "outcome" and c.judgement == "condition_dropped" for c in checks
+    )
+    problems = [c for c in checks if c.field in present and not _is_ok(c, outcome_scoped)]
+    omitted = _omitted(result.omitted_limits, result_ids)
     reasons = [f"{c.field}: {c.judgement} — {c.claim} ({c.note})" for c in problems]
+    reasons += [f"누락: {limit}" for limit in omitted]
     cleared = list(dict.fromkeys(c.field for c in problems if c.field not in _REQUIRED))
-    held = any(c.field in _REQUIRED for c in problems)
+    held = bool(omitted) or any(c.field in _REQUIRED for c in problems)
     pruned = _prune(draft, cleared)
 
     if not any(getattr(pruned, f) for f in _CONDITIONAL):
@@ -189,25 +218,24 @@ def _decide(draft: CardDraft, checks: list[ClaimCheck]) -> VerifiedCard:
     elif held:
         verdict, status = "held", "draft"
     else:
-        confirmed = pruned.outcome and not unconfirmed
-        verdict, status = "passed", "active" if confirmed else "draft"
-        if not pruned.outcome:
-            reasons.append("결과(outcome) 없음: 내용은 통과, 공개 정책상 draft")
-        elif unconfirmed:
-            reasons.append(f"결과 미확정: {unconfirmed[0].note} — 내용은 통과, 공개 정책상 draft")
-    result = VerificationResult(
+        reusable = _is_reusable(result.reuse)
+        verdict, status = "passed", "active" if reusable else "draft"
+        if not reusable:
+            reasons.append("재사용 가치 부족: 내용은 통과, 공개 정책상 draft")
+    verification = VerificationResult(
         verdict=verdict, reasons=reasons, cleared_fields=cleared, status=status
     )
-    return VerifiedCard(draft=pruned, verification=result)
+    return VerifiedCard(draft=pruned, verification=verification)
 
 
 def verify_one(
     draft: CardDraft, experience: Experience | None, chunks: dict, names: dict, llm
 ) -> VerifiedCard:
     """카드 하나를 검증한다. LLM 호출이 실패하면 예외를 그대로 던진다."""
-    message = _Input(draft, experience, chunks, names).message()
-    result: ClaimChecks = invoke_with_retry(llm, [SystemMessage(_PROMPT), HumanMessage(message)])
-    return _decide(draft, result.checks)
+    source = _Input(draft, experience, chunks, names)
+    messages = [SystemMessage(_PROMPT), HumanMessage(source.message())]
+    result: ClaimChecks = invoke_with_retry(llm, messages)
+    return _decide(draft, result, source.result_ids)
 
 
 def verify(state: IngestionState) -> dict:

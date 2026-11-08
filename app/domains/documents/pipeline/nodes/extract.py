@@ -19,6 +19,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.core.logging import summarize_error
 from app.domains.documents.pipeline.llm import get_llm, invoke_with_retry
 from app.domains.documents.pipeline.models import Evidence, Experience, Experiences
+from app.domains.documents.pipeline.project_meta import describe_project
 from app.domains.documents.pipeline.quotes import plain, quote_pieces
 from app.domains.documents.pipeline.state import Chunk, IngestionState
 
@@ -83,6 +84,15 @@ def _keep(experience: Experience, chunks: dict[str, Chunk]) -> Experience | None
     return experience.model_copy(update={"evidences": evidences})
 
 
+def _ground_project_name(name: str | None, chunks: dict[str, Chunk]) -> str | None:
+    # 경험의 인용과 같은 기준으로, 원문에 그대로 있는 이름만 쓴다
+    name = (name or "").strip()
+    target = plain(name)
+    if not target or not any(target in plain(c["text"]) for c in chunks.values()):
+        return None
+    return name
+
+
 def extract(state: IngestionState) -> dict:
     # 청크가 없으면 LLM에 빈 입력을 주지 않는다(빈 입력에서 내용을 지어낼 수 있음)
     if not state["chunks"]:
@@ -109,4 +119,11 @@ def extract(state: IngestionState) -> dict:
         len(experiences),
         len(result.experiences),
     )
-    return {"experiences": experiences}
+    project_name = _ground_project_name(result.project_name, chunks)
+    if result.project_name and project_name is None:
+        logger.warning("extract: 원문에 없는 프로젝트 이름 제거 (%s)", result.project_name)
+    return {
+        "experiences": experiences,
+        "project_name": project_name,
+        "project_meta": describe_project(message, chunks),
+    }

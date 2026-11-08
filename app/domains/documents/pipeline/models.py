@@ -41,6 +41,21 @@ class Experience(BaseModel):
 # extract 노드의 LLM structured output 루트 타입. 리스트를 바로 루트로 못 받아서 감싸는 래퍼
 class Experiences(BaseModel):
     experiences: list[Experience]
+    # 업로드 묶음 전체의 프로젝트 이름. 경험 추출 결과가 달라지지 않도록 experiences 뒤에 둔다
+    project_name: str | None
+
+
+# 프로젝트 소개 정보의 LLM 구조화 출력 타입(project_meta.py)
+class ProjectMetaDraft(BaseModel):
+    # 같은 문서의 분류가 실행마다 미분류와 오가지 않도록 null을 허용하지 않는다
+    domain: Literal["ai", "frontend", "backend", "data", "app"]
+    team: str | None
+    # 기간을 옮겨 온 원문 구절. 원문에서 확인되지 않으면 기간을 버린다
+    period_quote: str | None
+    # YYYY-MM
+    period_start: str | None
+    period_end: str | None
+    description: str | None
 
 
 # CardDraft.evidences의 원소 타입
@@ -49,7 +64,7 @@ class CardEvidenceDraft(BaseModel):
     location: str | None
     excerpt: str | None
     # 검증 노드가 원문(표의 조건 등)을 다시 보려고 쓰는 값. DB에는 저장하지 않는다.
-    # kind는 extract의 근거 종류이고, 문서 머리말에서 온 근거(프로젝트명 등)는 None이다
+    # kind는 extract의 근거 종류이고, 문서 머리말에서 온 근거(부서명 등)는 None이다
     chunk_id: str | None = None
     kind: str | None = None
 
@@ -81,7 +96,6 @@ class CardComposition(BaseModel):
     lesson: SourcedText
     technologies: list[str]
     keywords: list[str]
-    project_name: OptionalSourcedText
     department: OptionalSourcedText
     # 원문의 날짜 표현 그대로. 연-월-일이 모두 있고 원문에 있을 때만 draft_card가 date로 바꾼다
     project_date: OptionalSourcedText
@@ -100,7 +114,6 @@ class CardDraft(BaseModel):
     lesson: str
     technologies: list[str]
     keywords: list[str]
-    project_name: str | None
     department: str | None
     project_date: date | None
     # 카드당 근거 1개 이상 (docs/schema.md 제약). DB가 아니라 파이프라인이 보장한다
@@ -135,15 +148,37 @@ class ClaimCheck(BaseModel):
     judgement: ClaimJudgement
 
 
+ReuseKind = Literal["decision_criteria", "action", "diagnosis", "none"]
+
+
+# 다른 프로젝트에서 쓸 수 있는 경험 지식인지 본다. "재사용할 수 있는가" 같은 넓은 질문은 LLM이 거의
+# 항상 통과시켜서, 적용 상황·행동·확인 범위를 문구로 먼저 뽑은 뒤 유형을 고르게 한다
+class ReuseCheck(BaseModel):
+    situation: str
+    guidance: str
+    confirmed_scope: str
+    kind: ReuseKind
+
+
+# 쓰인 주장만 대조하면 빠뜨린 내용을 못 잡는다. 자유 서술로 받으면 사소한 내용까지 잡혀서
+# 근거 id를 먼저 고르게 하고, 코드가 결과(result) 근거를 지목한 것만 인정한다
+class OmittedLimit(BaseModel):
+    evidence_id: str
+    limit: str
+
+
 class ClaimChecks(BaseModel):
     checks: list[ClaimCheck]
+    omitted_limits: list[OmittedLimit]
+    reuse: ReuseCheck
 
 
 # 카드 검증 결과. 검증 판정(verdict)과 공개 상태(status)는 따로 기록한다
-# (결과 없는 결정 카드는 내용이 정확하면 passed지만 공개 정책상 draft다).
-#   passed: 모든 주장이 근거로 지지됨(문제 있던 조건부·선택 필드는 비운 뒤). outcome이 결과 미확정
-#           (result_unconfirmed)이면 내용은 맞으므로 passed지만 공개 상태는 draft다
-#   held: 필수 필드(title/summary/context/lesson)에 근거를 벗어난 주장이 있음 -> 사람 검토
+# (재사용 가치가 없는 카드는 내용이 정확하면 passed지만 공개 정책상 draft다).
+#   passed: 모든 주장이 근거로 지지됨(문제 있던 조건부·선택 필드는 비운 뒤). 재사용 가치가 부족하면
+#           내용은 맞으므로 passed지만 공개 상태는 draft다
+#   held: 필수 필드(title/summary/context/lesson)에 근거를 벗어난 주장이 있거나, 결론을 바꾸는
+#         한계를 카드가 빠뜨림 -> 사람 검토
 #   excluded: 문제 필드를 비우고 나니 카드 구조 조건이 깨짐 -> 저장 안 함
 #   incomplete: 호출 실패, 응답 파싱 실패, 값이 있는 필드의 판정 누락 -> 저장 안 함
 class VerificationResult(BaseModel):

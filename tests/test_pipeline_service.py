@@ -9,6 +9,7 @@ from app.domains.documents import jobs, service
 from app.domains.documents.pipeline import graph as G
 from app.domains.documents.pipeline import observe
 
+PROJECT_ID = "project-1"
 DOCUMENTS = [
     {
         "id": "doc-0",
@@ -59,7 +60,7 @@ def _patch_nodes(monkeypatch, job_id, overrides: dict | None = None) -> list[tup
 
 
 def _run(job_id):
-    asyncio.run(service._run_pipeline(job_id, DOCUMENTS))
+    asyncio.run(service._run_pipeline(job_id, PROJECT_ID, DOCUMENTS))
     return jobs._jobs[job_id]
 
 
@@ -210,17 +211,135 @@ def test_start_pipeline_keeps_task_reference_until_done(monkeypatch):
     release = asyncio.Event
     states = {}
 
-    async def fake_run(job_id_, documents):
+    async def fake_run(job_id_, project_id, documents):
         await states["gate"].wait()
 
     monkeypatch.setattr(service, "_run_pipeline", fake_run)
 
     async def scenario():
         states["gate"] = release()
-        service._start_pipeline(job_id, DOCUMENTS)
+        service._start_pipeline(job_id, PROJECT_ID, DOCUMENTS)
         held_while_running = len(service._background_tasks)
         states["gate"].set()
         await asyncio.sleep(0.05)
         return held_while_running, len(service._background_tasks)
 
     assert asyncio.run(scenario()) == (1, 0)
+
+
+@pytest.fixture
+def renames(monkeypatch) -> list[tuple]:
+    calls: list[tuple] = []
+    monkeypatch.setattr(
+        service.projects_service, "update_project", lambda *args: calls.append(args)
+    )
+    return calls
+
+
+def test_project_name_is_saved_right_after_extract(monkeypatch, renames):
+    job_id = _new_job()
+    renamed_when: list[int] = []
+
+    def rename(project_id, fields):
+        renames.append((project_id, fields))
+        renamed_when.append(len(seen))
+
+    monkeypatch.setattr(service.projects_service, "update_project", rename)
+    seen = _patch_nodes(monkeypatch, job_id, {"extract": {"project_name": "말결화면"}})
+
+    _run(job_id)
+
+    assert renames == [(PROJECT_ID, {"name": "말결화면"})]
+    assert renamed_when == [G.NODE_ORDER.index("extract") + 1]
+
+
+def test_project_name_survives_card_step_failure(monkeypatch, renames):
+    job_id = _new_job()
+    overrides = {
+        "extract": {"project_name": "말결화면"},
+        "draft_card": {"error": "카드 실패"},
+        "save_chunks": {},
+    }
+    _patch_nodes(monkeypatch, job_id, overrides)
+
+    job = _run(job_id)
+
+    assert job["status"] == "failed"
+    assert renames == [(PROJECT_ID, {"name": "말결화면"})]
+
+
+def test_project_name_survives_exception_after_extract(monkeypatch, renames):
+    class Graph:
+        async def astream(self, _state, stream_mode):
+            yield {"extract": {"project_name": "말결화면"}}
+            raise RuntimeError("그래프 밖 오류")
+
+    monkeypatch.setattr(service, "build_graph", lambda: Graph())
+    job_id = _new_job()
+
+    job = _run(job_id)
+
+    assert job["status"] == "failed"
+    assert renames == [(PROJECT_ID, {"name": "말결화면"})]
+
+
+def test_project_meta_is_saved_with_name_right_after_extract(monkeypatch, renames):
+    job_id = _new_job()
+    meta = {"domain": "frontend", "team": "국제화제품팀"}
+    _patch_nodes(
+        monkeypatch, job_id, {"extract": {"project_name": "말결화면", "project_meta": meta}}
+    )
+
+    _run(job_id)
+
+    assert renames == [(PROJECT_ID, {**meta, "name": "말결화면"})]
+
+
+def test_project_stack_is_saved_after_save_node(monkeypatch, renames):
+    job_id = _new_job()
+    _patch_nodes(monkeypatch, job_id, {"save": {"project_stack": ["React", "PostgreSQL"]}})
+
+    _run(job_id)
+
+    assert renames == [(PROJECT_ID, {"stack": ["React", "PostgreSQL"]})]
+
+
+def test_failed_project_name_save_does_not_fail_the_job(monkeypatch):
+    def fail(*_args):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(service.projects_service, "update_project", fail)
+    job_id = _new_job()
+    _patch_nodes(monkeypatch, job_id, {"extract": {"project_name": "말결화면"}})
+
+    assert _run(job_id)["status"] == "completed"
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"extract": {"project_name": None}},
+        {"extract": {"error": "경험 추출 실패: boom"}},
+        {"parse": {"parse_failures": ["'b.pdf' 파싱 실패: x"]}},
+    ],
+)
+def test_temporary_name_stays_when_extract_gives_no_name(monkeypatch, renames, overrides):
+    job_id = _new_job()
+    _patch_nodes(monkeypatch, job_id, overrides)
+
+    _run(job_id)
+
+    assert renames == []
+
+
+def test_completed_event_reports_active_card_count(monkeypatch):
+    job_id = _new_job()
+    overrides = {"save": {"saved_card_count": 3, "active_card_count": 2}}
+    _patch_nodes(monkeypatch, job_id, overrides)
+    _run(job_id)
+
+    async def collect():
+        return [event async for event in service.job_events(job_id)]
+
+    (event,) = asyncio.run(collect())
+    assert '"activeCardCount":2' in event.raw_data

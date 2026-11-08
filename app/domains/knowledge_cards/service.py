@@ -15,10 +15,18 @@ from app.domains.knowledge_cards.schemas import CardSort
 
 logger = logging.getLogger(__name__)
 
-# 근거(card_documents)와 근거 문서(documents)를 한 번에 가져온다
+# 근거(card_documents)와 근거 문서(documents)를 한 번에 가져온다.
+# 임베딩 4개는 카드당 1024차원씩이라 응답에 쓰지 않는데도 읽지 않도록 컬럼을 직접 지정한다
 CARD_SELECT = (
-    "*, card_documents(id, document_id, location, excerpt, documents(title, original_filename))"
+    "id, title, summary, context, problem, cause, approach, rationale, outcome, lesson, "
+    "technologies, keywords, status, quality_score, last_verified_at, verification_version, "
+    "project_id, department, project_date, created_at, updated_at, "
+    "projects(name, domain), "
+    "card_documents(id, document_id, location, excerpt, documents(title, original_filename))"
 )
+
+# 목록, 상세, 챗봇, 프로젝트 폴더가 같은 기준으로 공개하는 카드 상태
+ACTIVE_STATUS = "active"
 
 # (정렬 컬럼, 내림차순 여부)
 SORT_COLUMNS: dict[str, tuple[str, bool]] = {
@@ -78,7 +86,7 @@ def _build_search_filter(q: str) -> str:
 def _apply_filters(query, q: str):
     # 본 조회와 count 재조회가 같은 조건을 쓰도록 한 곳에 둔다
     # RAG 검색 대상과 같은 기준으로 active 카드만 목록에 노출한다
-    query = query.eq("status", "active")
+    query = query.eq("status", ACTIVE_STATUS)
     if q:
         query = query.or_(_build_search_filter(q))
     return query
@@ -126,7 +134,15 @@ def _to_card(row: dict) -> dict:
     card_documents = row.pop("card_documents", None) or []
     # technologies에는 표준 ID가 저장되어 있어서 화면에는 공식 표기로 내려준다
     technologies = [display_name(t) for t in row.get("technologies") or []]
-    return {**row, "technologies": technologies, "evidences": _group_evidences(card_documents)}
+    # 프로젝트 이름은 카드 컬럼이 아니라 projects에서 읽어서 어느 화면에서나 같게 보인다
+    project = row.pop("projects", None) or {}
+    return {
+        **row,
+        "project_name": project.get("name"),
+        "project_domain": project.get("domain"),
+        "technologies": technologies,
+        "evidences": _group_evidences(card_documents),
+    }
 
 
 def create_card(card: dict, evidences: list[dict]) -> str:
@@ -164,11 +180,25 @@ def get_active_cards_by_ids(card_ids: list[str]) -> dict[str, dict]:
     result = (
         supabase.table("knowledge_cards")
         .select(CARD_SELECT)
-        .eq("status", "active")
+        .eq("status", ACTIVE_STATUS)
         .in_("id", card_ids)
         .execute()
     )
     return {row["id"]: _to_card(row) for row in result.data}
+
+
+def list_project_cards(project_id: str) -> list[dict]:
+    # 프로젝트 폴더에 보여 줄 카드. 폴더 목록의 카드 수와 같은 기준이다
+    result = (
+        supabase.table("knowledge_cards")
+        .select(CARD_SELECT)
+        .eq("project_id", project_id)
+        .eq("status", ACTIVE_STATUS)
+        .order("created_at", desc=True)
+        .order("id")
+        .execute()
+    )
+    return [_to_card(row) for row in result.data]
 
 
 async def list_cards(q: str, sort: CardSort, page: int, page_size: int) -> dict:
@@ -213,7 +243,7 @@ async def get_card(card_id: UUID) -> dict:
         supabase.table("knowledge_cards")
         .select(CARD_SELECT)
         .eq("id", str(card_id))
-        .eq("status", "active")
+        .eq("status", ACTIVE_STATUS)
     )
     try:
         result = await asyncio.to_thread(query.execute)
