@@ -65,16 +65,31 @@ class Experiences(BaseModel):
     project_name: str | None
 
 
+# 기간의 한쪽 경계가 되는 날짜 하나와 그 근거(project_meta.py가 원문과 대조한다)
+class DatedQuote(BaseModel):
+    # 날짜가 있는 청크의 id(프롬프트 별칭 "D1:3")
+    chunk_id: str
+    # 날짜가 적힌 원문 구절 그대로
+    quote: str
+    # YYYY-MM
+    month: str
+    # quote에 연도가 없을 때(예: "9/1") 그 날짜의 연도를 알려 주는 같은 문서의 구절
+    # (제목, 표 머리글, 문단). quote에 연도가 있으면 null
+    year_quote: str | None
+
+
 # 프로젝트 소개 정보의 LLM 구조화 출력 타입(project_meta.py)
 class ProjectMetaDraft(BaseModel):
     # 같은 문서의 분류가 실행마다 미분류와 오가지 않도록 null을 허용하지 않는다
     domain: Literal["ai", "frontend", "backend", "data", "app"]
     team: str | None
-    # 기간을 옮겨 온 원문 구절. 원문에서 확인되지 않으면 기간을 버린다
-    period_quote: str | None
-    # YYYY-MM
-    period_start: str | None
-    period_end: str | None
+    # 문서에 명시된 프로젝트 기간(예정 기간 제외)의 시작과 종료
+    stated_start: DatedQuote | None
+    stated_end: DatedQuote | None
+    # 문서에 기록된 이 프로젝트의 첫 활동 날짜와 마지막 활동 날짜.
+    # 활동 날짜가 하나뿐이면 같은 날짜를 양쪽에 쓴다
+    first_activity: DatedQuote | None
+    last_activity: DatedQuote | None
     description: str | None
 
 
