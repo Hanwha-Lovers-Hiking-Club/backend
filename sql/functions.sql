@@ -71,6 +71,7 @@ as $$
     and 1 - (document_chunks.embedding <=> query_embedding) >= min_similarity
   order by document_chunks.embedding <=> query_embedding
   limit match_count;
+$$;
 
 
 -- 검증을 통과한 한 문서의 카드·근거·벡터·완료 영수증을 원자적으로 저장한다.

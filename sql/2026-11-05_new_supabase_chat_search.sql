@@ -99,6 +99,7 @@ as $$
     and 1 - (document_chunks.embedding <=> query_embedding) >= min_similarity
   order by document_chunks.embedding <=> query_embedding
   limit match_count;
+$$;
 
 grant execute on function match_knowledge_cards(vector, text, int, float) to service_role;
 grant execute on function match_document_chunks(vector, int, float) to service_role;
