@@ -111,7 +111,13 @@ def test_project_search_sort_and_page_are_applied_in_database(client, fake_db):
     assert response.status_code == 200
     assert response.json()["total"] == 25
     assert len(response.json()["items"]) == 1
-    assert ("ilike", ("name", "%말결%")) in query.calls
+    assert (
+        "or_",
+        (
+            'name.ilike."*말결*",description.ilike."*말결*",'
+            'team.ilike."*말결*",stack_text.ilike."*말결*"',
+        ),
+    ) in query.calls
     assert ("order", ("name",)) in query.calls
     assert ("order", ("id",)) in query.calls
     assert ("range", (12, 23)) in query.calls
@@ -142,7 +148,13 @@ def test_project_page_out_of_range_keeps_filtered_total(client, monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"items": [], "total": 3}
-    assert ("ilike", ("name", "%말결%")) in count.calls
+    assert (
+        "or_",
+        (
+            'name.ilike."*말결*",description.ilike."*말결*",'
+            'team.ilike."*말결*",stack_text.ilike."*말결*"',
+        ),
+    ) in count.calls
 
 
 def test_project_page_out_of_range_count_failure_is_500(client, monkeypatch):
