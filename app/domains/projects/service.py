@@ -20,6 +20,18 @@ PROJECT_NOT_FOUND_DETAIL = "프로젝트를 찾을 수 없습니다."
 
 PROJECT_COLUMNS = "id, name, domain, team, period, description, stack, created_at"
 
+# 검색어를 부분일치로 비교하는 컬럼. stack(text[])은 ilike를 못 걸어서 합친 생성 컬럼을 쓴다.
+# 대표 기술은 프로젝트당 5개까지라 카드에만 있는 기술로는 찾지 못한다.
+SEARCH_COLUMNS = ("name", "description", "team", "stack_text")
+
+
+def _apply_search(query, q: str):
+    # 본 조회와 count 재조회가 같은 조건을 쓰도록 한 곳에 둔다
+    if not q:
+        return query
+    pattern = knowledge_cards_service._quote(f"*{q}*")
+    return query.or_(",".join(f"{column}.ilike.{pattern}" for column in SEARCH_COLUMNS))
+
 
 def create_project(name: str) -> str:
     result = supabase.table("projects").insert({"name": name}).execute()
@@ -46,9 +58,12 @@ async def list_projects(q: str, sort: ProjectSort, page: int, page_size: int) ->
     q = q.strip()
     start = (page - 1) * page_size
     query = (
-        supabase.table("projects")
-        .select(f"{PROJECT_COLUMNS}, documents(count), knowledge_cards(count)", count="exact")
-        .ilike("name", f"%{q}%")
+        _apply_search(
+            supabase.table("projects").select(
+                f"{PROJECT_COLUMNS}, documents(count), knowledge_cards(count)", count="exact"
+            ),
+            q,
+        )
         .eq("knowledge_cards.status", ACTIVE_STATUS)
         .order("name" if sort == "name" else "created_at", desc=sort != "name")
         # 이전 데이터처럼 생성 시각이 같아도 순서가 바뀌지 않도록 id로 한 번 더 정렬
@@ -61,10 +76,8 @@ async def list_projects(q: str, sort: ProjectSort, page: int, page_size: int) ->
         if e.code != knowledge_cards_service.RANGE_NOT_SATISFIABLE:
             raise internal_error(LIST_FAILED_DETAIL)
         # 범위를 벗어나도 검색 결과의 전체 개수는 유지한다 (기존 카드 목록과 같은 동작).
-        count_query = (
-            supabase.table("projects")
-            .select("id", count="exact", head=True)
-            .ilike("name", f"%{q}%")
+        count_query = _apply_search(
+            supabase.table("projects").select("id", count="exact", head=True), q
         )
         try:
             result = await asyncio.to_thread(count_query.execute)

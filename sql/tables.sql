@@ -7,6 +7,15 @@
 
 create extension if not exists vector;
 
+-- projects와 knowledge_cards의 생성 컬럼이 쓰는 함수라서 테이블보다 먼저 만든다.
+-- array_to_string은 immutable이 아니라서 생성 컬럼에 바로 쓸 수 없다.
+-- 구분자가 줄바꿈이어서 서로 다른 두 원소에 걸쳐 검색어가 일치하지 않는다.
+create or replace function card_array_to_text(arr text[])
+returns text
+language sql
+immutable
+as $$ select pg_catalog.array_to_string(arr, E'\n') $$;
+
 -- ---------------------------------------------------------------
 -- projects: 문서와 지식카드를 묶는 프로젝트. 업로드 1회가 프로젝트 1개다.
 -- 같은 이름의 프로젝트도 별개로 유지하므로 name에 유니크를 걸지 않는다.
@@ -20,6 +29,7 @@ create table if not exists projects (
   period      text,  -- 진행 기간. 형식은 YYYY.MM – YYYY.MM (예: 2026.05 – 2026.07)
   description text,  -- 프로젝트 한 줄 설명
   stack       text[] not null default '{}',  -- 대표 기술. 화면 표기 그대로 저장
+  stack_text  text generated always as (card_array_to_text(stack)) stored,  -- 프로젝트 검색 전용(부분일치). 직접 저장하지 않는다
   created_at  timestamptz not null default now()
 );
 
@@ -37,15 +47,6 @@ create table if not exists documents (
   created_at        timestamptz not null default now(),
   unique (storage_bucket, storage_path)
 );
-
--- knowledge_cards의 생성 컬럼이 쓰는 함수라서 테이블보다 먼저 만든다.
--- array_to_string은 immutable이 아니라서 생성 컬럼에 바로 쓸 수 없다.
--- 구분자가 줄바꿈이어서 서로 다른 두 원소에 걸쳐 검색어가 일치하지 않는다.
-create or replace function card_array_to_text(arr text[])
-returns text
-language sql
-immutable
-as $$ select pg_catalog.array_to_string(arr, E'\n') $$;
 
 -- ---------------------------------------------------------------
 -- knowledge_cards: 지식카드 본문 + 메타데이터
