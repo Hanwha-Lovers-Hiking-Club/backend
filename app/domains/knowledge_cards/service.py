@@ -64,17 +64,30 @@ def _technology_ids(q: str) -> list[str]:
     return ids[:MAX_TECHNOLOGY_CONDITIONS]
 
 
+# 검색어를 그대로 부분일치로 비교하는 컬럼. 카드 핵심 내용이 본문 필드에 있어서 본문도 포함한다
+TEXT_SEARCH_COLUMNS = (
+    "title",
+    "summary",
+    "context",
+    "problem",
+    "cause",
+    "approach",
+    "rationale",
+    "outcome",
+    "lesson",
+    "keywords_text",
+)
+
+
 def _build_search_filter(q: str) -> str:
     # 모든 조건이 부분일치다. keywords/technologies(text[])는 PostgREST에서 ilike로 검색할 수
     # 없어서, 배열을 문자열로 합친 생성 컬럼(*_text)을 검색한다.
     # technologies는 정규화한 표준 ID로 비교한다
+    # ponytail: 인덱스 없는 ilike 11개. 카드가 수천 개로 늘면 full-text search로 바꾼다
     pattern = _quote(f"*{q}*")
     return ",".join(
         [
-            f"title.ilike.{pattern}",
-            f"summary.ilike.{pattern}",
-            f"context.ilike.{pattern}",
-            f"keywords_text.ilike.{pattern}",
+            *(f"{column}.ilike.{pattern}" for column in TEXT_SEARCH_COLUMNS),
             *(
                 f"technologies_text.ilike.{_quote(f'*{tech_id}*')}"
                 for tech_id in _technology_ids(q)
