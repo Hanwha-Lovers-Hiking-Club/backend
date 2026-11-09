@@ -5,6 +5,11 @@
 -- 정의는 sql/tables.sql, sql/functions.sql과 같다(여기서 컬럼·시그니처를 바꾸지 않는다).
 -- 여러 번 실행해도 안전하다(if not exists / create or replace).
 -- 이 파일은 작성만 했고 실제 DB에 실행해 검증하지 않았다. 실행은 팀장이 SQL Editor에서 한다.
+-- 전체를 한 번에 붙여넣고 Run 한다. 중간에 실패하면 전부 되돌아간다.
+
+begin;
+-- Supabase는 vector 확장을 extensions 스키마에 둘 수 있어서 초기화 SQL과 같이 경로를 지정한다.
+set local search_path = public, extensions;
 
 create extension if not exists vector;
 
@@ -97,3 +102,24 @@ as $$
 
 grant execute on function match_knowledge_cards(vector, text, int, float) to service_role;
 grant execute on function match_document_chunks(vector, int, float) to service_role;
+
+-- API(service_role) 호출 세션의 search_path와 무관하게 vector 타입과 <=> 연산자를 찾게 한다.
+alter function public.match_knowledge_cards(vector, text, int, float)
+  set search_path = public, extensions;
+alter function public.match_document_chunks(vector, int, float)
+  set search_path = public, extensions;
+
+-- PostgREST가 새 테이블·함수를 바로 인식하게 한다.
+notify pgrst, 'reload schema';
+commit;
+
+-- 확인 1: document_chunks가 있고 rls_enabled가 true여야 한다.
+select c.relname as table_name, c.relrowsecurity as rls_enabled
+from pg_class c join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public' and c.relname = 'document_chunks';
+
+-- 확인 2: 검색 RPC 2개가 나와야 한다.
+select p.proname as function_name, pg_get_function_identity_arguments(p.oid) as arguments
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public' and p.proname in ('match_knowledge_cards', 'match_document_chunks')
+order by p.proname;
