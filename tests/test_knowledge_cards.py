@@ -161,6 +161,8 @@ def test_list_cards_search_filter(client, fake_db):
         (
             (
                 'title.ilike."*RAG*",summary.ilike."*RAG*",context.ilike."*RAG*",'
+                'problem.ilike."*RAG*",cause.ilike."*RAG*",approach.ilike."*RAG*",'
+                'rationale.ilike."*RAG*",outcome.ilike."*RAG*",lesson.ilike."*RAG*",'
                 'keywords_text.ilike."*RAG*",technologies_text.ilike."*rag*"',
             ),
             {},
@@ -179,6 +181,8 @@ def test_list_cards_blank_search_is_ignored(client, fake_db):
 def test_search_filter_escapes_reserved_characters():
     assert service._build_search_filter('a,"b"') == (
         r'title.ilike."*a,\"b\"*",summary.ilike."*a,\"b\"*",context.ilike."*a,\"b\"*",'
+        r'problem.ilike."*a,\"b\"*",cause.ilike."*a,\"b\"*",approach.ilike."*a,\"b\"*",'
+        r'rationale.ilike."*a,\"b\"*",outcome.ilike."*a,\"b\"*",lesson.ilike."*a,\"b\"*",'
         r'keywords_text.ilike."*a,\"b\"*"'
     )
 
