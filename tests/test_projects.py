@@ -205,3 +205,36 @@ def test_unknown_project_is_404(client, fake_db):
 
     assert response.status_code == 404
     assert response.json() == {"detail": service.PROJECT_NOT_FOUND_DETAIL}
+
+
+@pytest.mark.parametrize(
+    ("q", "domains"),
+    [
+        ("프론트엔드", ["frontend"]),
+        ("백엔드에서 쓴 기술", ["backend"]),
+        ("AI", ["ai"]),
+        ("인공지능 에이전트", ["ai"]),
+        ("데이터 정합성", ["data"]),
+        ("모바일 앱", ["app"]),
+        ("Frontend", ["frontend"]),
+        # 영문 코드는 단어 단위로만 비교한다
+        ("email", []),
+        ("말결", []),
+    ],
+)
+def test_search_domains_from_query(q, domains):
+    assert service._search_domains(q) == domains
+
+
+def test_project_search_includes_matching_domain(client, fake_db):
+    query = fake_db([])
+
+    client.get("/api/projects", params={"q": "프론트엔드"})
+
+    assert (
+        "or_",
+        (
+            'name.ilike."*프론트엔드*",description.ilike."*프론트엔드*",'
+            'team.ilike."*프론트엔드*",stack_text.ilike."*프론트엔드*",domain.eq.frontend',
+        ),
+    ) in query.calls
