@@ -24,13 +24,35 @@ PROJECT_COLUMNS = "id, name, domain, team, period, description, stack, created_a
 # 대표 기술은 프로젝트당 5개까지라 카드에만 있는 기술로는 찾지 못한다.
 SEARCH_COLUMNS = ("name", "description", "team", "stack_text")
 
+# 유형(domain)은 코드로 저장돼서 화면 표기("프론트엔드")로는 부분일치가 안 된다.
+# 검색어에 아래 한글 표기가 들어 있거나 코드와 같은 단어가 있으면 그 유형도 결과에 넣는다.
+# 영문 코드는 단어 단위로만 비교한다("email"에 ai가 들어 있어도 ai 유형으로 보지 않게)
+DOMAIN_WORDS = {
+    "ai": ("인공지능",),
+    "frontend": ("프론트",),
+    "backend": ("백엔드",),
+    "data": ("데이터",),
+    "app": ("앱", "모바일"),
+}
+
+
+def _search_domains(q: str) -> list[str]:
+    tokens = set(q.casefold().split())
+    return [
+        domain
+        for domain, words in DOMAIN_WORDS.items()
+        if domain in tokens or any(word in q for word in words)
+    ]
+
 
 def _apply_search(query, q: str):
     # 본 조회와 count 재조회가 같은 조건을 쓰도록 한 곳에 둔다
     if not q:
         return query
     pattern = knowledge_cards_service._quote(f"*{q}*")
-    return query.or_(",".join(f"{column}.ilike.{pattern}" for column in SEARCH_COLUMNS))
+    conditions = [f"{column}.ilike.{pattern}" for column in SEARCH_COLUMNS]
+    conditions += [f"domain.eq.{domain}" for domain in _search_domains(q)]
+    return query.or_(",".join(conditions))
 
 
 def create_project(name: str) -> str:
