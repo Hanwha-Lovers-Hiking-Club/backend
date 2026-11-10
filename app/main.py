@@ -1,7 +1,8 @@
 # FastAPI 앱 생성 + 모든 도메인의 router를 여기에 모아서 등록하는 곳.
 # 새 도메인을 추가하면 이 파일에 import 한 줄, include_router 한 줄만 추가하면 된다.
 # 도메인 API는 전부 /api 아래에 둔다 (include_router의 prefix="/api"). /health만 예외.
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +13,7 @@ from app.domains.agent.router import router as agent_router
 from app.domains.chat.router import router as chat_router
 from app.domains.documents import service as documents_service
 from app.domains.documents.router import router as documents_router
+from app.domains.knowledge_cards.maintenance import run_periodically
 from app.domains.knowledge_cards.router import router as knowledge_cards_router
 from app.domains.projects.router import router as projects_router
 
@@ -21,7 +23,13 @@ setup_logging()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     documents_service.start_converter_warm_up()
-    yield
+    task = asyncio.create_task(run_periodically())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
 
 app = FastAPI(title="backend", lifespan=lifespan)
