@@ -116,6 +116,41 @@ def test_list_cards_returns_camel_case_cards_with_evidences(client, fake_db):
     ]
 
 
+def test_drafts_list_returns_reasons_and_filters_status(client, fake_db):
+    row = {**CARD_ROW, "status": "draft", "draft_reasons": ["근거 부족"]}
+    query = fake_db(data=[row], count=1)
+    response = client.get("/api/knowledge/drafts")
+    assert response.status_code == 200
+    assert response.json()["items"][0]["draftReasons"] == ["근거 부족"]
+    assert query.called("eq") == [(('status', 'draft'), {})]
+
+
+def test_view_count_failure_does_not_break_detail(client, fake_db):
+    fake_db(data=[dict(CARD_ROW)])  # fake DB has no rpc: usage update fails
+    response = client.get(f"/api/knowledge/cards/{CARD_ID}")
+    assert response.status_code == 200
+
+
+def test_detail_records_one_view(client, fake_db, monkeypatch):
+    fake_db(data=[dict(CARD_ROW)])
+    calls = []
+
+    async def record(card_ids, kind):
+        calls.append((card_ids, kind))
+
+    monkeypatch.setattr(service, "record_usage", record)
+    response = client.get(f"/api/knowledge/cards/{CARD_ID}")
+    assert response.status_code == 200
+    assert calls == [([CARD_ID], "view")]
+
+
+def test_draft_detail_only_reads_draft(client, fake_db):
+    query = fake_db(data=[{**CARD_ROW, "status": "draft"}])
+    response = client.get(f"/api/knowledge/drafts/{CARD_ID}")
+    assert response.status_code == 200
+    assert query.called("eq") == [(('id', CARD_ID), {}), (('status', 'draft'), {})]
+
+
 def test_list_cards_default_query(client, fake_db):
     query = fake_db()
 

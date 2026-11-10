@@ -86,6 +86,11 @@ create table if not exists knowledge_cards (
   quality_score        numeric,
   last_verified_at     timestamptz,
   verification_version text,
+  view_count           bigint not null default 0,
+  reference_count      bigint not null default 0,
+  last_viewed_at       timestamptz,
+  last_referenced_at   timestamptz,
+  draft_reasons        text[] not null default '{}',
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now(),
 
@@ -113,13 +118,45 @@ create index if not exists knowledge_cards_status_idx on knowledge_cards (status
 create index if not exists knowledge_cards_technologies_idx on knowledge_cards using gin (technologies);
 create index if not exists knowledge_cards_keywords_idx on knowledge_cards using gin (keywords);
 
+-- 점검 결과. 오래된 카드는 related_card_id에 자신의 ID를 쓴다.
+create table if not exists card_maintenance_findings (
+  kind text not null constraint card_maintenance_findings_kind_check
+    check (kind in ('duplicate', 'stale', 'unused', 'no_usage')),
+  card_id uuid not null references knowledge_cards(id) on delete cascade,
+  related_card_id uuid not null references knowledge_cards(id) on delete cascade,
+  source text check (source in ('exact', 'similar')),
+  verdict text check (verdict in ('duplicate', 'different', 'uncertain')),
+  reason text,
+  checked_at timestamptz,
+  review_status text not null default 'pending'
+    check (review_status in ('pending', 'reviewed', 'dismissed')),
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  primary key (kind, card_id, related_card_id),
+  constraint card_maintenance_findings_check check (
+      (kind in ('stale', 'unused') and card_id = related_card_id and source is null
+          and verdict is null and checked_at is not null)
+      or (kind = 'no_usage' and card_id = related_card_id and source is null
+          and verdict is null and checked_at is null)
+      or (kind = 'duplicate' and card_id < related_card_id and source is not null
+          and verdict is not null and checked_at is null))
+);
+alter table card_maintenance_findings enable row level security;
+revoke all on card_maintenance_findings from public, anon, authenticated;
+grant select, insert, update, delete on card_maintenance_findings to service_role;
+
 -- updated_at 자동 갱신
 create or replace function set_updated_at()
 returns trigger
 language plpgsql
 as $$
 begin
-  new.updated_at = now();
+  if (to_jsonb(new) - array['view_count', 'reference_count', 'last_viewed_at', 'last_referenced_at'])
+     is distinct from
+     (to_jsonb(old) - array['view_count', 'reference_count', 'last_viewed_at', 'last_referenced_at'])
+  then
+    new.updated_at = now();
+  end if;
   return new;
 end;
 $$;

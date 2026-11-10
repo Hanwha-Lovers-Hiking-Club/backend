@@ -4,6 +4,49 @@
 
 create extension if not exists vector;
 
+create or replace function public.record_card_usage(p_card_ids uuid[], p_kind text)
+returns void language plpgsql security invoker set search_path = '' as $$
+begin
+  if p_kind = 'view' then
+    update public.knowledge_cards
+      set view_count = view_count + 1, last_viewed_at = now()
+      where id = any(p_card_ids) and status = 'active';
+  elsif p_kind = 'reference' then
+    update public.knowledge_cards
+      set reference_count = reference_count + 1, last_referenced_at = now()
+      where id = any(p_card_ids) and status = 'active';
+  else
+    raise exception 'invalid card usage kind';
+  end if;
+end;
+$$;
+revoke all on function public.record_card_usage(uuid[], text) from public, anon, authenticated;
+grant execute on function public.record_card_usage(uuid[], text) to service_role;
+
+-- 점검 후보를 저장하되 최초 발견일과 사람이 정한 처리 상태는 유지한다.
+create or replace function public.record_card_maintenance_finding(
+  p_kind text, p_card_id uuid, p_related_card_id uuid,
+  p_source text, p_verdict text, p_reason text, p_checked_at timestamptz
+) returns void language sql security invoker set search_path = '' as $$
+  insert into public.card_maintenance_findings
+    (kind, card_id, related_card_id, source, verdict, reason, checked_at)
+  values
+    (p_kind, p_card_id, p_related_card_id, p_source, p_verdict, p_reason, p_checked_at)
+  on conflict (kind, card_id, related_card_id) do update set
+    source = excluded.source,
+    verdict = excluded.verdict,
+    reason = excluded.reason,
+    checked_at = excluded.checked_at,
+    last_seen_at = now();
+$$;
+
+revoke all on function public.record_card_maintenance_finding(
+  text, uuid, uuid, text, text, text, timestamptz
+) from public, anon, authenticated;
+grant execute on function public.record_card_maintenance_finding(
+  text, uuid, uuid, text, text, text, timestamptz
+) to service_role;
+
 
 -- 챗봇 지식카드 검색용. active 카드만 대상으로, 지정한 임베딩 종류와 질문 벡터의 코사인 유사도 순으로 돌려준다.
 -- embedding_kind: 'content'(전체) / 'situation'(상황·문제) / 'solution'(대응·해결) / 'lesson'(교훈).

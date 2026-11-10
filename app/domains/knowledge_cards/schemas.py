@@ -55,6 +55,11 @@ class KnowledgeCard(CamelModel):
     project_date: date | None
     created_at: datetime
     updated_at: datetime
+    view_count: int = 0
+    reference_count: int = 0
+    last_viewed_at: datetime | None = None
+    last_referenced_at: datetime | None = None
+    draft_reasons: list[str] = []
     evidences: list[CardEvidenceDocument]
 
 

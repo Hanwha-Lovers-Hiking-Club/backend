@@ -30,6 +30,7 @@ from app.domains.chat.schemas import (
     ChatTokenEvent,
 )
 from app.domains.chat.verifier import skip_verification, verify
+from app.domains.knowledge_cards.service import record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +175,7 @@ async def _answer_events(
         deadline,
     ):
         yield event
+    await record_usage([str(reference.card.id) for reference in references], "reference")
     yield to_sse(
         "references",
         ChatReferencesEvent(items=references, sources=[_to_source(c) for c in verification.chunks]),

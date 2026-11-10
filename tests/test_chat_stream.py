@@ -148,6 +148,18 @@ def test_streams_tokens_then_references_then_completed_with_message_id(client, p
     UUID(events[-1][1]["messageId"])
 
 
+def test_returned_cards_are_counted_as_references(client, pipeline, monkeypatch):
+    calls = []
+
+    async def record(card_ids, kind):
+        calls.append((card_ids, kind))
+
+    monkeypatch.setattr(service, "record_usage", record)
+    response = client.post(URL, json={"message": "질문"})
+    assert response.status_code == 200
+    assert calls == [([str(pipeline["card"].id)], "reference")]
+
+
 def test_each_answer_gets_a_new_message_id(client, pipeline):
     first = _events(client.post(URL, json={"message": "질문"}).text)[-1][1]["messageId"]
     second = _events(client.post(URL, json={"message": "질문"}).text)[-1][1]["messageId"]

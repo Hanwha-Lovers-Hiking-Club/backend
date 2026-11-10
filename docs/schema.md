@@ -67,6 +67,9 @@
 | quality_score | numeric | X | 카드 품질 내부 평가 점수 |
 | last_verified_at | timestamptz | X | 마지막 검증 시각 |
 | verification_version | text | X | 마지막 검증에 쓴 평가 기준/로직 버전 |
+| view_count / reference_count | bigint | O | 상세 API 열람 횟수 / 챗봇 참조 카드 반환 횟수. 기존 데이터는 0부터 시작 |
+| last_viewed_at / last_referenced_at | timestamptz | X | 마지막 상세 열람 / 챗봇 참조 시각 |
+| draft_reasons | text[] | O | 신규 draft 카드의 기존 검증 사유. 기존 카드와 active 카드는 빈 배열 |
 | created_at | timestamptz | O | 생성 시각 |
 | updated_at | timestamptz | O | 수정 시각 (트리거로 자동 갱신) |
 | content_embedding | vector(1024) | X | 전체 경험 검색용 임베딩 (title~lesson 전체 조합) |
@@ -84,6 +87,27 @@
 - `status`는 text + CHECK. 값이 늘면 제약만 교체하고, pydantic의 Literal/Enum도 같이 수정.
 - 카드의 `source`(근거 문서)는 컬럼이 아니라 `card_documents`로 연결. 카드당 문서 1개 이상은 DB가 아니라 앱 로직(service.py)에서 보장.
 - `technologies_text`, `keywords_text`는 함수 `card_array_to_text`로 DB가 자동 계산. 마이그레이션은 `sql/2026-11-05_add_card_search_text.sql`.
+
+## card_maintenance_findings
+
+주기 점검 결과의 최신 판단. 설치는 `sql/card_maintenance_setup.sql`을 SQL Editor에서 실행한다.
+RLS를 켜고 service role만 접근한다. 카드의 공개 상태는 바꾸지 않는다.
+
+| 컬럼 | 설명 |
+|---|---|
+| kind | `duplicate`(카드 쌍), `stale`(재검토 시기 도래), `unused`(180일 이상 사용 이력 없음), `no_usage`(기록된 사용 이력 없음) |
+| card_id, related_card_id | 카드 FK. 중복은 ID 오름차순, 오래된 카드는 둘 다 같은 ID |
+| source | 중복 후보 발견 방식: `exact` 또는 `similar` |
+| verdict, reason | LLM의 최신 판단(`duplicate` / `different` / `uncertain`)과 이유. 오래된 카드는 NULL |
+| checked_at | `stale`은 마지막 검증일 또는 생성일, `unused`는 마지막 사용 시각. 그 외 NULL |
+| review_status | 수동 관리 상태 `pending` / `reviewed` / `dismissed`. 재발견해도 유지 |
+| first_seen_at, last_seen_at | 최초 및 마지막 발견 시각. 같은 후보는 새 행 대신 최신 결과 갱신 |
+
+복합 기본키는 `(kind, card_id, related_card_id)`다. 더 이상 후보로 발견되지 않은 행도 남으므로
+`last_seen_at`은 최종 관측 시각이지 현재 유효함을 뜻하지 않는다. LLM 판정 실패는 저장하지 않는다.
+카드 본문이 변경돼도 수동 `review_status`는 자동 초기화되지 않는다.
+사용 이력이 기록되지 않은 카드는 기간을 추정하지 않고 `no_usage`로 기록한다. 기존 설치에는
+`sql/card_maintenance_usage_setup.sql`을 적용한다.
 
 ## card_documents
 

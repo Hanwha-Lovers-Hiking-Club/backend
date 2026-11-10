@@ -113,6 +113,17 @@ def test_active_count_excludes_draft_cards(monkeypatch):
     assert result["saved_card_count"] == 2 and result["active_card_count"] == 1
 
 
+def test_draft_reasons_are_saved(monkeypatch):
+    saved = []
+    monkeypatch.setattr(
+        S.knowledge_cards_service, "create_card", lambda card, _e: saved.append(card) or "id"
+    )
+    draft = _embedded("draft", status="draft")
+    draft.draft_reasons = ["근거 부족"]
+    S.save(_state(draft))
+    assert saved[0]["draft_reasons"] == ["근거 부족"]
+
+
 def test_project_stack_counts_saved_active_cards_only(monkeypatch):
     _patch_create(monkeypatch, {"failed"})
 
