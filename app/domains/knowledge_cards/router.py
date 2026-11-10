@@ -8,6 +8,18 @@ from app.domains.knowledge_cards.schemas import CardSort, KnowledgeCard, Knowled
 router = APIRouter(prefix="/knowledge", tags=["knowledge_cards"])
 
 
+@router.get("/drafts", response_model=KnowledgeCardListResponse, summary="드래프트 목록")
+async def list_drafts(
+    page: int = Query(1, ge=1), page_size: int = Query(12, alias="pageSize", ge=1, le=100)
+):
+    return await service.list_drafts(page, page_size)
+
+
+@router.get("/drafts/{card_id}", response_model=KnowledgeCard, summary="드래프트 상세")
+async def get_draft(card_id: UUID):
+    return await service.get_draft(card_id)
+
+
 @router.get(
     "/cards",
     response_model=KnowledgeCardListResponse,

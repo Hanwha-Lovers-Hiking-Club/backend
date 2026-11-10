@@ -64,7 +64,10 @@ def embed(state: IngestionState) -> dict:
             continue
         if verified.verification.status == "draft":
             embedded_cards.append(
-                EmbeddedCard(draft=verified.draft, embeddings=None, status="draft")
+                EmbeddedCard(
+                    draft=verified.draft, embeddings=None, status="draft",
+                    draft_reasons=verified.verification.reasons,
+                )
             )
             continue
 

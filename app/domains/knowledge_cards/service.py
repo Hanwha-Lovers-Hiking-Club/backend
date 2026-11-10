@@ -21,6 +21,7 @@ CARD_SELECT = (
     "id, title, summary, context, problem, cause, approach, rationale, outcome, lesson, "
     "technologies, keywords, status, quality_score, last_verified_at, verification_version, "
     "project_id, department, project_date, created_at, updated_at, "
+    "view_count, reference_count, last_viewed_at, last_referenced_at, draft_reasons, "
     "projects(name, domain), "
     "card_documents(id, document_id, location, excerpt, documents(title, original_filename))"
 )
@@ -257,6 +258,62 @@ async def get_card(card_id: UUID) -> dict:
         .select(CARD_SELECT)
         .eq("id", str(card_id))
         .eq("status", ACTIVE_STATUS)
+    )
+    try:
+        result = await asyncio.to_thread(query.execute)
+    except APIError:
+        raise internal_error(GET_FAILED_DETAIL)
+    if not result.data:
+        raise HTTPException(status_code=404, detail=CARD_NOT_FOUND_DETAIL)
+    await record_usage([str(card_id)], "view")
+    return _to_card(result.data[0])
+
+
+async def record_usage(card_ids: list[str], kind: str) -> None:
+    if not card_ids:
+        return
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(
+                lambda: supabase.rpc(
+                    "record_card_usage",
+                    {"p_card_ids": list(dict.fromkeys(card_ids)), "p_kind": kind},
+                ).execute()
+            ),
+            timeout=2,
+        )
+    except Exception:
+        logger.exception("카드 이용 통계 저장 실패: kind=%s", kind)
+
+
+async def list_drafts(page: int, page_size: int) -> dict:
+    start = (page - 1) * page_size
+    query = (
+        supabase.table("knowledge_cards").select(CARD_SELECT, count="exact")
+        .eq("status", "draft").order("created_at", desc=True).order("id")
+        .range(start, start + page_size - 1)
+    )
+    try:
+        result = await asyncio.to_thread(query.execute)
+    except APIError as e:
+        if e.code != RANGE_NOT_SATISFIABLE:
+            raise internal_error(LIST_FAILED_DETAIL)
+        count_query = (
+            supabase.table("knowledge_cards").select("id", count="exact", head=True)
+            .eq("status", "draft")
+        )
+        try:
+            count_result = await asyncio.to_thread(count_query.execute)
+        except APIError:
+            raise internal_error(LIST_FAILED_DETAIL)
+        return {"items": [], "total": count_result.count or 0}
+    return {"items": [_to_card(row) for row in result.data], "total": result.count or 0}
+
+
+async def get_draft(card_id: UUID) -> dict:
+    query = (
+        supabase.table("knowledge_cards").select(CARD_SELECT)
+        .eq("id", str(card_id)).eq("status", "draft")
     )
     try:
         result = await asyncio.to_thread(query.execute)

@@ -36,6 +36,13 @@ def test_only_passed_cards_are_embedded_and_logged(monkeypatch, caplog):
     assert "draft 카드 1개" in caplog.text
 
 
+def test_draft_retains_verification_reasons(monkeypatch):
+    draft = _verified("draft")
+    draft.verification.reasons = ["필수 주장에 근거 부족"]
+    result = E.embed({"verified_cards": [draft]})
+    assert result["embedded_cards"][0].draft_reasons == ["필수 주장에 근거 부족"]
+
+
 def test_embedding_failure_fails_the_job(monkeypatch):
     def boom(_texts):
         raise RuntimeError("kure down")

@@ -79,6 +79,8 @@ def save(state: IngestionState) -> dict:
     document_ids = {str(document["id"]) for document in state["documents"]}
     for embedded in state["embedded_cards"]:
         card = _to_card_dict(embedded.draft, embedded.embeddings, embedded.status, project_id)
+        if embedded.status == "draft":
+            card["draft_reasons"] = embedded.draft_reasons
         evidences = _to_evidence_dicts(embedded.draft)
         if any(evidence["document_id"] not in document_ids for evidence in evidences):
             logger.warning("save: 다른 업로드의 문서를 근거로 한 카드 %r", embedded.draft.title)

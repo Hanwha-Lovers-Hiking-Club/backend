@@ -270,6 +270,7 @@ class EmbeddedCard(BaseModel):
     # draft 카드는 임베딩하지 않는다(None으로 저장 -> 벡터 검색에 안 잡힘)
     embeddings: CardEmbeddings | None
     status: Literal["active", "draft"] = "draft"
+    draft_reasons: list[str] = []
 
 
 # embed_chunks 노드의 출력 타입. state.IngestionState.embedded_chunks에 쌓인다
