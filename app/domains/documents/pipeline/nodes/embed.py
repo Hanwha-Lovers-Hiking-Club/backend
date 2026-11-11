@@ -1,99 +1,57 @@
-# 노드: 검증 후 공개(active) 카드만 kure-v3로 4종 임베딩(전체/상황/해결/교훈)을 만든다.
-# draft 카드는 임베딩 없이 저장만 한다. 챗봇은 임베딩으로 카드를 찾으므로, 검색 쿼리의 status 필터를
-# 빠뜨려도 검토 전 카드가 답변에 섞이지 않게 하는 이중 방어다. draft를 active로 올릴 때 임베딩을
-# 만드는 일은 카드 관리 단계(MVP 이후)에서 한다.
-#
-# 카드 1개당 kure 호출은 1번만 한다 — 4개 텍스트가 서로 다른 추론이 필요한 게 아니라 독립적인
-# 문자열일 뿐이라, kure의 배치 입력(input=list)으로 왕복을 줄인다. 빈 필드(None)는 조합 텍스트에서
-# 그 섹션을 통째로 생략한다("없음" 같은 의미 없는 텍스트가 벡터에 섞이지 않게).
-import logging
+# 노드: 최종 검증 카드의 최신 입력만 KURE로 임베딩하고 결과를 State에 반환한다.
+# 실제 카드·근거·벡터의 DB 저장은 후속 save 노드가 담당한다.
 
-from app.core.logging import summarize_error
-from app.domains.documents.pipeline.embedding import embed_documents
-from app.domains.documents.pipeline.models import CardDraft, CardEmbeddings, EmbeddedCard
-from app.domains.documents.pipeline.stage import finish_stage
-from app.domains.documents.pipeline.state import IngestionState
-
-logger = logging.getLogger(__name__)
+from app.domains.documents.pipeline.embedding_texts import (
+    CardEmbeddingTexts,
+    EmbeddingTextOptions,
+    build_admitted_embedding_texts,
+)
+from app.domains.documents.pipeline.embeddings.models import EmbeddingError, EmbeddingSpec
+from app.domains.documents.pipeline.embeddings.service import embed_plans
+from app.domains.documents.pipeline.llm import configured_embedder
+from app.domains.documents.pipeline.processing import ProcessingOptions
 
 
-def _build_text(role: str, sections: list[tuple[str, str | None]]) -> str:
-    parts = [f"{label}:\n{value}" for label, value in sections if value]
-    return f"[{role}]\n\n" + "\n\n".join(parts)
+def make_embed_node(client=None, *, spec=None, batch_size=None):
+    if (client is None) != (spec is None):
+        raise ValueError("inject an embedding client and its model spec together")
 
+    async def embed(state):
+        from app.config import settings
 
-def _build_texts(draft: CardDraft) -> list[str]:
-    return [
-        _build_text(
-            "전체 맥락",
-            [
-                ("제목", draft.title),
-                ("요약", draft.summary),
-                ("배경", draft.context),
-                ("문제", draft.problem),
-                ("원인", draft.cause),
-                ("해결 방법", draft.approach),
-                ("이유", draft.rationale),
-                ("결과", draft.outcome),
-                ("교훈", draft.lesson),
-            ],
-        ),
-        _build_text("상황 및 문제", [("환경", draft.context), ("발생한 문제", draft.problem)]),
-        _build_text(
-            "대응 및 해결",
-            [
-                ("문제", draft.problem),
-                ("원인", draft.cause),
-                ("해결 방법", draft.approach),
-                ("이유", draft.rationale),
-                ("결과", draft.outcome),
-            ],
-        ),
-        _build_text(
-            "교훈", [("배경", draft.context), ("문제", draft.problem), ("교훈", draft.lesson)]
-        ),
-    ]
-
-
-def embed(state: IngestionState) -> dict:
-    embedded_cards: list[EmbeddedCard] = []
-    failures: list[str] = []
-    for verified in state.get("verified_cards", []):
-        # excluded/incomplete는 status가 없다(저장하지 않음)
-        if verified.verification.status is None:
-            continue
-        if verified.verification.status == "draft":
-            embedded_cards.append(
-                EmbeddedCard(draft=verified.draft, embeddings=None, status="draft")
-            )
-            continue
-
-        try:
-            content_vec, situation_vec, solution_vec, lesson_vec = embed_documents(
-                _build_texts(verified.draft)
-            )
-        except Exception as e:
-            # 임베딩이 없는 카드는 검색에 안 잡히므로 저장하지 않고 건너뛴다. 나머지는 계속 처리한다
-            logger.warning("embed: 카드 건너뜀 %r: %s", verified.draft.title, summarize_error(e))
-            failures.append(f"카드 임베딩 실패 '{verified.draft.title}': {summarize_error(e)}")
-            continue
-
-        embedded_cards.append(
-            EmbeddedCard(
-                draft=verified.draft,
-                embeddings=CardEmbeddings(
-                    content_embedding=content_vec,
-                    situation_embedding=situation_vec,
-                    solution_embedding=solution_vec,
-                    lesson_embedding=lesson_vec,
-                ),
-                status=verified.verification.status,
-            )
+        options = EmbeddingTextOptions.model_validate(
+            state.get("embedding_text_options", EmbeddingTextOptions())
         )
+        expected = build_admitted_embedding_texts(
+            state.get("verified_drafts", []), state.get("verification_results", []), options=options
+        )
+        plans = [
+            CardEmbeddingTexts.model_validate(
+                item.model_dump() if isinstance(item, CardEmbeddingTexts) else item
+            )
+            for item in state.get("embedding_texts", [])
+        ]
+        if plans != expected:
+            raise EmbeddingError("EMBEDDING_STALE_INPUT")
+        if not any(plan.texts for plan in plans):
+            return {"embeddings": [], "embedding_usage": []}
+        model_spec = spec or EmbeddingSpec(
+            model=settings.EMBEDDING_MODEL, dimensions=settings.EMBEDDING_DIMENSIONS
+        )
+        size = settings.EMBEDDING_BATCH_SIZE if batch_size is None else batch_size
+        calls = ProcessingOptions.model_validate(
+            state.get("processing_options", ProcessingOptions())
+        )
+        if client is not None:
+            return await embed_plans(
+                plans, client, spec=model_spec, batch_size=size, processing_options=calls
+            )
+        async with configured_embedder() as configured:
+            return await embed_plans(
+                plans, configured, spec=model_spec, batch_size=size, processing_options=calls
+            )
 
-    logger.info(
-        "embed: active 카드 %d개 임베딩, draft 카드 %d개는 임베딩 없이 저장",
-        sum(c.embeddings is not None for c in embedded_cards),
-        sum(c.embeddings is None for c in embedded_cards),
-    )
-    return finish_stage(state, "embedded_cards", embedded_cards, failures)
+    return embed
+
+
+embed = make_embed_node()

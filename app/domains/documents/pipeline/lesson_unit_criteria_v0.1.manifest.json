@@ -1,0 +1,27 @@
+{
+  "version": "0.1",
+  "status": "frozen_review_draft_not_user_approved",
+  "created_at": "2026-11-03T01:08:06.706435+00:00",
+  "reference_code_commit": "02bdf0dce025303c06432ecc63f7c4055c2b689e",
+  "writer": "separate Codex task lesson_unit_criteria",
+  "history_inheritance": "none",
+  "provided_materials": [
+    "requirements-only task message in lesson_unit_criteria_brief.md"
+  ],
+  "not_provided": [
+    "conversation history",
+    "implementation",
+    "source documents",
+    "generated cards",
+    "reports",
+    "measurements",
+    "model settings"
+  ],
+  "isolation_limit": "Context separation in the same Codex environment; no enforced filesystem sandbox or third-party independence claimed.",
+  "content_policy": "Preserve returned draft without result-driven edits. New criteria versions need a change record.",
+  "hash_encoding": "SHA256 of UTF-8 text with LF line endings, including terminal newline",
+  "sha256": {
+    "lesson_unit_criteria_v0.1.md": "d01e09673f2ba5f395294fa5f1b8f702251b87685258c85444f2c7a4d94b62eb",
+    "lesson_unit_criteria_brief.md": "92099e1117fc83bd8ed6f1c989338b4e135ba996c0c9e60b8892d2b633d4d8be"
+  }
+}

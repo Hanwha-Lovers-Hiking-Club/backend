@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="3290" viewBox="0 0 1800 3290">
+<title>HYUNGU 파이프라인 · 실행 흐름</title>
+<rect width="100%" height="100%" fill="white"/>
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#87939D" stroke-width="1.6"/></marker></defs>
+<text x="60" y="83" fill="#244153" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="43" font-weight="700">문서 → 지식카드 · 실행 흐름</text>
+<text x="60" y="131" fill="#244153" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="400">예시와 같은 세로 흐름 · 상세 지침은 S1 / S2 / S3 별도 그림</text>
+<rect x="60" y="162" width="25" height="25" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="98" y="183" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="23" font-weight="400">구현</text>
+<rect x="350" y="162" width="25" height="25" rx="29" fill="#FFF2DA" stroke="#D6AA5C" stroke-width="2"/>
+<text x="388" y="183" fill="#825B20" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="23" font-weight="400">보완·검증 남음</text>
+<rect x="810" y="162" width="25" height="25" rx="29" fill="#F1F3F5" stroke="#AFBAC4" stroke-width="2"/>
+<text x="848" y="183" fill="#5A6876" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="23" font-weight="400">HYUNGU 미구현</text>
+<rect x="1310" y="162" width="25" height="25" rx="29" fill="#F1ECFF" stroke="#AB9ACD" stroke-width="2"/>
+<text x="1348" y="183" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="23" font-weight="400">별도 지침 패널</text>
+<path d="M950,375 L950,435" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M950,570 L950,630" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M950,765 L950,830" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M950,970 L950,1035" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M950,1145 L950,1210" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M950,1355 L950,1420" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M950,1565 L950,1630" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M950,1775 L950,1840" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M950,1985 L950,2130" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M950,2285 L950,2370" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M950,2525 L950,2610" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M950,2755 L950,2850" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<rect x="550" y="240" width="800" height="135" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="950.0" y="299.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="32" font-weight="700" text-anchor="middle">문서 업로드</text>
+<text x="950.0" y="339.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="400" text-anchor="middle">PDF · DOCX · XLSX · MD · TXT</text>
+<rect x="550" y="435" width="800" height="135" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="950.0" y="494.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="32" font-weight="700" text-anchor="middle">Storage 업로드 + documents 저장</text>
+<text x="950.0" y="534.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="400" text-anchor="middle">원본 파일 · 원래 파일명 · 문서 ID</text>
+<rect x="550" y="630" width="800" height="135" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="950.0" y="689.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="32" font-weight="700" text-anchor="middle">작업 생성 → 백그라운드 실행</text>
+<text x="950.0" y="729.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="400" text-anchor="middle">Job 기록 · LangGraph 시작</text>
+<rect x="550" y="830" width="800" height="140" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="950.0" y="891.5" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="32" font-weight="700" text-anchor="middle">① parse</text>
+<text x="950.0" y="931.5" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="400" text-anchor="middle">텍스트·구조 블록 추출 + 원문 위치</text>
+<rect x="550" y="1035" width="800" height="110" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="950.0" y="1081.5" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="32" font-weight="700" text-anchor="middle">정규화 · DocumentIR</text>
+<text x="950.0" y="1121.5" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="400" text-anchor="middle">블록·근거 ID와 순서 부여</text>
+<rect x="550" y="1210" width="800" height="145" rx="29" fill="#FFF2DA" stroke="#D6AA5C" stroke-width="2"/>
+<text x="950.0" y="1274.0" fill="#825B20" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="32" font-weight="700" text-anchor="middle">② chunk</text>
+<text x="950.0" y="1314.0" fill="#825B20" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="400" text-anchor="middle">제목·구조 블록 경계 + 목표 6,000자</text>
+<rect x="550" y="1420" width="800" height="145" rx="29" fill="#FFF2DA" stroke="#D6AA5C" stroke-width="2"/>
+<text x="950.0" y="1484.0" fill="#825B20" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="32" font-weight="700" text-anchor="middle">③ extract</text>
+<text x="950.0" y="1524.0" fill="#825B20" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="400" text-anchor="middle">청크별 경험·근거 후보 추출</text>
+<rect x="550" y="1630" width="800" height="145" rx="29" fill="#FFF2DA" stroke="#D6AA5C" stroke-width="2"/>
+<text x="950.0" y="1694.0" fill="#825B20" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="32" font-weight="700" text-anchor="middle">④ draft_card</text>
+<text x="950.0" y="1734.0" fill="#825B20" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="400" text-anchor="middle">후보별 카드 초안 + 근거 연결</text>
+<rect x="550" y="1840" width="800" height="145" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="950.0" y="1904.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="32" font-weight="700" text-anchor="middle">⑤ verify</text>
+<text x="950.0" y="1944.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="400" text-anchor="middle">주장·원문·사실 상태 검증</text>
+<rect x="550" y="2130" width="800" height="155" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="950.0" y="2181.5" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="32" font-weight="700" text-anchor="middle">⑥ 임베딩 입력 생성 → embed</text>
+<text x="950.0" y="2221.5" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="400" text-anchor="middle">pass 카드 · 최대 4관점</text>
+<text x="950.0" y="2256.5" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="400" text-anchor="middle">KURE · 1,024차원</text>
+<rect x="550" y="2370" width="800" height="155" rx="29" fill="#FFF2DA" stroke="#D6AA5C" stroke-width="2"/>
+<text x="950.0" y="2421.5" fill="#825B20" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="32" font-weight="700" text-anchor="middle">⑦ save</text>
+<text x="950.0" y="2461.5" fill="#825B20" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="400" text-anchor="middle">카드 + 근거 + 벡터 저장</text>
+<text x="950.0" y="2496.5" fill="#825B20" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="400" text-anchor="middle">문서 단위 RPC · 실저장 확인 필요</text>
+<rect x="550" y="2610" width="800" height="145" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="950.0" y="2674.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="32" font-weight="700" text-anchor="middle">문서 결과 확정·정리</text>
+<text x="950.0" y="2714.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="400" text-anchor="middle">저장 확인 후 완료 · 보류 자료 유지</text>
+<rect x="550" y="2850" width="800" height="145" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="950.0" y="2914.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="32" font-weight="700" text-anchor="middle">작업 결과 반환</text>
+<text x="950.0" y="2954.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="400" text-anchor="middle">문서별 상태 · 생성/저장 카드 수</text>
+<path d="M1350,1490 L1410,1490" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)" stroke-dasharray="8 7"/>
+<rect x="1410" y="1455" width="330" height="80" rx="29" fill="#F1ECFF" stroke="#AB9ACD" stroke-width="2"/>
+<text x="1575.0" y="1500.5" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="700" text-anchor="middle">S1  별도 지침</text>
+<path d="M1350,1700 L1410,1700" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)" stroke-dasharray="8 7"/>
+<rect x="1410" y="1665" width="330" height="80" rx="29" fill="#F1ECFF" stroke="#AB9ACD" stroke-width="2"/>
+<text x="1575.0" y="1710.5" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="700" text-anchor="middle">S2  별도 지침</text>
+<path d="M1350,1910 L1410,1910" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)" stroke-dasharray="8 7"/>
+<rect x="1410" y="1875" width="330" height="80" rx="29" fill="#F1ECFF" stroke="#AB9ACD" stroke-width="2"/>
+<text x="1575.0" y="1920.5" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="700" text-anchor="middle">S3  별도 지침</text>
+<rect x="40" y="1840" width="390" height="155" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="235.0" y="1892.5" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="28" font-weight="700" text-anchor="middle">retry</text>
+<text x="235.0" y="1929.5" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="23" font-weight="400" text-anchor="middle">지정 단계로 재처리</text>
+<text x="235.0" y="1961.5" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="23" font-weight="400" text-anchor="middle">예산·동일 입력 제한</text>
+<path d="M550,1895 L430,1895" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M540,815 L520,815 L520,1785 L540,1785" fill="none" stroke="#C9D5DF" stroke-width="2"/>
+<path d="M430,1920 L485,1920 L485,925 L520,925" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)" stroke-dasharray="8 7"/>
+<text x="56" y="1817" fill="#6B7784" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="20" font-weight="400">Parse~Draft 중 지정 단계 택1</text>
+<text x="476" y="897" fill="#6B7784" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="20" font-weight="400">실패</text>
+<path d="M550,910 L455,910 L455,2680 L430,2680" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<rect x="1410" y="2075" width="340" height="155" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="1580.0" y="2127.5" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="700" text-anchor="middle">needs_review</text>
+<text x="1580.0" y="2163.5" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400" text-anchor="middle">보류 초안·근거 유지</text>
+<text x="1580.0" y="2194.5" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400" text-anchor="middle">pass 카드는 계속 처리</text>
+<path d="M1350,1935 L1380,1935 L1380,2150 L1410,2150" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<path d="M1750,2180 L1770,2180 L1770,2920 L1350,2920" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<rect x="40" y="2110" width="390" height="145" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="235.0" y="2157.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="27" font-weight="700" text-anchor="middle">reject / 생략</text>
+<text x="235.0" y="2194.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="23" font-weight="400" text-anchor="middle">해당 후보 생성 중단</text>
+<text x="235.0" y="2226.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="23" font-weight="400" text-anchor="middle">이유는 결과에 집계</text>
+<path d="M550,1960 L500,1960 L500,2180 L430,2180" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<rect x="40" y="2340" width="350" height="210" rx="29" fill="#F1F3F5" stroke="#AFBAC4" stroke-width="2" stroke-dasharray="9 7"/>
+<text x="215.0" y="2391.0" fill="#5A6876" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="700" text-anchor="middle">첨부 예시의 추가 경로</text>
+<text x="215.0" y="2425.0" fill="#5A6876" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="20" font-weight="400" text-anchor="middle">embed_chunks</text>
+<text x="215.0" y="2454.0" fill="#5A6876" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="20" font-weight="400" text-anchor="middle">↓</text>
+<text x="215.0" y="2483.0" fill="#5A6876" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="20" font-weight="400" text-anchor="middle">save_chunks</text>
+<text x="215.0" y="2512.0" fill="#5A6876" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="20" font-weight="400" text-anchor="middle">HYUNGU 미구현·미연결</text>
+<rect x="40" y="2610" width="390" height="145" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="235.0" y="2657.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="27" font-weight="700" text-anchor="middle">문서 오류 기록</text>
+<text x="235.0" y="2694.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="23" font-weight="400" text-anchor="middle">다른 정상 문서는 계속</text>
+<text x="235.0" y="2726.0" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="23" font-weight="400" text-anchor="middle">실패·불완전 상태 보존</text>
+<path d="M950,2995 L950,3030 L620,3030 L620,3060" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<rect x="480" y="3060" width="280" height="75" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="620.0" y="3103.5" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="700" text-anchor="middle">completed</text>
+<path d="M950,2995 L950,3030 L950,3030 L950,3060" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<rect x="810" y="3060" width="280" height="75" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="950.0" y="3103.5" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="700" text-anchor="middle">partial</text>
+<path d="M950,2995 L950,3030 L1280,3030 L1280,3060" fill="none" stroke="#87939D" stroke-width="2.5" marker-end="url(#a)"/>
+<rect x="1140" y="3060" width="280" height="75" rx="29" fill="#E5F2FF" stroke="#91B2CD" stroke-width="2"/>
+<text x="1280.0" y="3103.5" fill="#155380" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="26" font-weight="700" text-anchor="middle">failed</text>
+<text x="60" y="3205" fill="#6B7784" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="21" font-weight="400">정상 처리 후 카드 0건도 저장 확인 시 완료 가능 · 불완전 문서는 부분 공개 보류</text>
+<text x="60" y="3243" fill="#6B7784" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="20" font-weight="400">Normalize·보조 노드 일부는 축약 표시 · 주황은 구현이 있지만 보완/실환경 검증이 남은 부분</text>
+</svg>

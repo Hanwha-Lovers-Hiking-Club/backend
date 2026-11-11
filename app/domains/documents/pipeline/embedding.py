@@ -1,4 +1,7 @@
 # kure-v3 임베딩 클라이언트 생성을 한 곳에 모은다 (모델/차원 등 설정 관리).
+# 챗봇 질문 임베딩(chat/retriever.py)과 원문 청크 인덱싱(search_index/)이 쓰는 호환 모듈이다.
+# 카드 임베딩은 embeddings/kure.py(settings.EMBEDDING_MODEL)가 따로 맡으며 이 모듈과 설정을
+# 공유하지 않는다. 두 모델명이 같은 벡터 공간인지는 PR에 남은 확인 사항으로 적었다.
 # input_type을 항상 "document"로 고정하는 이유: 이 함수는 지식카드를 "저장"할 때 쓰는 용도다.
 # 반대로 사용자 질문을 임베딩할 때는 "query"를 써야 하는데, 그건 챗봇 도메인의 일이라 여기서
 # 다루지 않는다.
@@ -23,9 +26,14 @@ EMBEDDING_MAX_INPUTS = 8
 
 @lru_cache
 def get_embedding_client() -> OpenAI:
+    # settings.KURE_API_KEY는 SecretStr(선택값)이다. 키가 없을 때 OpenAI SDK가 OPENAI_API_KEY를
+    # 대신 집어 KURE로 보내지 않도록 여기서 막는다. 등록 값의 앞뒤 공백은 요청에서만 지운다
+    key = settings.KURE_API_KEY.get_secret_value().strip() if settings.KURE_API_KEY else ""
+    if not key:
+        raise RuntimeError("KURE_API_KEY가 설정되지 않았습니다")
     return OpenAI(
         base_url="https://kure.kullm.ai/api/v1",
-        api_key=settings.KURE_API_KEY,
+        api_key=key,
         max_retries=EMBEDDING_MAX_RETRIES,
     )
 

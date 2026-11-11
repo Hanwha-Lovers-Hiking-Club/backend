@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from app.domains.documents.pipeline.nodes import chunk as C
+from app.domains.documents.pipeline.search_index import chunk as C
 
 LONG = "이 문장은 섹션이 병합 기준을 넘도록 길게 쓴 본문입니다. " * 12
 

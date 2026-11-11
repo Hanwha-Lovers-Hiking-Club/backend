@@ -1,190 +1,225 @@
-# 노드 사이에서 오가는 모델 (Experience, CardDraft, VerifiedCard, EmbeddedCard 등).
+# LLM 구조화 출력 모델 (ExtractedElements, CardDraft, VerificationResult 등).
 # 노드 간 경계에서 오가는 데이터 모양이므로 state.py와 함께 팀이 합의한 계약이다.
-from datetime import date
-from typing import Literal
+
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
-# extract 노드의 LLM 구조화 출력 타입들. 필드 이름과 순서는 비교 실험에서 검증한 그대로다.
-# 구조화 출력은 필드 순서대로 생성되므로 바꾸면 결과가 달라질 수 있다
-EvidenceKind = Literal[
-    "observation",
-    "hypothesis",
-    "rejected_hypothesis",
-    "cause",
-    "decision",
-    "action",
-    "result",
-    "plan",
-]
+# 사실의 상태다. KnowledgeCard의 draft/active/flagged/archived와 별개다.
+FactStatus = Literal["confirmed", "hypothesis", "inferred", "unknown", "conflicted"]
 
 
-# 경험의 근거 하나. chunk_id는 LLM 응답에서는 프롬프트용 별칭("D1:3")이고,
-# extract 노드가 검사한 뒤 state.Chunk.id로 바꿔서 state에 넣는다
-class Evidence(BaseModel):
-    kind: EvidenceKind
-    statement: str
-    chunk_id: str
-    quote: str
+def _require_non_blank(value: str) -> str:
+    if not value.strip():
+        raise ValueError("text must contain a non-whitespace character")
+    # 인용문과 문자 구간이 달라지지 않도록 strip/정규화하지 않는다.
+    return value
 
 
-# extract 노드의 출력 타입. state.IngestionState.experiences에 쌓인다
-class Experience(BaseModel):
-    title: str
-    summary: str
-    # 지금은 쓰는 곳이 없다. 검증한 스키마를 바꾸지 않으려고 남겨 둔다
-    link_hints: list[str]
-    evidences: list[Evidence]
+NonBlankText = Annotated[str, Field(strict=True, min_length=1), AfterValidator(_require_non_blank)]
+EvidenceId = NonBlankText
 
 
-# extract 노드의 LLM structured output 루트 타입. 리스트를 바로 루트로 못 받아서 감싸는 래퍼
-class Experiences(BaseModel):
-    experiences: list[Experience]
+def _explicit_status_schema(schema: dict) -> None:
+    # Python can default to unknown; the LLM wire schema asks for an explicit status.
+    schema.pop("default", None)
 
 
-# CardDraft.evidences의 원소 타입
-class CardEvidenceDraft(BaseModel):
+class EvidenceRef(BaseModel):
+    """원문 블록의 연속된 인용 구간. 문자열을 읽거나 바꾸는 파서가 아니다.
+
+    start_char/end_char는 원문을 보존한 블록 text의 Python 문자 인덱스다.
+    0부터 시작하고 끝은 포함하지 않는다: text[start_char:end_char] == excerpt.
+    위치는 선택적이다. 둘 다 생략하거나 둘 다 제공하며 파서/정규화 코드가 계산한다.
+    블록 존재 여부와 실제 문자열 일치는 6번 Verification Gate에서 검사한다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
     document_id: UUID
-    location: str | None
-    excerpt: str | None
-    # 검증 노드가 원문(표의 조건 등)을 다시 보려고 쓰는 값. DB에는 저장하지 않는다.
-    # kind는 extract의 근거 종류이고, 문서 머리말에서 온 근거(프로젝트명 등)는 None이다
-    chunk_id: str | None = None
-    kind: str | None = None
+    block_id: NonBlankText
+    location: NonBlankText
+    excerpt: NonBlankText
+    start_char: int | None = Field(default=None, ge=0, strict=True)
+    end_char: int | None = Field(default=None, gt=0, strict=True)
+
+    @model_validator(mode="after")
+    def validate_quote_span(self) -> Self:
+        if (self.start_char is None) != (self.end_char is None):
+            raise ValueError("start_char and end_char must be supplied together")
+        if self.start_char is None:
+            return self
+        if self.end_char <= self.start_char:
+            raise ValueError("end_char must be greater than start_char")
+        if self.end_char - self.start_char != len(self.excerpt):
+            raise ValueError("quote span length must match excerpt length")
+        return self
 
 
-# draft_card 노드의 LLM 구조화 출력 타입들. 필드마다 근거 id(E1, H1 ...)를 먼저 고르고
-# 문장을 나중에 쓰게 한다(구조화 출력은 필드 순서대로 생성된다)
-class SourcedText(BaseModel):
-    source_ids: list[str]
-    text: str
+class ExtractedField(BaseModel):
+    """추출값과 사실 상태, 그 판단에 사용한 원문 근거를 함께 보존한다.
+
+    hypothesis는 원문에 명시된 가설, inferred는 근거에서 도출한 추론이다.
+    conflicted는 결론을 정하지 못해 value=None일 수 있다. 충돌 근거는 보존한다.
+    이 모델의 통과는 해당 값의 사실성이 검증됐다는 뜻이 아니다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: NonBlankText | None = None
+    status: FactStatus = Field(default="unknown", json_schema_extra=_explicit_status_schema)
+    evidence_refs: list[EvidenceId] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_fact_metadata(self) -> Self:
+        if self.status == "unknown":
+            if self.value is not None:
+                raise ValueError("unknown fields must have value=None")
+            return self
+        if self.status != "conflicted" and self.value is None:
+            raise ValueError("known, hypothesized or inferred fields must have a value")
+        if not self.evidence_refs:
+            raise ValueError("non-unknown fields must include evidence_refs")
+        return self
 
 
-class OptionalSourcedText(BaseModel):
-    source_ids: list[str]
-    text: str | None
+class ExtractedExperienceFields(BaseModel):
+    """LLM output fields only. The model never generates source records or coordinates."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    context: ExtractedField = Field(default_factory=ExtractedField)
+    problem: ExtractedField = Field(default_factory=ExtractedField)
+    cause: ExtractedField = Field(default_factory=ExtractedField)
+    approach: ExtractedField = Field(default_factory=ExtractedField)
+    rationale: ExtractedField = Field(default_factory=ExtractedField)
+    outcome: ExtractedField = Field(default_factory=ExtractedField)
+    lesson: ExtractedField = Field(default_factory=ExtractedField)
+    technologies: list[NonBlankText] = Field(default_factory=list)
+    keywords: list[NonBlankText] = Field(default_factory=list)
 
 
-class CardComposition(BaseModel):
-    # lesson을 근거로 쓸 수 있는지 먼저 판단하게 한다. false면 후보를 만들지 않는다
-    lesson_supportable: bool
-    lesson_reason: str
-    title: SourcedText
-    summary: SourcedText
-    context: SourcedText
-    problem: OptionalSourcedText
-    cause: OptionalSourcedText
-    approach: OptionalSourcedText
-    rationale: OptionalSourcedText
-    outcome: OptionalSourcedText
-    lesson: SourcedText
-    technologies: list[str]
-    keywords: list[str]
-    project_name: OptionalSourcedText
-    department: OptionalSourcedText
-    # 원문의 날짜 표현 그대로. 연-월-일이 모두 있고 원문에 있을 때만 draft_card가 date로 바꾼다
-    project_date: OptionalSourcedText
+class ExtractedElements(ExtractedExperienceFields):
+    """One independent experience with its code-owned evidence registry."""
+
+    evidence_index: dict[EvidenceId, EvidenceRef] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_evidence_ids(self) -> Self:
+        for name in FACT_FIELDS:
+            fact = getattr(self, name)
+            missing = set(fact.evidence_refs) - self.evidence_index.keys()
+            if missing:
+                raise ValueError(f"{name}: unknown evidence IDs: {sorted(missing)}")
+        return self
 
 
-# 카드 초안. draft_card 노드가 만들고, 검증 노드가 판정한다
-class CardDraft(BaseModel):
-    title: str
-    summary: str
-    context: str
-    problem: str | None
-    cause: str | None
-    approach: str | None
-    rationale: str | None
-    outcome: str | None
-    lesson: str
-    technologies: list[str]
-    keywords: list[str]
-    project_name: str | None
-    department: str | None
-    project_date: date | None
-    # 카드당 근거 1개 이상 (docs/schema.md 제약). DB가 아니라 파이프라인이 보장한다
-    evidences: list[CardEvidenceDraft]
-    # 필드 이름 -> 그 필드를 뒷받침하는 evidences의 인덱스. 검증 노드가 필드별로 원문을 대조한다.
-    # DB에는 저장하지 않는다
-    field_sources: dict[str, list[int]] = {}
-    # 이 카드를 만든 경험의 state.experiences 인덱스. 검증 노드가 경험의 근거 전체를 보려고 쓴다
-    experience_index: int | None = None
+FACT_FIELDS = ("context", "problem", "cause", "approach", "rationale", "outcome", "lesson")
 
 
-# verify 노드의 LLM 구조화 출력 타입. 카드의 주장 하나와 그 판정
-ClaimJudgement = Literal[
-    "supported",
-    "condition_dropped",
-    "overstated",
-    "not_a_result",
-    "result_unconfirmed",
-    "rejected_as_adopted",
-    "not_in_evidence",
-    "lesson_within_scope",
-    "lesson_overreach",
-]
+class ExtractionResult(BaseModel):
+    """Zero to many experiences. Each retains its own statuses and evidence registry."""
+
+    model_config = ConfigDict(extra="forbid")
+    experiences: list[ExtractedElements] = Field(default_factory=list)
 
 
-class ClaimCheck(BaseModel):
-    # 주장 -> 대조한 근거 -> 이유 -> 판정 순으로 쓰게 해서 결론부터 정하는 걸 줄인다
-    field: str
-    claim: str
-    evidence_ids: list[str]
-    note: str
-    judgement: ClaimJudgement
+class ExtractionProposal(BaseModel):
+    """Structured LLM response. Evidence registry is attached and validated by code."""
+
+    model_config = ConfigDict(extra="forbid")
+    experiences: list[ExtractedExperienceFields] = Field(default_factory=list)
 
 
-class ClaimChecks(BaseModel):
-    checks: list[ClaimCheck]
+class DraftText(BaseModel):
+    """Only fields which require writing. Factual body fields are copied by code."""
+
+    model_config = ConfigDict(extra="forbid")
+    title: NonBlankText
+    summary: NonBlankText
+    lesson: NonBlankText
+    keywords: list[NonBlankText] = Field(default_factory=list)
 
 
-# 카드 검증 결과. 검증 판정(verdict)과 공개 상태(status)는 따로 기록한다
-# (결과 없는 결정 카드는 내용이 정확하면 passed지만 공개 정책상 draft다).
-#   passed: 모든 주장이 근거로 지지됨(문제 있던 조건부·선택 필드는 비운 뒤). outcome이 결과 미확정
-#           (result_unconfirmed)이면 내용은 맞으므로 passed지만 공개 상태는 draft다
-#   held: 필수 필드(title/summary/context/lesson)에 근거를 벗어난 주장이 있음 -> 사람 검토
-#   excluded: 문제 필드를 비우고 나니 카드 구조 조건이 깨짐 -> 저장 안 함
-#   incomplete: 호출 실패, 응답 파싱 실패, 값이 있는 필드의 판정 누락 -> 저장 안 함
-class VerificationResult(BaseModel):
-    verdict: Literal["passed", "held", "excluded", "incomplete"]
-    reasons: list[str]
-    cleared_fields: list[str] = []
-    # 저장할 때의 knowledge_cards.status. excluded/incomplete는 저장하지 않으므로 None
-    status: Literal["active", "draft"] | None = None
+class DraftProposal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    draft: DraftText | None = None
+    skip_reason: NonBlankText | None = None
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> Self:
+        if (self.draft is None) == (self.skip_reason is None):
+            raise ValueError("provide either draft or skip_reason")
+        return self
 
 
-# verify 노드의 출력 타입. state.IngestionState.verified_cards에 쌓인다
-# (embed 노드가 status가 있는 것만 꺼내 씀). draft는 문제 필드를 비운 뒤의 카드다
-class VerifiedCard(BaseModel):
-    draft: CardDraft
-    verification: VerificationResult
+class KnowledgeCardDraft(BaseModel):
+    """Unverified card plus the immutable-by-convention extraction snapshot for the gate.
+
+    experience_id is an internal reproducible candidate key, not a saved card row ID.
+    No quality evaluation or activation is performed at this stage.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    experience_id: NonBlankText
+    source_extraction: ExtractedElements
+    field_evidence_refs: dict[NonBlankText, list[EvidenceId]]
+    lesson_status: Literal["confirmed", "inferred"]
+    title: NonBlankText
+    summary: NonBlankText
+    context: NonBlankText
+    problem: NonBlankText | None = None
+    cause: NonBlankText | None = None
+    approach: NonBlankText | None = None
+    rationale: NonBlankText | None = None
+    outcome: NonBlankText | None = None
+    lesson: NonBlankText
+    technologies: list[NonBlankText] = Field(default_factory=list)
+    keywords: list[NonBlankText] = Field(default_factory=list)
+    status: Literal["draft"] = "draft"
+
+    @model_validator(mode="after")
+    def validate_source_contract(self) -> Self:
+        expected_fields = {"title", "summary", *FACT_FIELDS}
+        if self.field_evidence_refs.keys() != expected_fields:
+            raise ValueError("draft must retain evidence links for every narrative field")
+        if self.technologies != self.source_extraction.technologies:
+            raise ValueError("draft must preserve extracted technologies")
+        expected_lesson_status = (
+            "confirmed"
+            if self.source_extraction.lesson.status == "confirmed"
+            and self.lesson == self.source_extraction.lesson.value
+            else "inferred"
+        )
+        if self.lesson_status != expected_lesson_status:
+            raise ValueError("a derived or rewritten lesson must remain inferred")
+        for name in FACT_FIELDS[:-1]:
+            fact = getattr(self.source_extraction, name)
+            expected = fact.value if fact.status == "confirmed" else None
+            if getattr(self, name) != expected:
+                raise ValueError(f"{name}: draft must preserve confirmed source values only")
+            expected_refs = fact.evidence_refs if expected is not None else []
+            if self.field_evidence_refs[name] != expected_refs:
+                raise ValueError(f"{name}: draft must preserve that field's source evidence")
+        for name, refs in self.field_evidence_refs.items():
+            if getattr(self, name) is not None and not refs:
+                raise ValueError(f"{name}: draft text requires source evidence")
+            if set(refs) - self.source_extraction.evidence_index.keys():
+                raise ValueError("draft references unknown evidence")
+        return self
+
+    def to_card_fields(self) -> dict:
+        """Body fields with existing API/DB names; no synthetic IDs, dates or scores."""
+        return self.model_dump(
+            mode="json",
+            exclude={"experience_id", "source_extraction", "field_evidence_refs", "lesson_status"},
+        )
 
 
-# embed 노드가 kure-v3로 만드는 4종 벡터. EmbeddedCard 안에 담겨서 쓰인다
-class CardEmbeddings(BaseModel):
-    content_embedding: list[float]
-    situation_embedding: list[float]
-    solution_embedding: list[float]
-    lesson_embedding: list[float]
-
-
-# embed 노드의 출력 타입. state.IngestionState.embedded_cards에 쌓인다 (save 노드가 그대로 저장)
-# "이 리스트에 들어있다 = 저장 대상이고 임베딩까지 끝난 카드"라는 뜻이라, verdict나 embeddings의
-# 존재 여부를 다시 확인할 필요가 없다. status는 verify가 정한 공개 상태다
-class EmbeddedCard(BaseModel):
-    draft: CardDraft
-    # draft 카드는 임베딩하지 않는다(None으로 저장 -> 벡터 검색에 안 잡힘)
-    embeddings: CardEmbeddings | None
-    status: Literal["active", "draft"] = "draft"
-
-
-# embed_chunks 노드의 출력 타입. state.IngestionState.embedded_chunks에 쌓인다
-# (save_chunks 노드가 저장)
-# content는 원문 그대로이고, 임베딩은 location을 앞에 붙인 텍스트로 만든 것이다
-class EmbeddedChunk(BaseModel):
-    document_id: UUID
-    chunk_index: int
-    location: str | None
-    content: str
-    embedding: list[float]
+class DraftSkip(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    experience_id: NonBlankText
+    code: NonBlankText
+    reason: NonBlankText
+    source_extraction: ExtractedElements

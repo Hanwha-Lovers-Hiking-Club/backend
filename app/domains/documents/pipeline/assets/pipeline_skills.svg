@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1420" viewBox="0 0 1800 1420">
+<title>Extract · Draft Card · Verify 역할별 지침</title>
+<rect width="100%" height="100%" fill="white"/>
+<defs><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#87939D" stroke-width="1.6"/></marker></defs>
+<text x="60" y="84" fill="#244153" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="42" font-weight="700">S1 · S2 · S3 — 단계별 Skill 패널</text>
+<text x="60" y="130" fill="#244153" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="400">현재 프롬프트 + Python 검사 로직을 역할별로 분리해 표현</text>
+<text x="60" y="173" fill="#6B7784" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">별도 SKILL.md 실행 기능이 아니며, 평가 기준 문서를 자동으로 읽어 적용하는 구조도 아님</text>
+<rect x="60" y="225" width="520" height="1095" rx="29" fill="#F1ECFF" stroke="#AB9ACD" stroke-width="2"/>
+<text x="320" y="280" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="30" font-weight="700" text-anchor="middle">S1  근거 기반 추출</text>
+<text x="320" y="322" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="21" font-weight="400" text-anchor="middle">Extract · gpt-6.1-sol</text>
+<text x="86" y="388" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="700">입력</text>
+<text x="86" y="429" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 입력: 청크의 구조 블록·근거 ID</text>
+<text x="86" y="525" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="700">프롬프트 지침</text>
+<text x="86" y="566" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 사실·가설·추론·미확인·충돌 구분</text>
+<text x="86" y="606" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 없는 원인·결과는 null/unknown</text>
+<text x="86" y="646" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 입력에 안 보인다고 문서에 없다고 단정하지 </text>
+<text x="86" y="678" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">  않음</text>
+<text x="86" y="718" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• Accepted를 실행 결과로 쓰지 않음</text>
+<text x="86" y="758" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 입력 블록의 근거 ID만 인용</text>
+<text x="86" y="875" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="700">코드 검사·연결</text>
+<text x="86" y="916" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• Pydantic 출력 스키마 검사</text>
+<text x="86" y="956" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 청크 밖 근거 ID 거부</text>
+<text x="86" y="996" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• evidence_index는 코드가 연결</text>
+<text x="86" y="1095" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="700">출력</text>
+<text x="86" y="1136" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 출력: 0~N 경험 후보</text>
+<text x="86" y="1176" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 필드별 value/status/evidence_refs</text>
+<text x="86" y="1268" fill="#6B7784" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="18" font-weight="400">prompts/extract.md</text>
+<text x="86" y="1295" fill="#6B7784" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="18" font-weight="400">extraction.py · models.py</text>
+<rect x="640" y="225" width="520" height="1095" rx="29" fill="#F1ECFF" stroke="#AB9ACD" stroke-width="2"/>
+<text x="900" y="280" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="30" font-weight="700" text-anchor="middle">S2  근거를 유지한 작성</text>
+<text x="900" y="322" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="21" font-weight="400" text-anchor="middle">Draft Card · gpt-6-luna</text>
+<text x="666" y="388" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="700">입력</text>
+<text x="666" y="429" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 입력: 추출 후보와 사실 상태·근거</text>
+<text x="666" y="525" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="700">프롬프트 지침</text>
+<text x="666" y="566" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• title·summary·lesson·keywords 작성</text>
+<text x="666" y="606" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 추출에 없는 새 사실 생성 금지</text>
+<text x="666" y="646" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 가설을 제목·요약에서 확정하지 않음</text>
+<text x="666" y="686" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 근거 범위 안에서만 교훈 일반화</text>
+<text x="666" y="726" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 카드화 정보가 부족하면 생략</text>
+<text x="666" y="875" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="700">코드 검사·연결</text>
+<text x="666" y="916" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• confirmed 본문은 코드가 복사</text>
+<text x="666" y="956" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 필드별 근거·추출 원본 유지</text>
+<text x="666" y="996" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 파생·재작성 교훈은 inferred</text>
+<text x="666" y="1095" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="700">출력</text>
+<text x="666" y="1136" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 출력: 후보당 초안 1개 또는 생략</text>
+<text x="666" y="1176" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 실제 카드 활성화·저장은 하지 않음</text>
+<text x="666" y="1268" fill="#6B7784" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="18" font-weight="400">prompts/draft_card.md</text>
+<text x="666" y="1295" fill="#6B7784" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="18" font-weight="400">drafting.py · models.py</text>
+<rect x="1220" y="225" width="520" height="1095" rx="29" fill="#F1ECFF" stroke="#AB9ACD" stroke-width="2"/>
+<text x="1480" y="280" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="30" font-weight="700" text-anchor="middle">S3  주장·근거 검증</text>
+<text x="1480" y="322" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="21" font-weight="400" text-anchor="middle">Verify · 규칙 + gpt-6.1-sol</text>
+<text x="1246" y="388" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="700">입력</text>
+<text x="1246" y="429" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 입력: 초안·추출값·근거·보충 문맥</text>
+<text x="1246" y="525" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="700">프롬프트 지침</text>
+<text x="1246" y="566" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 모든 주장을 원문 근거와 대조</text>
+<text x="1246" y="606" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 복합 주장은 모든 절을 확인</text>
+<text x="1246" y="646" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 가설 승격·근거 없는 수치/원인 검출</text>
+<text x="1246" y="686" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 지지 근거와 보충 문맥을 구분</text>
+<text x="1246" y="726" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 판정·근거 ID·이유를 반환</text>
+<text x="1246" y="875" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="700">코드 검사·연결</text>
+<text x="1246" y="916" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 구조 → 인용·위치 → 의미 검사</text>
+<text x="1246" y="956" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 코드가 최종 판정·재작성 대상을 결정</text>
+<text x="1246" y="996" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 근거 검사 실패를 LLM이 무시 못 함</text>
+<text x="1246" y="1095" fill="#66518F" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="25" font-weight="700">출력</text>
+<text x="1246" y="1136" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 출력: pass / retry / reject</text>
+<text x="1246" y="1176" fill="#354A5A" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="22" font-weight="400">• 또는 needs_review</text>
+<text x="1246" y="1268" fill="#6B7784" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="18" font-weight="400">prompts/verify.md</text>
+<text x="1246" y="1295" fill="#6B7784" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="18" font-weight="400">verification/ · nodes/verify.py</text>
+<text x="60" y="1381" fill="#825B20" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif" font-size="23" font-weight="400">현재 Extract의 경험 단위와 확정된 교훈 단위 기준을 맞추는 작업은 별도 보완 대상입니다.</text>
+</svg>

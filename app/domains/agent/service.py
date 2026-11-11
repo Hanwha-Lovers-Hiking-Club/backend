@@ -1,19 +1,8 @@
-# 이 도메인의 진짜 로직이 사는 곳: DB 호출, LLM 호출, 비즈니스 규칙 전부 여기.
-# router.py는 여기 있는 함수를 호출만 하고, 로직은 절대 router.py에 쓰지 않는다.
-from app.db import supabase
+# 이 도메인의 진짜 로직이 사는 곳. 검색 RPC와 질문 임베딩 계약이 확정되면 연결한다.
+from fastapi import HTTPException
 
 
 async def ask_agent(question: str) -> dict:
-    # TODO: question을 임베딩 모델로 벡터(query_embedding)로 변환하는 단계가 먼저 필요함
-    query_embedding = []  # placeholder
-
-    # pgvector 유사도 검색은 PostgREST(SDK)가 지원하지 않아서,
-    # sql/functions.sql 에 만들어둔 Postgres 함수를 rpc()로 호출한다.
-    docs = supabase.rpc(  # noqa: F841 (TODO 자리표시용, 아래서 실제로 사용할 예정)
-        "match_documents", {"query_embedding": query_embedding}
-    ).execute()
-
-    # TODO: docs.data를 컨텍스트로 넣어서 LLM 호출 후 answer 생성
-    answer = f"받은 질문: {question}"
-
-    return {"answer": answer}
+    # 아직 질문 임베딩·카드 검색 RPC·응답 생성이 구현되지 않았다.
+    # 빈 벡터로 없는 RPC를 호출하거나 자리표시자 답변을 성공으로 돌려주지 않는다.
+    raise HTTPException(status_code=503, detail="지식카드 검색 기능이 아직 준비되지 않았습니다.")

@@ -1,0 +1,470 @@
+{
+  "schema_version": 1,
+  "criteria_version": "0.4",
+  "method_version": "0.2",
+  "created_on": "2026-11-04",
+  "timezone": "Asia/Seoul",
+  "parent_criteria_version": "0.3",
+  "parent_method_version": "0.1",
+  "reference_code_commit": "164c44842ff7ff022cd3c688a014024f42c793e1",
+  "status": "user_decisions_confirmed_no_labeling_or_pipeline_execution",
+  "hash_algorithm": "SHA-256 of exact bytes; utf8_lf_sha256 is separately labeled for historical manifest comparison",
+  "self_hash_policy": "Manifest excludes itself; final report provides its exact-byte SHA-256",
+  "author": "Codex repository work session exposed to code and generated outputs; document preparation only",
+  "provenance_limit": "No claim of output-blind policy authorship or third-party validation; the human G0 adjudicator knows general pipeline behavior",
+  "roles": {
+    "g0_a": {
+      "family": "Claude",
+      "fresh_session": true,
+      "model_id": null,
+      "usage_path": null
+    },
+    "g0_b": {
+      "family": "GPT",
+      "fresh_session": true,
+      "model_id": null,
+      "usage_path": null,
+      "recommendation": "Use a different model from all pipeline stages; record a limitation if identical"
+    },
+    "g0_adjudicator": "User (human), only before any generated output exists for that document",
+    "cards_full_rater": "Claude fresh session",
+    "cards_sample_reviewer": "Human, independent judgment before revealing Claude labels",
+    "gpt_card_judgment_allowed": false,
+    "codex_evaluation_roles_allowed": false
+  },
+  "judgment_metadata_required": [
+    "model_id_or_human_role",
+    "usage_path_api_web_or_manual",
+    "request_version_and_hash",
+    "date_with_timezone",
+    "input_file_sha256_each",
+    "guide_version_and_hash",
+    "result_file_sha256",
+    "independence_and_exposure_record"
+  ],
+  "metadata_storage": "Operator sidecar linked to each result; supplied request bodies remain unmodified",
+  "pipeline_models_context_from_user": {
+    "extract": "gpt-6.1-sol",
+    "verify": "gpt-6.1-sol",
+    "draft": "gpt-6-luna"
+  },
+  "split": {
+    "unit": "project",
+    "project_count": 6,
+    "status": "user_confirmed_frozen_project_split",
+    "split_frozen": true,
+    "frozen_at": "2026-11-04T12:06:24+09:00",
+    "confirmed_by": "user",
+    "freeze_before": "Any calibration or holdout G0 authoring",
+    "projects": [
+      {
+        "project": "3jmt-knowledge-card-dataset",
+        "role": "holdout",
+        "status": "user_confirmed_role",
+        "confirmed_on": "2026-11-04"
+      },
+      {
+        "project": "mechadog-knowledge-card-dataset",
+        "role": "holdout",
+        "status": "user_confirmed_role",
+        "confirmed_on": "2026-11-04"
+      },
+      {
+        "project": "schale-queue-markdown-dataset",
+        "role": "holdout",
+        "status": "user_confirmed_role",
+        "confirmed_on": "2026-11-04"
+      },
+      {
+        "project": "ssafesta-knowledge-card-dataset",
+        "role": "holdout",
+        "status": "user_confirmed_role",
+        "confirmed_on": "2026-11-04"
+      },
+      {
+        "project": "token-glance-knowledge-card-dataset",
+        "role": "calibration",
+        "status": "user_confirmed_role",
+        "confirmed_on": "2026-11-04"
+      },
+      {
+        "project": "vigilantis-knowledge-card-dataset",
+        "role": "holdout",
+        "status": "user_confirmed_role",
+        "confirmed_on": "2026-11-04"
+      }
+    ],
+    "document_selection_status": "Calibration documents confirmed; holdout document-level selection/exclusion must be frozen before the corresponding G0",
+    "source_inventory": {
+      "packet_manifest_sha256": "1f0ac9ab58f7679bfd614d86dd78356ef9d691c743e43ff5a37e7ad1f23cb987",
+      "source_file_count": 230
+    },
+    "confirmed_on": "2026-11-04",
+    "freeze_scope": [
+      "project_roles",
+      "selected_calibration_documents_and_hashes",
+      "source_pool_inventory"
+    ],
+    "holdout_document_selection_frozen": false,
+    "exposure_history_independently_verified": false,
+    "before_document_g0_record": [
+      "selected_and_excluded_holdout_documents_if_applicable",
+      "input_file_hashes",
+      "absence_of_generated_output_for_document",
+      "model_id_and_usage_path"
+    ]
+  },
+  "exposure_history_operator_only_do_not_distribute_to_g0_authors": [
+    {
+      "project": "token-glance-knowledge-card-dataset",
+      "source": "docs/adr/0001-menubar-rendering.md",
+      "record": "Generated output previously exposed, as stated by user; no output copied"
+    },
+    {
+      "project": "token-glance-knowledge-card-dataset",
+      "source": "docs/releases/v0.1.1.md",
+      "record": "Generated output previously exposed, as stated by user; no output copied"
+    }
+  ],
+  "evaluation_card_stage": {
+    "status": "not_yet_specified"
+  },
+  "g0_required_fields": [
+    "교훈 문장",
+    "적용 조건·범위 / 제외 범위",
+    "필수 조건",
+    "같은 교훈으로 볼 수 있는 차이",
+    "근거",
+    "인식 상태",
+    "성공 관측",
+    "자료 성격",
+    "관련 교훈과 분리·통합한 이유",
+    "불확실성"
+  ],
+  "g0_required_conditions_policy": "1-3 source-grounded elements authored in G0, frozen before generation, never edited after seeing output",
+  "card_anonymization": {
+    "status": "definition_only_no_export",
+    "keep": [
+      "random_card_id",
+      "title",
+      "summary",
+      "context",
+      "problem",
+      "cause",
+      "approach",
+      "rationale",
+      "outcome",
+      "lesson",
+      "technologies",
+      "keywords",
+      "location",
+      "excerpt"
+    ],
+    "remove": [
+      "system_run_configuration_names",
+      "generator_model_version",
+      "original_card_job_ids",
+      "origin_revealing_filenames_order",
+      "gate_decision",
+      "status",
+      "verification_trace",
+      "scores"
+    ],
+    "private_only": [
+      "original_id_mapping",
+      "condition_and_run_mapping",
+      "shuffle_seed"
+    ]
+  },
+  "not_performed": [
+    "G0 authoring",
+    "card judgment",
+    "disagreement adjudication",
+    "evaluation pipeline execution",
+    "card export"
+  ],
+  "not_changed": [
+    "all pre-existing tracked files",
+    "pipeline code",
+    "generation prompts",
+    "DB",
+    "source dataset"
+  ],
+  "files": [
+    {
+      "path": "lesson_unit_criteria_v0.4.md",
+      "size_bytes": 18841,
+      "sha256": "3eb23983cc5f64afe0f473ddbf9441ae2fdad60db368a8c36651165e706a0a91"
+    },
+    {
+      "path": "lesson_evaluation_protocol_v0.2.md",
+      "size_bytes": 27946,
+      "sha256": "c4540977724cfc3ce54c9364a38174dfed72f6a302466f8e951b7e77bbd6ae52"
+    },
+    {
+      "path": "judge_guide_g0_v0.4.md",
+      "size_bytes": 7702,
+      "sha256": "5df3612202d2af9fede07285ed501f09d343479398ace5bd252019043a489770"
+    },
+    {
+      "path": "lesson_evaluation_preparation_v0.2.md",
+      "size_bytes": 8536,
+      "sha256": "86034651b393fc2f329e9ee86c0d59b4baa895f1bab601e120ca74129ed9b237"
+    }
+  ],
+  "preserved_baselines": [
+    {
+      "path": "lesson_unit_criteria_v0.1.md",
+      "size_bytes": 7024,
+      "sha256": "d01e09673f2ba5f395294fa5f1b8f702251b87685258c85444f2c7a4d94b62eb",
+      "utf8_lf_sha256": "d01e09673f2ba5f395294fa5f1b8f702251b87685258c85444f2c7a4d94b62eb",
+      "unchanged_from_preparation_baseline": true
+    },
+    {
+      "path": "lesson_unit_criteria_v0.1.manifest.json",
+      "size_bytes": 1175,
+      "sha256": "11d5c2a7a55180cd182e8eb966965b64504b7e484fc987de4f8d8c2bf5795395",
+      "utf8_lf_sha256": "c0cbb77f794177e467ae354b4dac4579ac8bd65988dccbfb877252024a4bf63d",
+      "unchanged_from_preparation_baseline": true
+    },
+    {
+      "path": "lesson_unit_criteria_v0.2.md",
+      "size_bytes": 8523,
+      "sha256": "8c71a908fc2112b1ce20b761b4f707132c724836660ad7fd28f4b1a431d3a5ef",
+      "utf8_lf_sha256": "8c71a908fc2112b1ce20b761b4f707132c724836660ad7fd28f4b1a431d3a5ef",
+      "unchanged_from_preparation_baseline": true
+    },
+    {
+      "path": "lesson_unit_criteria_v0.2.manifest.json",
+      "size_bytes": 1401,
+      "sha256": "2fa7b2e5cc275bf662874d030adf311f44e78a0e0d7825a943f5408c9349fecc",
+      "utf8_lf_sha256": "6bf3c43b7992ab43cef9a2b115fedd679e4f0f7c5a472e74e380c310284246b6",
+      "unchanged_from_preparation_baseline": true
+    },
+    {
+      "path": "lesson_unit_criteria_v0.3.md",
+      "size_bytes": 13383,
+      "sha256": "867c265e03a1b78ceccb8cfb7f3f63e52fb058b3998ac991ecda6de62d3a9194",
+      "utf8_lf_sha256": "cba0ac13954b346de62935f2d3d0b924c214cdf6eb44f620af95df4d8a1d9c18",
+      "unchanged_from_preparation_baseline": true
+    },
+    {
+      "path": "lesson_unit_criteria_v0.3.manifest.json",
+      "size_bytes": 2093,
+      "sha256": "250f6a359c8ee1c388fe71c5eaa016edd051414c59e74ddf5ed80a4247abc6c6",
+      "utf8_lf_sha256": "0831ed48ee8d5e8ed0468e76c493c4216e7d950e017ffbc5d42311e0628dec1d",
+      "unchanged_from_preparation_baseline": true
+    },
+    {
+      "path": "lesson_evaluation_protocol_v0.1.md",
+      "size_bytes": 17141,
+      "sha256": "fc3bc4c525f4bbff7c1abc8ff01ed4ab0fde37b977baf5ed4dfb03fe9029b586",
+      "utf8_lf_sha256": "6ab6b1f274a073ccc0f2c3ba76d9aa604e3534b28e76be7656bbf13a7652b1af",
+      "unchanged_from_preparation_baseline": true
+    },
+    {
+      "path": "lesson_unit_criteria_brief.md",
+      "size_bytes": 2215,
+      "sha256": "92099e1117fc83bd8ed6f1c989338b4e135ba996c0c9e60b8892d2b633d4d8be",
+      "utf8_lf_sha256": "92099e1117fc83bd8ed6f1c989338b4e135ba996c0c9e60b8892d2b633d4d8be",
+      "unchanged_from_preparation_baseline": true
+    },
+    {
+      "path": "lesson_evaluation_method_brief.md",
+      "size_bytes": 4390,
+      "sha256": "e623a1dfbdd7ce41964e2a64dbfcd019194915785baaa34d007ed8d7e2ae6cbf",
+      "utf8_lf_sha256": "e623a1dfbdd7ce41964e2a64dbfcd019194915785baaa34d007ed8d7e2ae6cbf",
+      "unchanged_from_preparation_baseline": true
+    },
+    {
+      "path": "lesson_unit_criteria_review.md",
+      "size_bytes": 7499,
+      "sha256": "1272baf0b7c9fe941ef909c75868ca2c8d37cc7ac272d5c5924e59b2733a124f",
+      "utf8_lf_sha256": "1272baf0b7c9fe941ef909c75868ca2c8d37cc7ac272d5c5924e59b2733a124f",
+      "unchanged_from_preparation_baseline": true
+    }
+  ],
+  "packet": {
+    "root": "C:\\Users\\user\\Desktop\\judge-packet-2026-11-04",
+    "manifest": {
+      "path": "manifest.json",
+      "size_bytes": 143532,
+      "sha256": "1f0ac9ab58f7679bfd614d86dd78356ef9d691c743e43ff5a37e7ad1f23cb987"
+    },
+    "file_count_including_packet_manifest": 235,
+    "original_file_count": 230,
+    "guide": {
+      "path": "g0/judge_guide_g0_v0.4.md",
+      "size_bytes": 7702,
+      "sha256": "5df3612202d2af9fede07285ed501f09d343479398ace5bd252019043a489770"
+    },
+    "requests": [
+      {
+        "path": "g0/judge_request_g0_v1.md",
+        "size_bytes": 5364,
+        "sha256": "89e1a4573c8d1a4dc35dabd8a50257508c91de2ac22798c414b87416ae17feca"
+      },
+      {
+        "path": "cards/judge_request_cards_v1.md",
+        "size_bytes": 5447,
+        "sha256": "43de76ae833905f634b6fcdd54e3c95945550f7d97fecaa92a725d7a58a1a7fe"
+      }
+    ],
+    "requests_content_policy": "User-provided attachment content unchanged; UTF-8 no BOM, LF, terminal newline"
+  },
+  "calibration_documents": [
+    {
+      "project": "token-glance-knowledge-card-dataset",
+      "path_in_original_markdown": "docs/adr/0002-localization.md",
+      "sha256": "bee7f42a20b7a939f7325896599ce64b87a96afb95951583a7ba63e4050a7888",
+      "type": "design_decision_and_rationale",
+      "selected": true,
+      "prior_generation_absence_confirmed": false,
+      "selection_status": "user_confirmed_frozen",
+      "confirmed_on": "2026-11-04",
+      "prior_generation_absence_status": "Not independently verified by document preparation; record before G0 authoring"
+    },
+    {
+      "project": "token-glance-knowledge-card-dataset",
+      "path_in_original_markdown": "docs/perf.md",
+      "sha256": "8051d87364e5d283af8cffc5cc6bbf4a9de4613944ddbab25dec2b28f70b84cd",
+      "type": "failure_diagnosis_and_measurements",
+      "selected": true,
+      "prior_generation_absence_confirmed": false,
+      "selection_status": "user_confirmed_frozen",
+      "confirmed_on": "2026-11-04",
+      "prior_generation_absence_status": "Not independently verified by document preparation; record before G0 authoring"
+    }
+  ],
+  "human_sample_policy": {
+    "status": "user_confirmed",
+    "fraction": 0.25,
+    "minimum_cards": 10,
+    "rounding": "ceiling",
+    "scope": "per document per condition per run",
+    "base_sample": "min(n, max(ceil(0.25*n), 10))",
+    "include_all": [
+      "invalid",
+      "boundary"
+    ],
+    "valid_selection": "Uniform random fill to base target; record seed",
+    "exceeds_base_if": "All invalid/boundary cards exceed base; complementary cards may add review context",
+    "report_strata": [
+      "Claude invalid/boundary",
+      "Claude valid"
+    ],
+    "separate_disagreement_axes": [
+      "A content validity",
+      "C G0 correspondence"
+    ],
+    "mandatory_kappa_or_pass_threshold": null,
+    "confirmed_on": "2026-11-04",
+    "confirmed_by": "user"
+  },
+  "execution_policy": {
+    "status": "user_confirmed",
+    "confirmed_on": "2026-11-04",
+    "confirmed_by": "user",
+    "initial_single_system_evaluation": {
+      "runs": 1,
+      "required_result_label": "1회 실행"
+    },
+    "condition_comparison": {
+      "runs_per_condition": 3,
+      "applies_only_when_comparing_conditions": true
+    },
+    "freeze_before_execution": true,
+    "pool_cards_across_runs": false
+  },
+  "preparation_revision": 2,
+  "updated_on": "2026-11-04",
+  "supersedes_preparation_manifest_sha256": "21562149759a4c196d9c5acf429242b6d3cb2893fd778da7bf692a242c3b402d",
+  "user_confirmation": {
+    "confirmed_on": "2026-11-04",
+    "timezone": "Asia/Seoul",
+    "recorded_at": "2026-11-04T12:06:24+09:00",
+    "source": "User follow-up in current conversation",
+    "decisions": [
+      "사람 표본 수치와 절차는 제안 그대로 확정",
+      "조건 비교 시에만 조건당 3회; 단일 시스템 첫 평가는 1회이며 결과에 1회 실행 명시",
+      "나머지 5개 프로젝트는 홀드아웃",
+      "조율 문서는 ADR 0002와 docs/perf.md 두 후보 모두 사용"
+    ]
+  },
+  "g0_raw_results": {
+    "recorded_on": "2026-11-05",
+    "timezone": "Asia/Seoul",
+    "root": "C:\\Users\\user\\Desktop\\judge-results\\g0",
+    "hash_algorithm": "SHA-256 of exact bytes",
+    "scope": "Raw file identities and user-supplied rater/correction metadata only; no result interpretation or G0 adjudication",
+    "result_contents_read_or_summarized": false,
+    "metadata_file_contents_read": false,
+    "raw_files_modified": false,
+    "markdown_escapes_preserved": true,
+    "raters": {
+      "A": {
+        "model_id": "claude-opus-5-5",
+        "model_display_name": "Opus 5.5",
+        "reasoning_effort": "높음",
+        "usage_path": "웹",
+        "service": "claude.ai",
+        "metadata_source": "user instruction"
+      },
+      "B": {
+        "model_id_as_provided": "GPT-5.6 Sol",
+        "model_display_name": "GPT-5.6 Sol",
+        "reasoning_effort": "높음",
+        "usage_path": "웹",
+        "service": "ChatGPT",
+        "metadata_source": "user instruction"
+      }
+    },
+    "files": [
+      {
+        "file": "tg-adr0002_g0_A-claude_raw.md",
+        "sha256": "385f836620907924b00192da98c43e9e5c2326060e94f32060d07d220c957f2d",
+        "rater": "A"
+      },
+      {
+        "file": "tg-adr0002_g0_B-gpt_raw.md",
+        "sha256": "e72eee950bd8e04f0596e52566da9745640497d00e464bfa432123eb4636be33",
+        "rater": "B"
+      },
+      {
+        "file": "tg-perf_g0_A-claude_raw.md",
+        "sha256": "58bb9c881d0629e6579cbf3060227000f006c9a3b2d866408bc9ee375234427f",
+        "rater": "A"
+      },
+      {
+        "file": "tg-perf_g0_B-gpt_raw.md",
+        "sha256": "4c7b7260f96be3b0044a7b5b77835537d7a7a107eaa8ba7ec1f248f9586671f0",
+        "rater": "B"
+      },
+      {
+        "file": "g0_meta.md",
+        "sha256": "53167571793a7935de8b60b1ccee9d8ce85f1d5f49bb9ed7f399b353d40b1ad1",
+        "role": "metadata_original_with_correction_preserved"
+      }
+    ],
+    "metadata_corrections": [
+      {
+        "metadata_file": "g0_meta.md",
+        "affected_result": "tg-adr0002_g0_B-gpt_raw.md",
+        "superseded_entry": {
+          "position": "first ADR 0002 B entry",
+          "model_display_name": "Opus 5.5",
+          "sha256_prefix": "385f8366",
+          "status": "incorrect"
+        },
+        "authoritative_entry": "final correction entry, as identified by the user",
+        "corrected_rater": "B",
+        "corrected_model_display_name": "GPT-5.6 Sol",
+        "corrected_reasoning_effort": "높음",
+        "corrected_usage_path": "ChatGPT 웹",
+        "corrected_result_sha256": "e72eee950bd8e04f0596e52566da9745640497d00e464bfa432123eb4636be33",
+        "correction_record_source": "user instruction; source file content not opened",
+        "treatment": "Apply corrected metadata in this manifest; preserve raw results and g0_meta.md byte-for-byte"
+      }
+    ]
+  }
+}

@@ -2,8 +2,8 @@
 # 짝이 안 맞는 코드펜스로 바뀌어 청크 노드가 그 뒤의 헤딩을 잃는다(실제 문서에서 확인된 문제).
 import pytest
 
-from app.domains.documents.pipeline.nodes import chunk as chunk_node
-from app.domains.documents.pipeline.nodes import parse as P
+from app.domains.documents.pipeline.search_index import chunk as chunk_node
+from app.domains.documents.pipeline.search_index import parse as P
 
 MD = (
     "# 결정\n\n"
