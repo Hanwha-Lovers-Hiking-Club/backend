@@ -87,6 +87,29 @@ def test_same_name_projects_stay_separate(client, fake_db):
     ]
 
 
+UNFINISHED_HIDDEN = ("filter", ("completed_at", "not.is", "null"))
+
+
+@pytest.mark.parametrize("params", [{}, {"q": "말결"}])
+def test_project_list_hides_unfinished_projects(client, fake_db, params):
+    # 분석 중이거나 실패한 프로젝트는 이름·설명이 비어 있어서 목록에서 뺀다
+    query = fake_db([])
+
+    client.get("/api/projects", params=params)
+
+    assert UNFINISHED_HIDDEN in query.calls
+
+
+def test_mark_completed_saves_completion_time(monkeypatch):
+    calls: list[tuple] = []
+    monkeypatch.setattr(service, "update_project", lambda *args: calls.append(args))
+
+    service.mark_completed(PROJECT_A)
+
+    [(project_id, fields)] = calls
+    assert project_id == PROJECT_A and set(fields) == {"completed_at"}
+
+
 def test_project_list_counts_only_active_cards(client, fake_db):
     query = fake_db([])
 
@@ -148,6 +171,7 @@ def test_project_page_out_of_range_keeps_filtered_total(client, monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"items": [], "total": 3}
+    assert UNFINISHED_HIDDEN in count.calls
     assert (
         "or_",
         (

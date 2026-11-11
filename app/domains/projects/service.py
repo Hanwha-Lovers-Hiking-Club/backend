@@ -1,6 +1,7 @@
 # 프로젝트 로직. 업로드 1회가 프로젝트 1개이고, 같은 이름의 프로젝트도 별개로 유지한다.
 # 문서와 카드의 내용은 각 도메인을 거쳐 읽는다.
 import asyncio
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -46,7 +47,9 @@ def _search_domains(q: str) -> list[str]:
 
 
 def _apply_search(query, q: str):
-    # 본 조회와 count 재조회가 같은 조건을 쓰도록 한 곳에 둔다
+    # 본 조회와 count 재조회가 같은 조건을 쓰도록 한 곳에 둔다.
+    # 분석 중이거나 실패한 프로젝트(이름·설명이 아직 없음)는 목록에 보이지 않게 뺀다
+    query = query.filter("completed_at", "not.is", "null")
     if not q:
         return query
     pattern = knowledge_cards_service._quote(f"*{q}*")
@@ -62,6 +65,11 @@ def create_project(name: str) -> str:
 
 def update_project(project_id: str, fields: dict) -> None:
     supabase.table("projects").update(strip_nul(fields)).eq("id", project_id).execute()
+
+
+def mark_completed(project_id: str) -> None:
+    # 이 값이 생겨야 프로젝트 목록에 보인다
+    update_project(project_id, {"completed_at": datetime.now(UTC).isoformat()})
 
 
 def delete_project(project_id: str) -> None:

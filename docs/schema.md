@@ -10,7 +10,7 @@
 
 ## projects
 
-문서와 지식카드를 묶는 프로젝트. 업로드 1회가 프로젝트 1개다. 마이그레이션은 `sql/2026-11-08_add_projects.sql`, 표시 정보 컬럼은 `sql/2026-11-08_add_project_meta.sql`, 유형 코드 변경은 `sql/2026-11-08_rename_project_domains.sql`, 기간 표기 통일은 `sql/2026-11-08_unify_project_period.sql`, 검색용 생성 컬럼은 `sql/2026-11-09_add_project_search_text.sql`.
+문서와 지식카드를 묶는 프로젝트. 업로드 1회가 프로젝트 1개다. 마이그레이션은 `sql/2026-11-08_add_projects.sql`, 표시 정보 컬럼은 `sql/2026-11-08_add_project_meta.sql`, 유형 코드 변경은 `sql/2026-11-08_rename_project_domains.sql`, 기간 표기 통일은 `sql/2026-11-08_unify_project_period.sql`, 검색용 생성 컬럼은 `sql/2026-11-09_add_project_search_text.sql`, 분석 완료 시각은 `sql/2026-11-11_add_project_completed_at.sql`.
 
 | 컬럼 | 타입 | 설명 |
 |---|---|---|
@@ -23,6 +23,7 @@
 | stack | text[] | 대표 기술 (빈 배열 가능). 업로드 때 active 카드의 기술을 많이 나온 순으로 5개까지 모은다. `knowledge_cards.technologies`와 달리 화면 표기 그대로 저장한다. 기본값 `{}` |
 | stack_text | text | `stack`을 줄바꿈으로 합친 생성 컬럼(자동 생성). 프로젝트 검색(이름·설명·팀과 함께 부분일치) 전용이며 직접 저장하지 않고 응답에도 내려주지 않음 |
 | created_at | timestamptz | 생성 시각 |
+| completed_at | timestamptz | 업로드한 문서의 분석이 성공으로 끝난 시각. NULL이면 분석 중이거나 실패(서버 재시작으로 끊긴 경우 포함)한 프로젝트이고, 프로젝트 목록에서 빠진다. 상세 조회는 막지 않는다. 응답에는 내려주지 않음 |
 
 ## documents
 
