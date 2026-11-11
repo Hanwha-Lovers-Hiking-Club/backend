@@ -230,6 +230,15 @@ async def _save_project_fields(project_id: str, fields: dict) -> None:
         logger.warning("프로젝트 정보 저장 실패, 기존 값을 유지함: %s", summarize_error(e))
 
 
+async def _mark_project_completed(project_id: str) -> None:
+    # 카드와 문서는 이미 저장됐으니 실패해도 job은 완료로 둔다. 대신 목록에 보이지 않으므로
+    # 로그를 보고 completed_at을 직접 채운다
+    try:
+        await asyncio.to_thread(projects_service.mark_completed, project_id)
+    except Exception:
+        logger.exception("프로젝트 완료 표시 실패, 목록에 보이지 않음 (project_id=%s)", project_id)
+
+
 def _fields_after(node: str, state: dict) -> dict:
     # 이 노드가 끝나고 projects에 저장할 값
     if node == "extract":
@@ -294,6 +303,8 @@ async def _run_pipeline(job_id: UUID, project_id: str, documents: list[dict]) ->
             len(documents),
             len(warnings),
         )
+        # 완료 이벤트를 받은 프론트가 목록을 다시 불러올 때 바로 보이도록 job 완료보다 먼저 저장한다
+        await _mark_project_completed(project_id)
         jobs.update_job(
             job_id,
             status="completed",

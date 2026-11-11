@@ -30,7 +30,8 @@ create table if not exists projects (
   description text,  -- 프로젝트 한 줄 설명
   stack       text[] not null default '{}',  -- 대표 기술. 화면 표기 그대로 저장
   stack_text  text generated always as (card_array_to_text(stack)) stored,  -- 프로젝트 검색 전용(부분일치). 직접 저장하지 않는다
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  completed_at timestamptz  -- 분석이 성공으로 끝난 시각. NULL이면 분석 중이거나 실패해서 목록에 보이지 않는다
 );
 
 -- ---------------------------------------------------------------

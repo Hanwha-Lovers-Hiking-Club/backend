@@ -25,6 +25,19 @@ def clear_jobs():
     jobs._jobs.clear()
 
 
+@pytest.fixture(autouse=True)
+def completed_projects(monkeypatch) -> list[tuple]:
+    # 완료 표시가 DB를 부르지 않게 바꾸고, 그때의 job 상태를 함께 기록한다
+    calls: list[tuple] = []
+
+    def mark(project_id):
+        statuses = [job["status"] for job in jobs._jobs.values()]
+        calls.append((project_id, statuses))
+
+    monkeypatch.setattr(service.projects_service, "mark_completed", mark)
+    return calls
+
+
 def _new_job() -> object:
     job_id = uuid4()
     jobs.create_job(
@@ -343,3 +356,38 @@ def test_completed_event_reports_active_card_count(monkeypatch):
 
     (event,) = asyncio.run(collect())
     assert '"activeCardCount":2' in event.raw_data
+
+
+def test_project_is_marked_completed_before_job_completes(monkeypatch, completed_projects):
+    # 완료 이벤트를 받고 목록을 다시 불러오면 바로 보여야 한다
+    job_id = _new_job()
+    _patch_nodes(monkeypatch, job_id)
+
+    assert _run(job_id)["status"] == "completed"
+    assert completed_projects == [(PROJECT_ID, ["running"])]
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"draft_card": {"error": "카드 실패"}, "save_chunks": {}},
+        {"save_chunks": {}},
+    ],
+)
+def test_failed_job_leaves_project_unfinished(monkeypatch, completed_projects, overrides):
+    job_id = _new_job()
+    _patch_nodes(monkeypatch, job_id, overrides)
+
+    assert _run(job_id)["status"] == "failed"
+    assert completed_projects == []
+
+
+def test_failed_completion_mark_does_not_fail_the_job(monkeypatch):
+    def fail(_project_id):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(service.projects_service, "mark_completed", fail)
+    job_id = _new_job()
+    _patch_nodes(monkeypatch, job_id)
+
+    assert _run(job_id)["status"] == "completed"
